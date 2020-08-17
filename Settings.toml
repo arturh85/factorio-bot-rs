@@ -1,0 +1,5 @@
+workspace_path = "workspace"
+archive_path = "workspace/Factorio_x64_1.0.0.zip"
+#archive_path = "workspace/factorio_alpha_x64_1.0.0.tar.xz"
+rcon_port = 1234
+rcon_pass = "rcon123"

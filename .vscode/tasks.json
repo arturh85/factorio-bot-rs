@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"subcommand": "run -- start -c 1 --seed 1785882545",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"label": "Rust: cargo run - factorio-bot-rs",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		}
+	]
+}
