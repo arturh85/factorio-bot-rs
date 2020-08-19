@@ -561,10 +561,10 @@ pub fn response_from_result(
                 success: false,
                 output: vec![err.to_string()],
             };
-            return Ok(ApiResponse {
+            Ok(ApiResponse {
                 json: JsonValue::from(serde_json::to_value(response).unwrap()),
                 status: Status::InternalServerError,
-            });
+            })
         }
     }
 }
@@ -585,10 +585,10 @@ where
                 success: false,
                 output: vec![err.to_string()],
             };
-            return Ok(ApiResponse {
+            Ok(ApiResponse {
                 json: JsonValue::from(serde_json::to_value(response).unwrap()),
                 status: Status::InternalServerError,
-            });
+            })
         }
     }
 }

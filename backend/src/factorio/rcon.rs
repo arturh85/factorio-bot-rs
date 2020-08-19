@@ -158,6 +158,7 @@ impl FactorioRcon {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn place_blueprint(
         &self,
         player_id: u32,
@@ -424,6 +425,7 @@ impl FactorioRcon {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_to_inventory(
         &self,
         player_id: u32,
@@ -466,6 +468,7 @@ impl FactorioRcon {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn remove_from_inventory(
         &self,
         player_id: u32,
