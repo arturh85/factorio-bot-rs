@@ -383,19 +383,15 @@ mod tests {
     #[test]
     fn test_chunk_zoom_0() {
         let (zoom_world_top_left, zoom_world_bottom_right) = chunk_zoom(0, 0, 0);
-        assert_eq!(zoom_world_top_left, ChunkPosition { x: -16, y: -16 });
-        assert_eq!(zoom_world_bottom_right, ChunkPosition { x: 16, y: 16 });
+        assert_eq!(zoom_world_top_left, (-16.0, -16.0));
+        assert_eq!(zoom_world_bottom_right, (16.0, 16.0));
     }
 
     #[test]
     fn test_chunk_zoom_1() {
         let (zoom_world_top_left, zoom_world_bottom_right) = chunk_zoom(1, 0, 0);
-        assert_eq!(zoom_world_top_left, ChunkPosition { x: -16, y: -16 });
-        assert_eq!(zoom_world_bottom_right, ChunkPosition { x: 0, y: 0 });
-
-        // let (zoom_world_top_left, zoom_world_bottom_right) = chunk_zoom(1, 1, 0);
-        // assert_eq!(zoom_world_top_left, ChunkPosition { x: -8, y: -16 });
-        // assert_eq!(zoom_world_bottom_right, ChunkPosition { x: 8, y: 8 });
+        assert_eq!(zoom_world_top_left, (-16.0, -16.0));
+        assert_eq!(zoom_world_bottom_right, (0.0, 0.0));
     }
 }
 
