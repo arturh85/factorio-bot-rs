@@ -46,12 +46,19 @@ On Windows the first start needs Administrative Privileges to create the symlink
 
 ## Docker 
 
-There is also a docker image which starts the server in headless mode.
+There is also a docker image which starts the bot and factorio server in headless mode:
+
+```
+docker run --rm -p 34197:34197 -p 34197:34197/udp -p 7123:7123 arturh85/factorio-bot-rs
+``` 
+
 You can then connect to this headless server from different hosts with 
 
 ```
 cargo run -- start --server <server-ip>
 ``` 
+
+Once I upload my factorio mod to official mod portal you should be able to connect with any factorio client and have the mods auto sync.
 
 ## Contribute
 

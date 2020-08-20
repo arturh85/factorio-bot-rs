@@ -21,7 +21,7 @@ use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::rcon::FactorioRcon;
 use config::Config;
 use rocket_contrib::json::JsonValue;
-use rocket_contrib::serve::{crate_relative, StaticFiles};
+use rocket_contrib::serve::StaticFiles;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -50,10 +50,10 @@ pub async fn build_rocket(
 
     // dotenv().ok();
     rocket::ignite()
-        .mount(
-            "/workspace",
-            StaticFiles::from(crate_relative!("../workspace/")).rank(9),
-        )
+        // .mount(
+        //     "/workspace",
+        //     StaticFiles::from(crate_relative!("../workspace/")).rank(9),
+        // )
         .mount("/", StaticFiles::from(frontend_path).rank(10))
         .mount("/", routes![status])
         .mount(

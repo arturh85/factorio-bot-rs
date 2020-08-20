@@ -1,4 +1,5 @@
 FROM rust:buster as test
+ARG FACTORIO_VERSION
 # frontend needs nodejs to build, even for test/clippy
 RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
 RUN apt-get install -y nodejs
@@ -15,7 +16,7 @@ RUN bash -c "time cargo test"
 FROM ekidd/rust-musl-builder:stable-openssl11 as build
 # frontend needs nodejs to build
 RUN curl -sL https://deb.nodesource.com/setup_14.x | sudo -E bash -
-RUN sudo apt-get install -y nodejs
+RUN sudo apt-get install -y nodejs curl && curl -sSL https://www.factorio.com/get-download/$FACTORIO_VERSION/headless/linux64 -o /tmp/factorio_headless_x64_$FACTORIO_VERSION.tar.xz
 
 COPY rust-toolchain .
 RUN rustup target add x86_64-unknown-linux-musl
@@ -26,20 +27,24 @@ COPY frontend frontend/
 COPY Cargo.* ./
 RUN sudo chown rust.rust . -R; cargo build --release --target=x86_64-unknown-linux-musl
 
-FROM scratch
+FROM frolvlad/alpine-glibc:latest
+ARG FACTORIO_VERSION
 WORKDIR /home/factoriobot/
 COPY mod mod/
 COPY Settings.toml .
 COPY Rocket.toml .
 COPY --from=build /home/rust/src/frontend/dist/ public/
 COPY --from=build /home/rust/src/target/x86_64-unknown-linux-musl/release/factorio-bot-backend .
+RUN mkdir workspace && chmod 0777 . -R && chown 1000.1000 . -R
+COPY --from=build /tmp/factorio_headless_x64_$FACTORIO_VERSION.tar.xz /home/factoriobot/workspace/
 ENV RUST_LOG "info"
 ENV RUST_BACKTRACE="1"
 # factorio
-EXPOSE 34197
+EXPOSE 34197/udp 27015/tcp
 # web
 EXPOSE 7123
 # rcon
 EXPOSE 1234
-CMD ["./factorio-bot-backend", "start", "--clients", "0", "--seed", "1785882545"]
-VOLUME "/home/factoriobot/workspace"
+
+ENTRYPOINT ["./factorio-bot-backend"]
+CMD ["start", "--clients", "0", "--seed", "1785882545"]
