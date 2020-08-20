@@ -92,7 +92,7 @@ impl FactorioRcon {
         }
     }
 
-    async fn call_func(
+    async fn remote_call(
         &self,
         function_name: &str,
         args: Vec<&str>,
@@ -108,8 +108,25 @@ impl FactorioRcon {
         .await
     }
 
-    pub async fn silent_print(&self) -> anyhow::Result<()> {
-        self.send("/silent-command print('')").await?;
+    pub async fn print(&self, str: &str) -> anyhow::Result<()> {
+        self.send(&format!("/c print({})", str_to_lua(str))).await?;
+        Ok(())
+    }
+
+    pub async fn screenshot(&self, width: i16, height: i16, depth: i8) -> anyhow::Result<()> {
+        self.send(&format!(
+            "/screenshot {} {} {}",
+            width.to_string(),
+            height.to_string(),
+            depth.to_string()
+        ))
+        .await?;
+        Ok(())
+    }
+
+    pub async fn silent_print(&self, str: &str) -> anyhow::Result<()> {
+        self.send(&format!("/silent-command print({})", str_to_lua(str)))
+            .await?;
         Ok(())
     }
 
@@ -119,12 +136,12 @@ impl FactorioRcon {
     }
 
     pub async fn whoami(&self, name: &str) -> anyhow::Result<()> {
-        self.call_func("whoami", vec![&str_to_lua(name)]).await?;
+        self.remote_call("whoami", vec![&str_to_lua(name)]).await?;
         Ok(())
     }
 
     pub async fn add_research(&self, technology_name: &str) -> anyhow::Result<()> {
-        self.call_func("add_research", vec![&str_to_lua(technology_name)])
+        self.remote_call("add_research", vec![&str_to_lua(technology_name)])
             .await?;
         Ok(())
     }
@@ -135,7 +152,7 @@ impl FactorioRcon {
         item_name: &str,
         item_count: u32,
     ) -> anyhow::Result<()> {
-        self.call_func(
+        self.remote_call(
             "cheat_item",
             vec![
                 &player_id.to_string(),
@@ -148,13 +165,13 @@ impl FactorioRcon {
     }
 
     pub async fn cheat_technology(&self, technology_name: &str) -> anyhow::Result<()> {
-        self.call_func("cheat_technology", vec![&str_to_lua(technology_name)])
+        self.remote_call("cheat_technology", vec![&str_to_lua(technology_name)])
             .await?;
         Ok(())
     }
 
     pub async fn cheat_all_technologies(&self) -> anyhow::Result<()> {
-        self.call_func("cheat_all_technologies", vec![]).await?;
+        self.remote_call("cheat_all_technologies", vec![]).await?;
         Ok(())
     }
 
@@ -179,7 +196,7 @@ impl FactorioRcon {
                 .await?;
         }
         let lines = self
-            .call_func(
+            .remote_call(
                 "place_blueprint",
                 vec![
                     &player_id.to_string(),
@@ -212,7 +229,7 @@ impl FactorioRcon {
         force_build: bool,
     ) -> anyhow::Result<Vec<FactorioEntity>> {
         let lines = self
-            .call_func(
+            .remote_call(
                 "cheat_blueprint",
                 vec![
                     &player_id.to_string(),
@@ -236,7 +253,7 @@ impl FactorioRcon {
     }
 
     pub async fn store_map_data(&self, key: &str, value: Value) -> anyhow::Result<()> {
-        self.call_func(
+        self.remote_call(
             "store_map_data",
             vec![&str_to_lua(key), &value_to_lua(&value)],
         )
@@ -246,7 +263,7 @@ impl FactorioRcon {
 
     pub async fn retrieve_map_data(&self, key: &str) -> anyhow::Result<Option<Value>> {
         let lines = self
-            .call_func("retrieve_map_data", vec![&str_to_lua(key)])
+            .remote_call("retrieve_map_data", vec![&str_to_lua(key)])
             .await?;
         if lines.is_none() {
             return Ok(None);
@@ -359,7 +376,7 @@ impl FactorioRcon {
             .collect();
 
         let lines = self
-            .call_func("inventory_contents_at", vec![&vec_to_lua(positions)])
+            .remote_call("inventory_contents_at", vec![&vec_to_lua(positions)])
             .await?;
         if lines.is_none() {
             return Err(anyhow!("Unexpected Empty Response"));
@@ -373,7 +390,7 @@ impl FactorioRcon {
     }
 
     pub async fn player_force(&self) -> anyhow::Result<FactorioForce> {
-        let lines = self.call_func("player_force", vec![]).await?;
+        let lines = self.remote_call("player_force", vec![]).await?;
         if lines.is_none() {
             return Err(anyhow!("Unexpected Empty Response"));
         }
@@ -400,7 +417,7 @@ impl FactorioRcon {
         }
         let player_id = player_id.to_string();
         let lines = self
-            .call_func(
+            .remote_call(
                 "place_entity",
                 vec![
                     &player_id,
@@ -451,7 +468,7 @@ impl FactorioRcon {
         items.insert(String::from("name"), str_to_lua(&item_name));
         items.insert(String::from("count"), item_count.to_string());
         let lines = self
-            .call_func(
+            .remote_call(
                 "insert_to_inventory",
                 vec![
                     &player_id,
@@ -493,7 +510,7 @@ impl FactorioRcon {
         items.insert(String::from("name"), str_to_lua(&item_name));
         items.insert(String::from("count"), item_count.to_string());
         let lines = self
-            .call_func(
+            .remote_call(
                 "remove_from_inventory",
                 vec![
                     &player_id,
@@ -559,7 +576,7 @@ impl FactorioRcon {
         }
 
         let result = self
-            .call_func(
+            .remote_call(
                 "find_entities_filtered",
                 vec![hashmap_to_lua(args).as_str()],
             )
@@ -602,7 +619,7 @@ impl FactorioRcon {
             args.insert(String::from("name"), str_to_lua(&name));
         }
         let result = self
-            .call_func("find_tiles_filtered", vec![hashmap_to_lua(args).as_str()])
+            .remote_call("find_tiles_filtered", vec![hashmap_to_lua(args).as_str()])
             .await?;
         if result.is_none() {
             return Err(anyhow!("Expected result from find_tiles_filtered"));
@@ -626,7 +643,7 @@ impl FactorioRcon {
             None => String::from("nil"),
         };
         let result = self
-            .call_func(
+            .remote_call(
                 "async_request_player_path",
                 vec![&player_id.to_string(), &position_to_lua(&goal), &radius],
             )
@@ -687,7 +704,7 @@ impl FactorioRcon {
             .collect::<Vec<String>>()
             .join(", ");
         let result = self
-            .call_func(
+            .remote_call(
                 "action_start_walk_waypoints",
                 vec![&action_id, &player_id, &format!("{{ {} }}", waypoints)],
             )
@@ -709,7 +726,7 @@ impl FactorioRcon {
         let action_id = action_id.to_string();
         let player_id = player_id.to_string();
         let result = self
-            .call_func(
+            .remote_call(
                 "action_start_mining",
                 vec![
                     &action_id,
@@ -736,7 +753,7 @@ impl FactorioRcon {
         let action_id = action_id.to_string();
         let player_id = player_id.to_string();
         let result = self
-            .call_func(
+            .remote_call(
                 "action_start_crafting",
                 vec![
                     &action_id,

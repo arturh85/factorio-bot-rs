@@ -31,7 +31,7 @@ pub async fn start_factorio(
             "Started <bright-blue>server</> in <yellow>{:?}</>",
             started.elapsed()
         );
-        rcon.silent_print().await?;
+        rcon.silent_print("").await?;
         rcon.whoami("server").await?;
     }
     let settings = settings.clone();
@@ -58,7 +58,7 @@ pub async fn start_factorio(
         rcon.whoami(&instance_name).await.unwrap();
         // Execute a dummy command to silence the warning about "using commands will
         // disable achievements". If we don't do this, the first command will be lost
-        rcon.silent_print().await.unwrap();
+        rcon.silent_print("").await.unwrap();
     }
     // });
     Ok((world, rcon))

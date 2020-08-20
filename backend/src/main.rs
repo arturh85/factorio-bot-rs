@@ -1,3 +1,4 @@
+#![warn(clippy::all, clippy::pedantic)]
 use clap::{App, Arg};
 use factorio_bot_backend::build_rocket;
 use factorio_bot_backend::factorio::process_control::start_factorio;
@@ -7,7 +8,7 @@ use factorio_bot_backend::factorio::rcon::FactorioRcon;
 async fn main() -> anyhow::Result<()> {
     color_eyre::install().unwrap();
     let matches = App::new("factorio-bot-rs")
-        .version("1.0")
+        .version(env!("CARGO_PKG_VERSION"))
         .author("Artur Hallmann <arturh@arturh.de>")
         .about("Bot for Factorio")
         .subcommand(
@@ -60,11 +61,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut settings = config::Config::default();
     settings
-        // Add in `./Rocket.toml`
         .merge(config::File::with_name("Settings"))
         .unwrap()
-        // Add in settings from the environment (with a prefix of APP)
-        // Eg.. `APP_DEBUG=1 ./target/app` would set the `debug` key
         .merge(config::Environment::with_prefix("APP"))
         .unwrap();
 

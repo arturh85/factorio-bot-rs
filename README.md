@@ -5,7 +5,7 @@ This project tries to be a bot platform for the game
 [Factorio](https://www.factorio.com) (version 1.0) inspired by [factorio-bot](https://github.com/Windfisch/factorio-bot/)
 
 Features:
-- extract factorio.zip/tar.xz and symlink bridge mod
+- extract factorio .zip/tar.xz and symlink bridge mod
 - start Factorio server and/or one or multiple clients (unrestricted) 
 - read factorio recipes/entity prototypes/item prototypes/graphics
 - read map contents by chunk for leaflet based Map View
@@ -35,7 +35,6 @@ Features:
 - Install [rust/cargo](https://rustup.rs/) and [nodejs/npm](https://nodejs.org/)
 - Clone this repository
 - Download [Factorio](https://www.factorio.com) as .zip or .tar.xz into workspace/ directory (don't use the headless version!)
-- Change archive_path in Settings.toml to correct filename
 - Start server & one client with good seed:
 
 ```

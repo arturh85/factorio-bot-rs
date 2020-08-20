@@ -35,102 +35,114 @@ pub async fn setup_factorio_instance(
     }
     let readdir = instance_path.read_dir()?;
     if readdir.count() == 0 {
-        let archive_path: String = settings.get("archive_path")?;
-        let archive_path = Path::new(&archive_path);
-        if !archive_path.exists() {
-            error!(
-                "Failed to find factorio archive (.zip or .tar.xz) file at <bright-blue>{:?}</>. You may change this in <bright-blue>Settings.toml</>",
-                archive_path
-            );
-            std::process::exit(1);
-        }
-        info!(
-            "Extracting <bright-blue>{}</> to <magenta>{}</>",
-            &archive_path.to_str().unwrap(),
-            instance_path.to_str().unwrap()
-        );
+        let mut workspace_readdir = workspace_path.read_dir()?;
         let started = Instant::now();
-        let extension = archive_path
-            .extension()
-            .expect("archive needs extension!")
-            .to_str()
-            .unwrap();
-        match &extension[..] {
-            "zip" => {
-                let mut archive = archiver_rs::open(archive_path)?;
-                let files = archive.files().unwrap();
-                let bar = ProgressBar::new(files.len() as u64);
-                bar.set_draw_target(ProgressDrawTarget::stdout());
-                bar.set_style(
-                    ProgressStyle::default_spinner().template("{msg}\n{wide_bar} {pos}/{len}"),
+        if cfg!(windows) {
+            let archive = workspace_readdir.find(|file| {
+                if let Ok(file) = file.as_ref() {
+                    file.path().extension().unwrap_or_default() == "zip"
+                } else {
+                    false
+                }
+            });
+            if archive.is_none() {
+                error!(
+                    "Failed to find factorio zip file at <bright-blue>{:?}</>",
+                    workspace_path
                 );
-                for file in files {
-                    let message = format!("extracting {}", &file);
-                    bar.set_message(&message);
-                    bar.tick();
-                    // output_path is like Factorio_0.18.36\bin\x64\factorio.exe
-                    let output_path = PathBuf::from(&file);
-                    // output_path is like bin\x64\factorio.exe
-                    let output_path =
-                        output_path.strip_prefix(output_path.components().next().unwrap())?;
-                    // output_path is like $instance_path\bin\x64\factorio.exe
-                    let output_path = PathBuf::from(instance_path).join(PathBuf::from(output_path));
-
-                    if (&*file).ends_with('/') {
-                        fs::create_dir_all(&output_path)?;
-                    } else {
-                        if let Some(p) = output_path.parent() {
-                            if !p.exists() {
-                                fs::create_dir_all(&p)?;
-                            }
-                        }
-                        archive.extract_single(&output_path, file).unwrap();
-                    }
-                    bar.inc(1);
-                }
-                bar.finish();
+                std::process::exit(1);
             }
-            "xz" => {
-                let tar_path = archive_path.to_path_buf().with_extension("");
-                if !tar_path.exists() {
-                    let mut logger = Logger::new();
-                    logger.loading(format!(
-                        "Uncompressing <bright-blue>{}</> to <magenta>{}</> ...",
-                        &archive_path.to_str().unwrap(),
-                        tar_path.to_str().unwrap()
-                    ));
-                    let mut archive = archiver_rs::Xz::open(archive_path)?;
-                    archive
-                        .decompress(&tar_path)
-                        .expect("failed to decompress xz");
-                    logger.success(format!(
-                        "Uncompressed <bright-blue>{}</> to <magenta>{}</>",
-                        &archive_path.to_str().unwrap(),
-                        tar_path.to_str().unwrap()
-                    ));
+            let archive_path = archive.unwrap().unwrap().path();
+            info!(
+                "Extracting <bright-blue>{}</> to <magenta>{}</>",
+                &archive_path.to_str().unwrap(),
+                instance_path.to_str().unwrap()
+            );
+            let mut archive = archiver_rs::open(&archive_path)?;
+            let files = archive.files().unwrap();
+            let bar = ProgressBar::new(files.len() as u64);
+            bar.set_draw_target(ProgressDrawTarget::stdout());
+            bar.set_style(
+                ProgressStyle::default_spinner().template("{msg}\n{wide_bar} {pos}/{len}"),
+            );
+            for file in files {
+                let message = format!("extracting {}", &file);
+                bar.set_message(&message);
+                bar.tick();
+                // output_path is like Factorio_0.18.36\bin\x64\factorio.exe
+                let output_path = PathBuf::from(&file);
+                // output_path is like bin\x64\factorio.exe
+                let output_path =
+                    output_path.strip_prefix(output_path.components().next().unwrap())?;
+                // output_path is like $instance_path\bin\x64\factorio.exe
+                let output_path = PathBuf::from(instance_path).join(PathBuf::from(output_path));
+
+                if (&*file).ends_with('/') {
+                    fs::create_dir_all(&output_path)?;
+                } else {
+                    if let Some(p) = output_path.parent() {
+                        if !p.exists() {
+                            fs::create_dir_all(&p)?;
+                        }
+                    }
+                    archive.extract_single(&output_path, file).unwrap();
                 }
+                bar.inc(1);
+            }
+            bar.finish();
+        } else {
+            let archive = workspace_readdir.find(|file| {
+                if let Ok(file) = file.as_ref() {
+                    file.path().extension().unwrap_or_default() == "xz"
+                } else {
+                    false
+                }
+            });
+            if archive.is_none() {
+                error!(
+                    "Failed to find factorio tar.xz file at <bright-blue>{:?}</>",
+                    workspace_path
+                );
+                std::process::exit(1);
+            }
+            let archive_path = archive.unwrap().unwrap().path();
+            let tar_path = archive_path.with_extension("");
+            if !tar_path.exists() {
                 let mut logger = Logger::new();
                 logger.loading(format!(
-                    "Extracting <bright-blue>{}</> to <magenta>{}</> ...",
-                    &tar_path.to_str().unwrap(),
-                    workspace_path.to_str().unwrap()
+                    "Uncompressing <bright-blue>{}</> to <magenta>{}</> ...",
+                    &archive_path.to_str().unwrap(),
+                    tar_path.to_str().unwrap()
                 ));
-                let mut archive = archiver_rs::Tar::open(&tar_path).unwrap();
-                archive.extract(workspace_path).expect("failed to extract");
-                logger.success("Extraction finished");
-
-                let extracted_path = workspace_path.join(PathBuf::from("factorio"));
-                if extracted_path.exists() {
-                    std::fs::remove_dir(&instance_path).expect("failed to delete empty folder");
-                    std::fs::rename(&extracted_path, instance_path).expect("failed to rename");
-                    success!("Renamed {:?} to {:?}", &extracted_path, instance_path);
-                } else {
-                    error!("Failed to find {:?}", &extracted_path);
-                }
+                let mut archive = archiver_rs::Xz::open(&archive_path)?;
+                archive
+                    .decompress(&tar_path)
+                    .expect("failed to decompress xz");
+                logger.success(format!(
+                    "Uncompressed <bright-blue>{}</> to <magenta>{}</>",
+                    &archive_path.to_str().unwrap(),
+                    tar_path.to_str().unwrap()
+                ));
             }
-            _ => panic!("unsupported archive format"),
-        }
+            let mut logger = Logger::new();
+            logger.loading(format!(
+                "Extracting <bright-blue>{}</> to <magenta>{}</> ...",
+                &tar_path.to_str().unwrap(),
+                workspace_path.to_str().unwrap()
+            ));
+            let mut archive = archiver_rs::Tar::open(&tar_path).unwrap();
+            archive.extract(workspace_path).expect("failed to extract");
+            logger.success("Extraction finished");
 
+            let extracted_path = workspace_path.join(PathBuf::from("factorio"));
+            if extracted_path.exists() {
+                std::fs::remove_dir(&instance_path).expect("failed to delete empty folder");
+                std::fs::rename(&extracted_path, instance_path).expect("failed to rename");
+                success!("Renamed {:?} to {:?}", &extracted_path, instance_path);
+            } else {
+                error!("Failed to find {:?}", &extracted_path);
+            }
+        }
         info!(
             "Extracting took <yellow>{}</>",
             HumanDuration(started.elapsed())

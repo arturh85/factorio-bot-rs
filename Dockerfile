@@ -33,13 +33,12 @@ COPY Settings.toml .
 COPY Rocket.toml .
 COPY --from=build /home/rust/src/frontend/dist/ public/
 COPY --from=build /home/rust/src/target/x86_64-unknown-linux-musl/release/factorio-bot-backend .
-ENV PORT 8080
 ENV RUST_LOG "info"
 ENV RUST_BACKTRACE="1"
 # factorio
 EXPOSE 34197
 # web
-EXPOSE 8080
+EXPOSE 7123
 # rcon
 EXPOSE 1234
 CMD ["./factorio-bot-backend", "start", "--clients", "0", "--seed", "1785882545"]
