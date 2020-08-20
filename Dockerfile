@@ -28,7 +28,7 @@ RUN sudo chown rust.rust . -R; cargo build --release --target=x86_64-unknown-lin
 
 FROM scratch
 WORKDIR /home/factoriobot/
-COPY mod .
+COPY mod mod/
 COPY Settings.toml .
 COPY Rocket.toml .
 COPY --from=build /home/rust/src/frontend/dist/ public/

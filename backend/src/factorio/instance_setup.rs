@@ -161,7 +161,11 @@ pub async fn setup_factorio_instance(
         info!("Creating <bright-blue>{:?}</>", &mod_info_path);
         outfile.write_all(template_file)?;
     }
-    let data_botbridge_path = std::fs::canonicalize(PathBuf::from("mod"))?;
+    let data_botbridge_path = PathBuf::from("mod");
+    if !data_botbridge_path.exists() {
+        panic!("missing mod/ folder from working directory");
+    }
+    let data_botbridge_path = std::fs::canonicalize(data_botbridge_path)?;
     let mods_botbridge_path = mods_path.join(PathBuf::from("BotBridge"));
     if !mods_botbridge_path.exists() {
         info!(
