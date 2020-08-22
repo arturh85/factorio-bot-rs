@@ -75,6 +75,18 @@ pub struct Position {
     pub y: Box<R64>,
 }
 
+#[derive(Primitive)]
+pub enum Direction {
+    North = 0,
+    NorthEast = 1,
+    East = 2,
+    SouthEast = 3,
+    South = 4,
+    SouthWest = 5,
+    West = 6,
+    NorthWest = 7,
+}
+
 impl Position {
     pub fn x(&self) -> f64 {
         (*self.x).to_f64().expect("failed to cast r64 to f64")

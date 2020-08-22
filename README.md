@@ -14,7 +14,7 @@ Features:
   - read player inventories
   - read other inventories
   - place entities
-  - find entities in radius
+  - find entities in radius / area
   - insert to inventory / remove from inventory
   - mine entities
   - craft recipes
@@ -28,7 +28,10 @@ Features:
 
 ## Youtube Videos
 
-- [Factorio Bot 0.1: Research automation with 1 Bot in 12:33](https://youtu.be/6KXYuVDRZ-I) 
+- [Any% World Record gets automation in 7:33](https://www.youtube.com/watch?v=rHvaZMdjnLE&t=455) 
+
+- [Factorio Bot 0.1.1: Research automation with 1 Bot in 8:57](https://youtu.be/1vbWWiSV6Sw) 
+- [Factorio Bot 0.1.0: Research automation with 1 Bot in 12:33](https://youtu.be/6KXYuVDRZ-I) 
 
 ## Setup 
 
@@ -38,7 +41,7 @@ Features:
 - Start server & one client with good seed:
 
 ```
-cargo run -- start -c 1 --seed 1785882545 
+cargo run -- start -c 1 --seed 1785882545 --new
 ```
 
 See cargo run -- --help for other options.

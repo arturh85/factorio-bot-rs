@@ -47,7 +47,13 @@ async fn main() -> anyhow::Result<()> {
                         .long("seed")
                         .value_name("seed")
                         .required(false)
-                        .help("recreate server level with given seed"),
+                        .help("use given seed to recreate level"),
+                )
+                .arg(
+                    Arg::with_name("new")
+                        .long("new")
+                        .short("n")
+                        .help("recreate level by deleting server map if exists"),
                 )
                 .arg(
                     Arg::with_name("logs")
@@ -70,10 +76,12 @@ async fn main() -> anyhow::Result<()> {
         let clients: u8 = matches.value_of("clients").unwrap().parse().unwrap();
         let write_logs: bool = matches.is_present("logs");
         let seed = matches.value_of("seed");
+        let recreate = matches.is_present("new");
         let server_host = matches.value_of("server");
-        let (world, rcon) = start_factorio(&settings, server_host, clients, seed, write_logs)
-            .await
-            .expect("failed to start factorio");
+        let (world, rcon) =
+            start_factorio(&settings, server_host, clients, recreate, seed, write_logs)
+                .await
+                .expect("failed to start factorio");
 
         if let Some(world) = world {
             build_rocket(settings, rcon, world)

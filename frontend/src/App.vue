@@ -18,13 +18,11 @@
       <router-link to="/">
         <v-btn text>
           <span class="mr-2">Control</span>
-          <v-icon>mdi-open-in-new</v-icon>
         </v-btn>
       </router-link>
       <router-link to="/map">
         <v-btn text>
           <span class="mr-2">Map</span>
-          <v-icon>mdi-open-in-new</v-icon>
         </v-btn>
       </router-link>
     </v-app-bar>

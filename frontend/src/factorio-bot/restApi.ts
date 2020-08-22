@@ -7,11 +7,12 @@ import type {
     FactorioTile,
     InventoryResponse,
     InventoryType,
-    Position,
+    Position, Rect,
     RequestEntity,
 } from "@/factorio-bot/types";
 import {Direction} from "@/factorio-bot/types";
 import {baseUrl} from "@/environment";
+import {positionParam, rectParam} from "@/factorio-bot/util";
 
 export class FactorioApi {
     static async insertToInventory(
@@ -80,15 +81,14 @@ export class FactorioApi {
     static async cheatBlueprint(
         playerId: number,
         blueprint: string,
-        _placePosition: Position,
+        placePosition: Position,
         placeDirection: number = Direction.north,
         forceBuild = false
     ): Promise<{ player: FactorioPlayer; entities: FactorioEntity[] }> {
-        const position = `${_placePosition.x},${_placePosition.y}`;
         const response = await fetch(
             `${baseUrl}/api/${playerId}/cheatBlueprint?blueprint=${encodeURIComponent(
                 blueprint
-            )}&position=${position}&direction=${placeDirection}&force_build=${forceBuild}`
+            )}&position=${positionParam(placePosition)}&direction=${placeDirection}&force_build=${forceBuild}`
         );
         return await response.json();
     }
@@ -111,13 +111,40 @@ export class FactorioApi {
         name: string|null = null,
         entityType: string|null = null,
     ): Promise<FactorioEntity[]> {
-        const position = `${centerPosition.x},${centerPosition.y}`;
-        let url = `${baseUrl}/api/findEntities?position=${position}&radius=${radius}`;
+        let url = `${baseUrl}/api/findEntities?position=${positionParam(centerPosition)}&radius=${radius}`;
         if (name) {
-            url += `&name=${name}`
+            url += `&name=${encodeURIComponent(name)}`
         }
         if (entityType) {
-            url += `&entity_type=${entityType}`
+            url += `&entity_type=${encodeURIComponent(entityType)}`
+        }
+        const response = await fetch(url);
+        return await response.json();
+    }
+
+    static async findEntitiesInArea(
+        area: Rect,
+        name: string|null = null,
+        entityType: string|null = null,
+    ): Promise<FactorioEntity[]> {
+        let url = `${baseUrl}/api/findEntities?area=${rectParam(area)}`;
+        if (name) {
+            url += `&name=${encodeURIComponent(name)}`
+        }
+        if (entityType) {
+            url += `&entity_type=${encodeURIComponent(entityType)}`
+        }
+        const response = await fetch(url);
+        return await response.json();
+    }
+
+    static async findTilesInArea(
+        area: Rect,
+        name: string | null = null
+    ): Promise<FactorioTile[]> {
+        let url = `${baseUrl}/api/findTiles?area=${rectParam(area)}`
+        if (name) {
+            url += `&name=${name}`
         }
         const response = await fetch(url);
         return await response.json();
@@ -128,10 +155,11 @@ export class FactorioApi {
         radius: number,
         name: string
     ): Promise<FactorioTile[]> {
-        const position = `${centerPosition.x},${centerPosition.y}`;
-        const response = await fetch(
-            `${baseUrl}/api/findTiles?position=${position}&radius=${radius}&name=${name}`
-        );
+        let url = `${baseUrl}/api/findTiles?position=${positionParam(centerPosition)}&radius=${radius}`
+        if (name) {
+            url += `&name=${name}`
+        }
+        const response = await fetch(url);
         return await response.json();
     }
 
@@ -140,7 +168,7 @@ export class FactorioApi {
         radius: number,
         entityType: string
     ): Promise<FactorioEntity[]> {
-        const position = `${centerPosition.x},${centerPosition.y}`;
+        const position = positionParam(centerPosition);
         const response = await fetch(
             `${baseUrl}/api/findEntities?position=${position}&radius=${radius}&entity_type=${entityType}`
         );
@@ -153,7 +181,7 @@ export class FactorioApi {
         name: string,
         count: number
     ): Promise<FactorioPlayer> {
-        const position = `${_position.x},${_position.y}`;
+        const position = positionParam(_position);
         const response = await fetch(
             `${baseUrl}/api/${playerId}/mine?name=${name}&position=${position}&count=${count}`
         );
@@ -165,7 +193,7 @@ export class FactorioApi {
         _position: Position,
         radius: number
     ): Promise<FactorioPlayer> {
-        const position = `${_position.x},${_position.y}`;
+        const position = positionParam(_position);
         const response = await fetch(
             `${baseUrl}/api/${playerId}/move?goal=${position}&radius=${radius}`
         );

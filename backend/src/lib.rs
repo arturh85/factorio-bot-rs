@@ -12,6 +12,9 @@ extern crate serde_derive;
 extern crate evmap_derive;
 #[macro_use]
 extern crate paris;
+#[macro_use]
+extern crate enum_primitive_derive;
+extern crate num_traits;
 
 pub mod factorio;
 pub mod types;
@@ -49,6 +52,7 @@ pub async fn build_rocket(
     };
 
     // dotenv().ok();
+    info!("🚀 Webserver launched at http://localhost:7123/");
     rocket::ignite()
         // .mount(
         //     "/workspace",

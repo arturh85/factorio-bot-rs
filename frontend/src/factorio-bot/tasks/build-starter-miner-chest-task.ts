@@ -3,7 +3,15 @@ import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {entityRect, sortBotsByInventory} from "@/factorio-bot/util";
-import {Entities, FactorioEntity, Position, Rect, StarterMinerChest, StarterMinerFurnace} from "@/factorio-bot/types";
+import {
+    Entities,
+    FactorioEntity,
+    InventoryType,
+    Position,
+    Rect,
+    StarterMinerChest,
+    StarterMinerFurnace
+} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 
 const TASK_TYPE = 'build-starter-miner-chest'
@@ -26,13 +34,13 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     const botMiners = bot.mainInventory(minerName)
     const subtasks: Task[] = []
     if (botMiners < data.minerChestCount) {
-        const subtask = await createCraftTask(store, minerName, data.minerChestCount)
+        const subtask = await createCraftTask(store, minerName, data.minerChestCount, false)
         store.commit('addSubTask', {id: task.id, task: subtask})
         subtasks.push(subtask)
     }
     const botChests = bot.mainInventory(chestName)
     if (botChests < data.minerChestCount) {
-        const subtask = await createCraftTask(store, chestName, data.minerChestCount)
+        const subtask = await createCraftTask(store, chestName, data.minerChestCount, false)
         store.commit('addSubTask', {id: task.id, task: subtask})
         subtasks.push(subtask)
     }
@@ -63,6 +71,9 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         const chestPosition = {x: minerPosition.x, y: minerPosition.y + 1};
         try {
             const minerEntity = await bot.placeEntity(minerName, minerPosition, 4) // place down/south
+            if (bot.mainInventory(Entities.coal) > 2) {
+                await bot.insertToInventory(minerName, minerEntity.position, InventoryType.chest_or_fuel, Entities.coal, 2)
+            }
             const chestEntity = await bot.placeEntity(chestName, chestPosition, 0) // place up/north but doesnt matter here
             const minerChest: StarterMinerChest = {
                 minerPosition: minerEntity.position,

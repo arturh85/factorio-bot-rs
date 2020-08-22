@@ -3,7 +3,7 @@ import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {createBuildStarterBase} from "@/factorio-bot/tasks/build-starter-base-task";
-import {Entities, InventoryType} from "@/factorio-bot/types";
+import {Entities, InventoryType, RequestEntity} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {sleep} from "@/factorio-bot/util";
@@ -37,7 +37,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         await executeTask(store, bots, subtask)
     }
     if (!store.state.world.starterLabs) {
-        await addAndExecuteSubtask(await createBuildStarterBase(store, 5, 3, 2, 2, 2))
+        await addAndExecuteSubtask(await createBuildStarterBase(store, 4, 2, 2, 4, 2))
     }
     if (!store.state.world.starterLabs || store.state.world.starterLabs.length === 0) {
         throw new Error("should have one lab?")
@@ -47,37 +47,56 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
     for (const ingredient of tech.researchUnitIngredients) {
         if (bot.mainInventory(ingredient.name) < tech.researchUnitCount) {
-            const subtask = await createCraftTask(store, ingredient.name, tech.researchUnitCount - bot.mainInventory(ingredient.name))
+            const subtask = await createCraftTask(store, ingredient.name, tech.researchUnitCount - bot.mainInventory(ingredient.name), true)
             store.commit('addSubTask', {id: task.id, task: subtask})
             store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
             await executeTask(store, bots, subtask)
             store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
         }
     }
+    const boilers = store.state.world.starterSteamEngineBlueprints[0].filter(entity => entity.name === Entities.boiler)
+    if (boilers.length === 0) {
+        throw new Error("could not find boiler?")
+    }
+    const boilerInventories = await FactorioApi.inventoryContentsAt(boilers.flatMap(entity => {
+        const requestEntities: RequestEntity[] = [];
+        requestEntities.push({
+            position: entity.position,
+            name: entity.name
+        })
+        return requestEntities
+    }))
+    for(const boiler of boilerInventories) {
+        const fuel = (boiler.fuelInventory || {})[Entities.coal] || 0
+        if (fuel < 5) {
+            await bot.insertToInventory(
+                Entities.boiler,
+                boiler.position,
+                InventoryType.chest_or_fuel,
+                Entities.coal,
+                5 - fuel
+            );
+        }
+    }
     await FactorioApi.addResearch(data.name)
     for (const ingredient of tech.researchUnitIngredients) {
-        for (const lab of store.state.world.starterLabs) {
+        for (let i=0; i<tech.researchUnitCount * ingredient.amount; i++) {
+            const labIndex = i % store.state.world.starterLabs.length
+            const lab = store.state.world.starterLabs[labIndex]
+
+            const subtask = await createCraftTask(store, ingredient.name, 1, false)
+            store.commit('addSubTask', {id: task.id, task: subtask})
+            store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
+            await executeTask(store, bots, subtask)
+            store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
             await bot.insertToInventory(
                 Entities.lab,
                 lab,
                 InventoryType.furnace_source,
                 ingredient.name,
-                Math.ceil(tech.researchUnitCount /  store.state.world.starterLabs.length)
+                1
             );
         }
-    }
-    const boilers = store.state.world.starterSteamEngineBlueprints[0].filter(entity => entity.name === Entities.boiler)
-    if (boilers.length === 0) {
-        throw new Error("could not find boiler?")
-    }
-    for(const boiler of boilers) {
-        await bot.insertToInventory(
-            Entities.boiler,
-            boiler.position,
-            InventoryType.chest_or_fuel,
-            Entities.coal,
-            Math.min(10, bot.mainInventory('coal'))
-        );
     }
     for(let _retry = 0; _retry < tech.researchUnitCount * 3; _retry++) {
         store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));

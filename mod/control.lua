@@ -1083,9 +1083,10 @@ end
 function on_player_changed_position(event)
 	local tick = event.tick
 	local player_idx = event.player_index
+	local position = game.players[player_idx].position
 	writeout(event.tick, "on_player_changed_position", game.table_to_json({
 		playerId = player_idx,
-		position = game.players[player_idx].position
+		position = position
 	}))
 end
 
@@ -1182,8 +1183,17 @@ function rcon_place_entity(player_id, item_name, entity_position, direction)
 		return
 	end
 
+	print("player position " .. game.table_to_json(player.position))
+	print("entproto.collision_box " .. game.table_to_json(entproto.collision_box))
+	print("entity_position " .. game.table_to_json(entity_position))
+
 	if not surface.can_place_entity{name=entproto.name, position=entity_position, direction=direction, force=player.force, build_check_type=defines.build_check_type.manual} then
-		complain("cannot place item '"..item_name.."' because surface.can_place_entity said 'no'")
+		local bb = add_to_bounding_box(entproto.collision_box, {x = entity_position[1], y = entity_position[2]})
+		if position_in_rect(player.position, bb) then
+			rcon.print("§player_blocks_placement§")
+		else
+			rcon.print("cannot place item '"..item_name.."' because surface.can_place_entity said 'no'")
+		end
 		return
 	end
 
@@ -1197,6 +1207,21 @@ function rcon_place_entity(player_id, item_name, entity_position, direction)
 		rcon.print(game.table_to_json(serialize_entity(result)))
 	end
 end
+
+function add_to_bounding_box(bb, center_position)
+	return {
+		left_top = { x = bb.left_top.x + center_position.x, y = bb.left_top.y + center_position.y},
+		right_bottom = { x = bb.right_bottom.x + center_position.x, y = bb.right_bottom.y + center_position.y},
+	}
+end
+
+function position_in_rect(check_position, bb)
+	return check_position.x >= bb.left_top.x and
+		check_position.x <= bb.right_bottom.x and
+		check_position.y >= bb.left_top.y and
+		check_position.y <= bb.right_bottom.y
+end
+
 
 function rcon_insert_to_inventory(player_id, entity_name, entity_pos, inventory_type, items)
 	local player = game.players[player_id]

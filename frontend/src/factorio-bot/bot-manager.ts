@@ -117,6 +117,11 @@ export class FactorioBotManager {
         await this.processTasks();
     }
 
+    async testPlaceOffshorePump(): Promise<void> {
+        this.bots[0].cheatItem(Entities.offshorePump, 1)
+        this.bots[0].placeOffshorePump()
+    }
+
     async testBuildCoalLoop(n: number): Promise<void> {
         const task = await createBuildStarterMinerCoalTask(this.$store, n)
         this.$store.commit('pushTask', task)
@@ -124,7 +129,7 @@ export class FactorioBotManager {
     }
 
     async testCraftTask(name: string, count: number): Promise<void> {
-        const task = await createCraftTask(this.$store, name, count)
+        const task = await createCraftTask(this.$store, name, count, false)
         this.$store.commit('pushTask', task)
         await this.processTasks();
     }

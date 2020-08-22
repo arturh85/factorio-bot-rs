@@ -2,13 +2,15 @@ import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
-import {Entities} from "@/factorio-bot/types";
+import {Direction, Entities} from "@/factorio-bot/types";
 import {createBuildStarterMinerFurnaceTask} from "@/factorio-bot/tasks/build-starter-miner-furnace-task";
 import {createBuildStarterMinerCoalTask} from "@/factorio-bot/tasks/build-starter-miner-coal-task";
 import {createBuildStarterMinerChestTask} from "@/factorio-bot/tasks/build-starter-miner-chest-task";
 import {createBuildStarterOffshorePumpTask} from "@/factorio-bot/tasks/build-starter-offshore-pump-task";
 import {createBuildStarterSteamEngineTask} from "@/factorio-bot/tasks/build-starter-steam-engine-task";
 import {createBuildStarterLabTask} from "@/factorio-bot/tasks/build-starter-lab-task";
+import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
+import {movePositionInDirection} from "@/factorio-bot/util";
 
 const TASK_TYPE = 'build-starter-base'
 
@@ -57,7 +59,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
     // 5.: rest of coal loops
     const remainingCoal = data.starterTargetCoal - (store.state.world.starterCoalLoops || []).length
-    for (let i = 0; i < remainingCoal; i++) {
+    for (let i = 0; i < remainingCoal/2; i++) {
         await addAndExecuteSubtask(await createBuildStarterMinerCoalTask(store, 2))
     }
     // 6.: rest of copper miner/furnaces
@@ -73,6 +75,13 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
     // 8.: place offshore pump
     if (!store.state.world.starterOffshorePump) {
+        await addAndExecuteSubtask(await createCraftTask(store, Entities.smallElectricPole, 2, false))
+        await addAndExecuteSubtask(await createCraftTask(store, Entities.offshorePump, 1, false))
+        await addAndExecuteSubtask(await createCraftTask(store, Entities.pipe, 2, false))
+        await addAndExecuteSubtask(await createCraftTask(store, Entities.steamEngine, 2, false))
+        await addAndExecuteSubtask(await createCraftTask(store, Entities.boiler, 1, false))
+        await addAndExecuteSubtask(await createCraftTask(store, Entities.lab, 2, false))
+        await addAndExecuteSubtask(await createCraftTask(store, Entities.automationSciencePack, 10, true))
         await addAndExecuteSubtask(await createBuildStarterOffshorePumpTask(store))
     }
 

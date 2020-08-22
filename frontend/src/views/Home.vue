@@ -1,20 +1,13 @@
 <template>
   <v-container>
     <v-row>
-      <v-col>
-        <Control />
-      </v-col>
-    </v-row>
-    <v-row>
-      <v-col>
+      <v-col md="8" style="overflow: hidden">
         <Tasks :tasks="$store.state.tasks" @activeChanged="activeChanged" />
       </v-col>
-<!--      <v-col>-->
-<!--        <SelectedTask :task="$store.state.selectedTask" />-->
-<!--      </v-col>-->
-      <v-col>
+      <v-col md="4" style="overflow: hidden">
+        <Control />
+        <SelectedTask :task="$store.state.selectedTask" />
         <v-card>
-          <v-card-title>Bots: </v-card-title>
           <Player v-for="playerId in Object.keys(players)" v-bind:key="playerId"
                   :player="$store.getters.getPlayer(playerId)"/>
         </v-card>
@@ -31,13 +24,13 @@ import Tasks from "@/components/Tasks.vue";
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {FactorioBotManager} from "@/factorio-bot/bot-manager";
 import {Task} from "@/factorio-bot/task";
-// import SelectedTask from "@/components/SelectedTask.vue";
+import SelectedTask from "@/components/SelectedTask.vue";
 import Control from "@/components/Control.vue";
 
 export default Vue.extend({
   name: "Home",
   components: {
-    // SelectedTask,
+    SelectedTask,
     Player,
     Control,
     Tasks

@@ -34,7 +34,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
     const bot = bots[0]
     if (bot.mainInventory(Entities.lab) < data.labCount) {
-        const subtask = await createCraftTask(store, Entities.lab, data.labCount - bot.mainInventory(Entities.lab))
+        const subtask = await createCraftTask(store, Entities.lab, data.labCount - bot.mainInventory(Entities.lab), false)
         store.commit('addSubTask', {id: task.id, task: subtask})
         store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
         await executeTask(store, bots, subtask)

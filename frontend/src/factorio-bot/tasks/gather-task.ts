@@ -2,12 +2,9 @@ import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
-import {Entities, InventoryType, RequestEntity} from "@/factorio-bot/types";
-import {FactorioApi} from "@/factorio-bot/restApi";
-import {sleep, sortBotsByInventory} from "@/factorio-bot/util";
-import {createLoopStarterMinerFurnaceTask} from "@/factorio-bot/tasks/loop-starter-miner-furnace-task";
-import {createLoopStarterMinerChestTask} from "@/factorio-bot/tasks/loop-starter-miner-chest-task";
-import {createLoopStarterMinerCoalTask} from "@/factorio-bot/tasks/loop-starter-miner-coal-task";
+import {Entities, EntityTypes} from "@/factorio-bot/types";
+import {sortBotsByInventory} from "@/factorio-bot/util";
+import {createLoopStarterMinersTask} from "@/factorio-bot/tasks/loop-starter-miners-task";
 
 const TASK_TYPE = 'gather'
 
@@ -33,7 +30,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     switch (data.name) {
         case Entities.coal: {
             if ((world.starterCoalLoops || []).length > 0) {
-                const subtask = await createLoopStarterMinerCoalTask(store, data.count)
+                const subtask = await createLoopStarterMinersTask(store, Entities.coal, data.name, data.count)
                 store.commit('addSubTask', {id: task.id, task: subtask})
                 store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
                 try {
@@ -45,7 +42,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
                 }
             } else {
                 try {
-                    await bot.tryMineNearest(Entities.rockHuge, 1)
+                    await bot.mineNearest(Entities.rockHuge, 1)
                 } catch (err) {
                     await bot.mineNearest(data.name, data.count)
                 }
@@ -54,7 +51,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         }
         case Entities.stone: {
             if ((world.starterMinerChests || []).length > 0) {
-                const subtask = await createLoopStarterMinerChestTask(store, Entities.coal, data.name, data.count)
+                const subtask = await createLoopStarterMinersTask(store, Entities.coal, data.name, data.count)
                 store.commit('addSubTask', {id: task.id, task: subtask})
                 store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
                 try {
@@ -66,7 +63,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
                 }
             } else {
                 try {
-                    await bot.tryMineNearest(Entities.rockHuge, 1)
+                    await bot.mineNearestFrom([Entities.rockHuge, Entities.rockBig], 1)
                 } catch (err) {
                     await bot.mineNearest(data.name, data.count)
                 }
@@ -74,13 +71,13 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
             break
         }
         case Entities.wood: {
-            await bot.tryMineNearest(Entities.deadGreyTrunk, 1)
+            await bot.mineNearestType(EntityTypes.tree, 1)
             break
         }
         case Entities.copperPlate:
         case Entities.ironPlate: {
             if ((world.starterMinerFurnaces || []).filter(minerFurnace => minerFurnace.plateName === data.name).length > 0) {
-                const subtask = await createLoopStarterMinerFurnaceTask(store, Entities.coal, data.name, data.count)
+                const subtask = await createLoopStarterMinersTask(store, Entities.coal, data.name, data.count)
                 store.commit('addSubTask', {id: task.id, task: subtask})
                 store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
                 try {

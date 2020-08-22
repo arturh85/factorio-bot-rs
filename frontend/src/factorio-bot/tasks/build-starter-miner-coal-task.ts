@@ -26,7 +26,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     const botMiners = bot.mainInventory(minerName)
     const subtasks: Task[] = []
     if (botMiners < data.loopCount) {
-        const subtask = await createCraftTask(store, minerName, data.loopCount)
+        const subtask = await createCraftTask(store, minerName, data.loopCount, false)
         store.commit('addSubTask', {id: task.id, task: subtask})
         subtasks.push(subtask)
     }

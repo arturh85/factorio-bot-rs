@@ -1,10 +1,12 @@
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::util::{
-    calculate_distance, hashmap_to_lua, position_to_lua, rect_to_lua, str_to_lua, value_to_lua,
-    vec_to_lua,
+    calculate_distance, hashmap_to_lua, move_position, position_to_lua, rect_to_lua, str_to_lua,
+    value_to_lua, vec_to_lua,
 };
+use crate::num_traits::FromPrimitive;
 use crate::types::{
-    FactorioEntity, FactorioForce, FactorioTile, InventoryResponse, Position, Rect, RequestEntity,
+    Direction, FactorioEntity, FactorioForce, FactorioTile, InventoryResponse, Position, Rect,
+    RequestEntity,
 };
 use config::Config;
 use rcon::Connection;
@@ -13,6 +15,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::ops::Add;
 use std::sync::Arc;
+use unicode_segmentation::UnicodeSegmentation;
 
 const RCON_INTERFACE: &str = "botbridge";
 
@@ -187,7 +190,7 @@ impl FactorioRcon {
         world: &State<'_, Arc<FactorioWorld>>,
     ) -> anyhow::Result<Vec<FactorioEntity>> {
         let player = world.players.get_one(&player_id).unwrap();
-        const MAX_DISTANCE: f64 = 15.0;
+        const MAX_DISTANCE: f64 = 10.0;
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > MAX_DISTANCE {
@@ -407,20 +410,20 @@ impl FactorioRcon {
         world: &State<'_, Arc<FactorioWorld>>,
     ) -> anyhow::Result<FactorioEntity> {
         let player = world.players.get_one(&player_id).unwrap();
-        const MAX_DISTANCE: f64 = 10.0;
-        let distance = calculate_distance(&player.position, &entity_position);
+        let player_position = player.position.clone();
         drop(player); // wow, without this factorio (?) freezes (!)
+        const MAX_DISTANCE: f64 = 10.0;
+        let distance = calculate_distance(&player_position, &entity_position);
         if distance > MAX_DISTANCE {
             warn!("distance to big, moving first!");
             self.move_player(world, player_id, &entity_position, Some(MAX_DISTANCE))
                 .await?;
         }
-        let player_id = player_id.to_string();
         let lines = self
             .remote_call(
                 "place_entity",
                 vec![
-                    &player_id,
+                    &player_id.to_string(),
                     &str_to_lua(&item_name),
                     &position_to_lua(&entity_position),
                     &direction.to_string(),
@@ -432,8 +435,55 @@ impl FactorioRcon {
                 return Err(anyhow!("unexpected output {:?}", lines));
             }
             let line = &lines[0];
-            if &line[0..1] == "{" {
-                Ok(serde_json::from_str(&line).unwrap())
+            let chars = UnicodeSegmentation::graphemes(line.as_str(), true).collect::<Vec<&str>>();
+            if chars[0] == "{" {
+                return Ok(serde_json::from_str(&line).unwrap());
+            } else if &line[..] == "§player_blocks_placement§" {
+                for test_direction in 0..8u8 {
+                    let test_position = move_position(
+                        &player_position,
+                        Direction::from_u8(test_direction).unwrap(),
+                        5.0,
+                    );
+                    if self
+                        .is_empty(None, Some(test_position.clone()), Some(2.0))
+                        .await?
+                    {
+                        self.move_player(world, player_id, &test_position, Some(1.0))
+                            .await?;
+                        let lines = self
+                            .remote_call(
+                                "place_entity",
+                                vec![
+                                    &player_id.to_string(),
+                                    &str_to_lua(&item_name),
+                                    &position_to_lua(&entity_position),
+                                    &direction.to_string(),
+                                ],
+                            )
+                            .await?;
+                        return if let Some(lines) = lines {
+                            if lines.len() != 1 {
+                                return Err(anyhow!("unexpected output {:?}", lines));
+                            }
+                            let line = &lines[0];
+                            let chars = UnicodeSegmentation::graphemes(line.as_str(), true)
+                                .collect::<Vec<&str>>();
+                            if chars[0] == "{" {
+                                Ok(serde_json::from_str(&line).unwrap())
+                            } else if &line[..] == "§player_blocks_placement§" {
+                                Err(anyhow!("player still blocks placement"))
+                            } else {
+                                Err(anyhow!("{}", line))
+                            }
+                        } else {
+                            Err(anyhow!("unexpected empty output"))
+                        };
+                    }
+                }
+                Err(anyhow!(
+                    "ERROR: player blocks placement in all directions! "
+                ))
             } else {
                 Err(anyhow!("{}", line))
             }
@@ -525,6 +575,29 @@ impl FactorioRcon {
             return Err(anyhow!("{:?}", lines.unwrap()));
         }
         Ok(())
+    }
+
+    pub async fn is_empty(
+        &self,
+        area: Option<Rect>,
+        position: Option<Position>,
+        radius: Option<f64>,
+    ) -> anyhow::Result<bool> {
+        let entities = self
+            .find_entities_filtered(area.clone(), position.clone(), radius, None, None)
+            .await?;
+        if entities.len() > 0 {
+            return Ok(false);
+        }
+        let tiles = self
+            .find_tiles_filtered(area, position, radius, None)
+            .await?;
+        for tile in tiles {
+            if tile.player_collidable {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     // https://lua-api.factorio.com/latest/LuaSurface.html#LuaSurface.find_entities_filtered
@@ -652,7 +725,10 @@ impl FactorioRcon {
             return Err(anyhow!("Expected result from request_path"));
         }
         let result = result.unwrap().pop().unwrap();
-        Ok(result.parse()?)
+        match result.parse() {
+            Ok(result) => Ok(result),
+            Err(_) => Err(anyhow!("{}", result)),
+        }
     }
 
     // https://lua-api.factorio.com/latest/LuaSurface.html#LuaSurface.request_path

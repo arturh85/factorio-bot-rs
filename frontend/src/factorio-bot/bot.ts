@@ -1,12 +1,11 @@
-import type {FactorioEntity, FactorioPlayer, StarterMinerFurnace, Position, World, Rect,} from "@/factorio-bot/types"
+import type {FactorioEntity, FactorioPlayer, Position, Rect, World,} from "@/factorio-bot/types"
 import {Direction, Entities, InventoryType} from "@/factorio-bot/types"
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {
-    distance, findFreeRect,
-    missingIngredients,
+    distance,
+    findFreeRect, groupByPosition,
     movePositionInDirection,
-    placeEntitiesForCoalMinerLoop, posInRect,
-    sleep,
+    positionEqual, positionStr,
     sortEntitiesByDistanceTo,
 } from "@/factorio-bot/util"
 import {Store} from "vuex"
@@ -46,7 +45,7 @@ export class FactorioBot {
 
     async placeOffshorePump(): Promise<FactorioEntity> {
         for (let radius = 300; radius < 1000; radius += 200) {
-            const tiles = await FactorioApi.findTiles(
+            let tiles = await FactorioApi.findTiles(
                 this.player().position,
                 radius,
                 Entities.water
@@ -54,12 +53,41 @@ export class FactorioBot {
             if (tiles.length === 0) {
                 continue;
             }
+            const groupedByPosition = groupByPosition(tiles)
+            tiles = tiles.filter(tile => {
+                // tile MUST NOT have water directly above
+                const above = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.north))]
+                if (above) {
+                    return false
+                }
+                // tile MUST have water directly left and right
+                const left = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.east))]
+                const right = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.west))]
+                return left && right;
+            })
+            if (tiles.length === 0) {
+                continue
+            }
             tiles.sort(sortEntitiesByDistanceTo(this.player().position));
             for (const tile of tiles) {
                 const position = movePositionInDirection(
                     tile.position,
                     Direction.north
                 );
+                const conflictArea: Rect = {
+                    leftTop: {x: position.x , y: position.y - 10},
+                    rightBottom: {x: position.x + 18 , y: position.y},
+                }
+                const conflictEntities = await FactorioApi.findEntitiesInArea(conflictArea);
+                if (conflictEntities.length > 0) {
+                    // console.log('found conflicts for', tile.position, conflictArea, conflictEntities);
+                    continue;
+                }
+                const conflictTiles = await FactorioApi.findTilesInArea(conflictArea);
+                if (conflictTiles.filter(tile => tile.playerCollidable).length > 0) {
+                    // console.log('found conflicts for', tile.position, conflictArea, conflictTiles);
+                    continue;
+                }
                 try {
                     return await this.placeEntity(
                         Entities.offshorePump,
@@ -78,18 +106,18 @@ export class FactorioBot {
         return this.player().mainInventory[itemName] || 0;
     }
 
-    async findNearest(name: string, count: number): Promise<Position> {
+    async _findNearest(count: number, name: string|null, entityName: string|null): Promise<FactorioEntity> {
         const searchRadius = 500;
         let target = null;
         for (let radius = 100; radius <= searchRadius; radius += 100) {
             let entities = (
-                await FactorioApi.findEntities(this.player().position, radius, name)
+                await FactorioApi.findEntities(this.player().position, radius, name, entityName)
             ).filter((entity) => entity.amount === null || entity.amount >= count);
             if (entities.length > 0) {
                 entities = entities.sort(
                     sortEntitiesByDistanceTo(this.player().position)
                 );
-                target = entities[0].position;
+                target = entities[0];
                 break;
             }
         }
@@ -99,6 +127,18 @@ export class FactorioBot {
         return target;
     }
 
+    async findNearestType(name: string, count: number): Promise<FactorioEntity|null> {
+       return await this._findNearest(count, null, name)
+    }
+    async findNearest(name: string, count: number): Promise<Position|null> {
+        const entity = await this._findNearest(count, name, null)
+        if (entity) {
+            return entity.position
+        } else {
+            return null
+        }
+    }
+
     async findNearestRect(
         name: string,
         width: number,
@@ -106,6 +146,9 @@ export class FactorioBot {
         excludePositions: Position[] = []
     ): Promise<Position | null> {
         const nearestPosition = await this.findNearest(name, 200)
+        if (!nearestPosition) {
+            return null
+        }
         const entities = await FactorioApi.findEntities(
             nearestPosition,
             40
@@ -126,9 +169,51 @@ export class FactorioBot {
         }
     }
 
+    async tryMineNearestFrom(names: string[], count: number): Promise<void> {
+        try {
+            await this.mineNearestFrom(names, count);
+        } catch (err) {
+        }
+    }
+
+    async mineNearestFrom(names: string[], count: number): Promise<void> {
+        const targets = await Promise.all(names.map(name => this.findNearest(name, count)))
+        if (!targets) {
+            throw new Error(`not found: ${names.join(', ')}`)
+        }
+        let nearestTarget = null;
+        let nearestName = null;
+        let nearestDistance = 9999;
+        const playerPosition = this.player().position
+        for(let i=0; i<targets.length; i++) {
+            const d = distance(targets[i] as Position, playerPosition);
+            if (d < nearestDistance) {
+                nearestDistance = d
+                nearestTarget = targets[i]
+                nearestName = names[i]
+            }
+        }
+        if (!nearestTarget || !nearestName) {
+            throw new Error(`not found: ${names.join(', ')}`)
+        }
+        return await this.mine(nearestTarget, nearestName, count)
+    }
+
+    async mineNearestType(name: string, count: number): Promise<void> {
+        const target = await this.findNearestType(name, count);
+        if (target) {
+            return await this.mine(target.position, target.name, count)
+        } else {
+            throw new Error(`not found: ${name}`)
+        }
+    }
     async mineNearest(name: string, count: number): Promise<void> {
         const target = await this.findNearest(name, count);
-        return await this.mine(target, name, count)
+        if (target) {
+            return await this.mine(target, name, count)
+        } else {
+            throw new Error(`not found: ${name}`)
+        }
     }
 
     async mine(target: Position, name: string, count: number): Promise<void> {
@@ -192,6 +277,18 @@ export class FactorioBot {
             throw new Error('invalid response')
         }
         return result.entity;
+    }
+
+    async transferItemsTo(
+        targetPlayerId: number,
+        itemName: string,
+        itemCount: number
+    ): Promise<void> {
+        const targetPlayer: FactorioPlayer = this.$store.getters.getPlayer(targetPlayerId)
+        const characterEntity = await FactorioApi.findEntities(targetPlayer.position, 1, 'character')
+        if (characterEntity.length > 0) {
+            return await this.insertToInventory('character', characterEntity[0].position, InventoryType.chest_or_fuel, itemName, itemCount)
+        }
     }
 
     async insertToInventory(

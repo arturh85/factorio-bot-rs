@@ -19,6 +19,7 @@ export enum Direction {
 }
 export enum Entities {
  rockHuge = "rock-huge",
+ rockBig = "rock-big",
  water = "water",
  coal = "coal",
  stone = "stone",
@@ -39,8 +40,10 @@ export enum Entities {
  transportBelt = "transport-belt",
  lab = "lab",
  automationSciencePack = "automation-science-pack",
- deadGreyTrunk = "dead-grey-trunk",
  wood = "wood",
+}
+export enum EntityTypes {
+ tree = 'tree',
 }
 export enum Technologies {
  automation = "automation",

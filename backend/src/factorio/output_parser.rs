@@ -60,12 +60,12 @@ impl OutputParser {
                 if objects == "{}" {
                     objects = "[]"
                 }
-                if chunk_position.x.abs() < 2 && chunk_position.y.abs() < 2 {
-                    info!(
-                        "objects for {} / {}: {}",
-                        chunk_position.x, chunk_position.y, objects
-                    );
-                }
+                // if chunk_position.x.abs() < 2 && chunk_position.y.abs() < 2 {
+                //     info!(
+                //         "objects for {} / {}: {}",
+                //         chunk_position.x, chunk_position.y, objects
+                //     );
+                // }
                 let objects: Vec<ChunkObject> = serde_json::from_str(objects).unwrap();
                 if self.chunks_writer.contains_key(&chunk_position) {
                     let existing_chunk = self.chunks_writer.get_one(&chunk_position).unwrap(); // unwrap OK because of contains_key

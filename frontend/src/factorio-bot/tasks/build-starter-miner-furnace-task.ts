@@ -2,8 +2,8 @@ import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
-import {entityRect, sortBotsByInventory} from "@/factorio-bot/util";
-import {Entities, Position, Rect, StarterMinerFurnace} from "@/factorio-bot/types";
+import {sortBotsByInventory} from "@/factorio-bot/util";
+import {Entities, InventoryType, StarterMinerFurnace} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 
 const TASK_TYPE = 'build-starter-miner-furnace'
@@ -24,14 +24,21 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     // sort by already has correct item
     bots.sort(sortBotsByInventory([minerName, furnaceName]))
     const bot = bots[0]
+
+    if (!store.state.world.starterMinerFurnaces) {
+        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WALKING));
+        await bots[0].tryMineNearest(Entities.rockHuge, 1)
+        store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
+    }
+
     const subtasks: Task[] = []
     if (bot.mainInventory(minerName) < data.minerSmelterCount) {
-        const subtask = await createCraftTask(store, minerName, data.minerSmelterCount)
+        const subtask = await createCraftTask(store, minerName, data.minerSmelterCount, false)
         store.commit('addSubTask', {id: task.id, task: subtask})
         subtasks.push(subtask)
     }
     if (bot.mainInventory(furnaceName) < data.minerSmelterCount) {
-        const subtask = await createCraftTask(store, furnaceName, data.minerSmelterCount)
+        const subtask = await createCraftTask(store, furnaceName, data.minerSmelterCount, false)
         store.commit('addSubTask', {id: task.id, task: subtask})
         subtasks.push(subtask)
     }
@@ -61,7 +68,13 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         const minerPosition = {x: anchor.x + x * 2, y: anchor.y};
         const furnacePosition = {x: minerPosition.x, y: minerPosition.y + 2};
         const minerEntity = await bot.placeEntity(minerName, minerPosition, 4); // place down/south
+        if (bot.mainInventory(Entities.coal) > 2) {
+            await bot.insertToInventory(minerName, minerEntity.position, InventoryType.chest_or_fuel, Entities.coal, 2)
+        }
         const furnaceEntity = await bot.placeEntity(furnaceName, furnacePosition, 0); // place up/north but doesnt matter here
+        if (bot.mainInventory(Entities.coal) > 2) {
+            await bot.insertToInventory(furnaceName, furnaceEntity.position, InventoryType.chest_or_fuel, Entities.coal, 2)
+        }
         const minerFurnace: StarterMinerFurnace = {
             minerPosition: minerEntity.position,
             furnacePosition: furnaceEntity.position,

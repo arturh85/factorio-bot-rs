@@ -6,7 +6,7 @@
       <v-btn v-on:click="bots.researchAutomation()">Research automation</v-btn>
 <!--      <v-btn v-on:click="bots.researchRocketsilo()">Research rocket-silo</v-btn>-->
       <v-btn v-on:click="bots.updatePlayers()">Update Bots</v-btn>
-      <v-btn v-on:click="bots.saveWorldAndServer()">Save World & Level</v-btn>
+      <v-btn v-on:click="bots.saveWorldAndServer()">Save</v-btn>
 <!--      <br/>-->
 <!--      <br/>-->
 <!--      <v-btn v-on:click="bots.testCheatStuff()">testCheatStuff</v-btn>-->

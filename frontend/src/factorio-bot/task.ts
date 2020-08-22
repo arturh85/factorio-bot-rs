@@ -8,6 +8,7 @@ export enum TaskStatus {
     STARTED = 'STARTED',
     WAITING = 'WAITING',
     SLEEPING = 'SLEEPING',
+    WALKING = 'WALKING',
     FINISHED = 'FINISHED',
     FAILED = 'FAILED',
 }
@@ -31,6 +32,7 @@ const taskIconByStatus: {[status: string]: string} = {
     [TaskStatus.STARTED]: '⚡️',
     [TaskStatus.WAITING]: '⌛',
     [TaskStatus.SLEEPING]: '💤',
+    [TaskStatus.WALKING]: '🚶',
     [TaskStatus.FINISHED]: '✅',
     [TaskStatus.FAILED]: '💥',
 }

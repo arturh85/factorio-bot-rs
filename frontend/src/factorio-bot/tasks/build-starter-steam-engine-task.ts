@@ -40,7 +40,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     const subtasks: Task[] = []
     for(const name of Object.keys(entities)) {
         if (bot.mainInventory(name) < entities[name]) {
-            const subtask = await createCraftTask(store, name, entities[name])
+            const subtask = await createCraftTask(store, name, entities[name], false)
             store.commit('addSubTask', {id: task.id, task: subtask})
             subtasks.push(subtask)
         }
@@ -66,6 +66,12 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
             Direction.north
         );
         blueprintEntities = blueprintEntities.concat(blueprint);
+        const boilers = blueprint.filter(entity => entity.name === Entities.boiler);
+        for(const boiler of boilers) {
+            if (bot.mainInventory(Entities.coal) > 2) {
+                await bot.insertToInventory(Entities.boiler, boiler.position, InventoryType.chest_or_fuel, Entities.coal, 2)
+            }
+        }
         store.commit('addStarterSteamEngineEntities', blueprintEntities)
     }
     return blueprintEntities

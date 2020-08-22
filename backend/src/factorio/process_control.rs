@@ -18,12 +18,13 @@ pub async fn start_factorio(
     settings: &Config,
     server_host: Option<&str>,
     client_count: u8,
+    recreate: bool,
     seed: Option<&str>,
     write_logs: bool,
 ) -> anyhow::Result<(Option<Arc<FactorioWorld>>, FactorioRcon)> {
     let mut world: Option<Arc<FactorioWorld>> = None;
     if server_host.is_none() {
-        setup_factorio_instance(&settings, "server", seed).await?;
+        setup_factorio_instance(&settings, "server", recreate, seed).await?;
         let started = Instant::now();
         world = Some(start_factorio_server(&settings, write_logs).await?);
         let rcon = FactorioRcon::new(&settings, server_host).await?;
@@ -39,7 +40,7 @@ pub async fn start_factorio(
     let rcon = FactorioRcon::new(&settings, server_host).await.unwrap();
     for instance_number in 0..client_count {
         let instance_name = format!("client{}", instance_number + 1);
-        if let Err(err) = setup_factorio_instance(&settings, &instance_name, None).await {
+        if let Err(err) = setup_factorio_instance(&settings, &instance_name, false, None).await {
             error!("Failed to setup Factorio <red>{}</>: ", err);
             break;
         }
@@ -232,7 +233,7 @@ pub async fn start_factorio_client(
     let handle = thread::spawn(move || {
         let exit_code = child.wait().expect("failed to wait for client");
         if let Some(code) = exit_code.code() {
-            info!(
+            error!(
                 "<red>{} stopped</> with exit code <yellow>{}</>",
                 &instance_name, code
             );

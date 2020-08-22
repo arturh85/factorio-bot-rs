@@ -17,14 +17,14 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     bots.sort(sortBotsByInventory([Entities.offshorePump]))
     const bot = bots[0]
     if (bot.mainInventory(Entities.offshorePump) < 1) {
-        const subtask = await createCraftTask(store, Entities.offshorePump, 1)
+        const subtask = await createCraftTask(store, Entities.offshorePump, 1, false)
         store.commit('addSubTask', {id: task.id, task: subtask})
         store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
         await executeTask(store, bots, subtask)
         store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
     }
     if (bot.mainInventory(Entities.pipe) < 1) {
-        const subtask = await createCraftTask(store, Entities.pipe, 1)
+        const subtask = await createCraftTask(store, Entities.pipe, 1, false)
         store.commit('addSubTask', {id: task.id, task: subtask})
         store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
         await executeTask(store, bots, subtask)

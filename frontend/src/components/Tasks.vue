@@ -1,5 +1,5 @@
 <template>
-    <v-card>
+    <v-card style="overflow-y: scroll; height: 85vh;" ref="card">
       <v-card-title>Tasks: {{tasks.length}}</v-card-title>
       <v-treeview
           :open="openedTasks(tasks)"
@@ -18,27 +18,33 @@
 import Vue from "vue";
 import Component from 'vue-class-component'
 import {Task, TaskStatus} from "@/factorio-bot/task";
+import {formatDuration} from "@/factorio-bot/util";
 
-// Define the props by using Vue's canonical way.
-const TasksProps = Vue.extend({
+
+export default Vue.extend({
+  name: "Tasks",
   props: {
     tasks: Array
-  }
-})
-
-@Component
-export default class Tasks extends TasksProps {
-  openedTasks(tasks: Task[]): Task[] {
-    const openTasks = tasks.filter(task => task.status !== TaskStatus.FINISHED)
-    let retTasks = openTasks.map(task => task)
-    for (let openTask of openTasks) {
-      retTasks = retTasks.concat(this.openedTasks(openTask.children))
+  },
+  methods: {
+    openedTasks(tasks: Task[]): Task[] {
+      const openTasks = tasks.filter(task => task.status !== TaskStatus.FINISHED)
+      let retTasks = openTasks.map(task => task)
+      for (let openTask of openTasks) {
+        retTasks = retTasks.concat(this.openedTasks(openTask.children))
+      }
+      return retTasks
+    },
+    activeChanged(activeIds: Task[]): void {
+      this.$emit('activeChanged', activeIds[0])
     }
-    return retTasks
+  },
+  watch: {
+    tasks()  {
+      const card: Element = (this.$refs.card as Vue).$el;
+      card.scrollTo(0, card.scrollHeight)
+    }
   }
+});
 
-  activeChanged(activeIds: Task[]): void {
-    this.$emit('activeChanged', activeIds[0])
-  }
-}
 </script>

@@ -1,4 +1,5 @@
-use crate::types::{Position, Rect};
+use crate::types::{Direction, Position, Rect};
+use noisy_float::types::r64;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -57,4 +58,41 @@ pub fn calculate_distance(pos1: &Position, pos2: &Position) -> f64 {
     let x = pos1.x() - pos2.x();
     let y = pos1.y() - pos2.y();
     (x * x + y * y).sqrt()
+}
+
+pub fn move_position(pos: &Position, direction: Direction, offset: f64) -> Position {
+    match direction {
+        Direction::North => Position {
+            x: Box::new(r64(pos.x())),
+            y: Box::new(r64(pos.y() - offset)),
+        },
+        Direction::NorthWest => Position {
+            x: Box::new(r64(pos.x() - offset)),
+            y: Box::new(r64(pos.y() - offset)),
+        },
+        Direction::NorthEast => Position {
+            x: Box::new(r64(pos.x() + offset)),
+            y: Box::new(r64(pos.y() - offset)),
+        },
+        Direction::South => Position {
+            x: Box::new(r64(pos.x())),
+            y: Box::new(r64(pos.y() + offset)),
+        },
+        Direction::SouthWest => Position {
+            x: Box::new(r64(pos.x() - offset)),
+            y: Box::new(r64(pos.y() + offset)),
+        },
+        Direction::SouthEast => Position {
+            x: Box::new(r64(pos.x() + offset)),
+            y: Box::new(r64(pos.y() + offset)),
+        },
+        Direction::West => Position {
+            x: Box::new(r64(pos.x() - offset)),
+            y: Box::new(r64(pos.y())),
+        },
+        Direction::East => Position {
+            x: Box::new(r64(pos.x() + offset)),
+            y: Box::new(r64(pos.y())),
+        },
+    }
 }

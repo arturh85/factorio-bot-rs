@@ -15,6 +15,7 @@ use std::time::Instant;
 pub async fn setup_factorio_instance(
     settings: &Config,
     instance_name: &str,
+    recreate: bool,
     seed: Option<&str>,
 ) -> anyhow::Result<()> {
     let is_server = instance_name == "server";
@@ -206,7 +207,7 @@ pub async fn setup_factorio_instance(
         }
 
         let saves_level_path = saves_path.join(PathBuf::from("level.zip"));
-        if saves_level_path.exists() && seed.is_some() {
+        if saves_level_path.exists() && recreate {
             std::fs::remove_file(&saves_level_path).unwrap_or_else(|_| {
                 panic!("failed to delete {}", &saves_level_path.to_str().unwrap())
             });

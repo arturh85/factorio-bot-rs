@@ -10,6 +10,7 @@ const TASK_TYPE = 'craft'
 type TaskData = {
     name: string,
     count: number,
+    onlyGatherIngredients: boolean,
 }
 
 async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: Task): Promise<void> {
@@ -19,7 +20,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
     // bots.sort(sortBotsByInventory([minerName, furnaceName]))
     const bot = bots[0]
-    for(let _retry=0; _retry<3; _retry++) {
+    for(let _retry=0; _retry<50; _retry++) {
         const missing = missingIngredients(store.state.recipes, bot.player().mainInventory, data.name, data.count, false)
         if (Object.keys(missing).length === 0) {
             break
@@ -38,15 +39,18 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
             store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
         }
     }
-    await bot.craft(data.name, data.count)
+    if (!data.onlyGatherIngredients) {
+        await bot.craft(data.name, data.count)
+    }
 }
 
 taskRunnerByType[TASK_TYPE] = executeThisTask
 
-export async function createCraftTask(store: Store<State>, name: string, count: number): Promise<Task> {
+export async function createCraftTask(store: Store<State>, name: string, count: number, onlyGatherIngredients: boolean): Promise<Task> {
     const data: TaskData = {
         name,
         count,
+        onlyGatherIngredients,
     }
-    return createTask(TASK_TYPE, `Craft ${name} x ${count}`, data)
+    return createTask(TASK_TYPE, `${onlyGatherIngredients ? 'Gather Ingredients for' : 'Craft'} ${name} x ${count}`, data)
 }

@@ -1,12 +1,8 @@
 <template>
-    <v-card  v-if="task">
-      <v-card-title>Task #{{task.id}}: {{task.label}}</v-card-title>
+    <v-card v-if="task">
+      <v-card-title>{{task.label}}</v-card-title>
+      <v-list-item v-if="duration">{{ duration }}</v-list-item>
       <v-list-item v-if="task.result">{{ task.result }}</v-list-item>
-
-
-      <v-main>
-        <v-list-item v-for="child in task.children" v-bind:key="child.id">Child #{{child.id}}: {{child.label}}</v-list-item>
-      </v-main>
     </v-card>
 </template>
 
@@ -19,12 +15,36 @@ export default Vue.extend({
   props: {
     task: Object
   },
-  methods: {
-    formatDuration: formatDuration
+  beforeUpdate() {
+    if (this.$data.durationInterval === null && this.$props.task && this.$props.task.startedAt && !this.$props.task.finishedAt) {
+      const updateDuration = () => {
+        if (this.$props.task.finishedAt) {
+          clearInterval(this.$data.durationInterval)
+          this.$data.durationInterval = null
+          this.$data.duration = null
+          return
+        }
+        this.$data.duration = formatDuration(new Date().getTime() - this.$props.task.startedAt)
+      }
+      this.$data.durationInterval = setInterval(updateDuration)
+      updateDuration()
+    }
+  },
+  beforeDestroy() {
+    if(this.$data.durationInterval) {
+      clearInterval(this.$data.durationInterval);
+      this.$data.durationInterval = null
+    }
   },
   watch: {
     task()  {
-      console.log('TASK', this.$props.task)
+      // console.log('TASK', this.$props.task)
+    }
+  },
+  data() {
+    return {
+      duration: null,
+      durationInterval: null,
     }
   }
 });

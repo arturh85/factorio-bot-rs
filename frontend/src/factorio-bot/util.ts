@@ -3,7 +3,7 @@ import type {
     FactorioEntity, FactorioEntityPrototypeByName, FactorioInventory,
     FactorioRecipeByName,
     FactorioTechnologyByName,
-    FactorioTile,
+    FactorioTile, InventoryResponse,
     PlaceEntity,
     Position, Rect,
     World,
@@ -41,31 +41,54 @@ export function movePositionInDirection(
         case Direction.north:
             return {x: position.x, y: position.y - offset};
         case Direction.northeast:
-            return {x: position.x - offset, y: position.y - offset};
-        case Direction.northwest:
             return {x: position.x + offset, y: position.y - offset};
+        case Direction.northwest:
+            return {x: position.x - offset, y: position.y - offset};
         case Direction.south:
             return {x: position.x, y: position.y + offset};
         case Direction.southeast:
-            return {x: position.x - offset, y: position.y + offset};
-        case Direction.southwest:
             return {x: position.x + offset, y: position.y + offset};
+        case Direction.southwest:
+            return {x: position.x - offset, y: position.y + offset};
         case Direction.east:
-            return {x: position.x - offset, y: position.y};
-        case Direction.west:
             return {x: position.x + offset, y: position.y};
+        case Direction.west:
+            return {x: position.x - offset, y: position.y};
         default:
             throw new Error("impossible!");
     }
 }
 
-export function sortEntitiesByDistanceTo(position: Position): (a: FactorioEntity|FactorioTile, b: FactorioEntity|FactorioTile) => number {
+export type HasPosition = FactorioEntity | FactorioTile | InventoryResponse
+
+export function sortEntitiesByDistanceTo(position: Position): (a: HasPosition, b: HasPosition) => number {
     return (
-        a: FactorioEntity | FactorioTile,
-        b: FactorioEntity | FactorioTile
+        a: HasPosition,
+        b: HasPosition
     ) => {
         const d1 = distance(position, a.position);
         const d2 = distance(position, b.position);
+        return d1 - d2;
+    };
+}
+
+export function positionStr(position: Position): string {
+    return `${position.x}#${position.y}`
+}
+export function groupByPosition(positions: HasPosition[]): {[position: string]: HasPosition} {
+    return positions.reduce((byPosition: {[position: string]: HasPosition}, withPosition: HasPosition) => {
+        byPosition[positionStr(withPosition.position)] = withPosition
+        return byPosition
+    }, {})
+}
+
+export function sortPositionsByDistanceTo(position: Position): (a: Position, b: Position) => number {
+    return (
+        a: Position,
+        b: Position
+    ) => {
+        const d1 = distance(position, a);
+        const d2 = distance(position, b);
         return d1 - d2;
     };
 }
@@ -174,6 +197,14 @@ export function sleep(ms: number): Promise<void> {
 
 export function positionLabel(position: Position): string {
     return `[ ${Math.round(position.x)}, ${Math.round(position.y)} ]`
+}
+
+export function rectParam(rect: Rect): string {
+    return `${positionParam(rect.leftTop)};${positionParam(rect.rightBottom)}`
+}
+
+export function positionParam(position: Position): string {
+    return `${position.x},${position.y}`
 }
 
 export function distance(pos1: Position, pos2: Position): number {

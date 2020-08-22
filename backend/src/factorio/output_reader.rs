@@ -33,9 +33,6 @@ pub async fn read_output(
                     }
                     // filter out 6 million lines like 6664601 / 6665150
                     if initialized || !line.contains(" / ") {
-                        if line.contains("Error") {
-                            error!("<red>{}</>", line);
-                        }
                         log_file.iter_mut().for_each(|log_file| {
                             log_file
                                 .write_all(line.as_bytes())
@@ -79,7 +76,11 @@ pub async fn read_output(
                                 }
                             }
                         } else {
-                            info!("<cyan>server</>⮞ <magenta>{}</>", line);
+                            if line.contains("Error") {
+                                warn!("<cyan>server</>⮞ <red>{}</>", line);
+                            } else {
+                                info!("<cyan>server</>⮞ <magenta>{}</>", line);
+                            }
                         }
                     }
                 }
