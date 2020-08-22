@@ -88,7 +88,7 @@ pub async fn build_rocket(
                 web::rest_api::add_research,
                 web::rest_api::store_map_data,
                 web::rest_api::retrieve_map_data,
-                web::rest_api::inventory_contents_at,
+                web::rest_api::inventory_contents_at
             ],
         )
         .manage(world)

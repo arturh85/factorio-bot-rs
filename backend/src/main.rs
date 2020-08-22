@@ -50,6 +50,13 @@ async fn main() -> anyhow::Result<()> {
                         .help("use given seed to recreate level"),
                 )
                 .arg(
+                    Arg::with_name("map")
+                        .long("map")
+                        .value_name("map")
+                        .required(false)
+                        .help("use given map exchange string"),
+                )
+                .arg(
                     Arg::with_name("new")
                         .long("new")
                         .short("n")
@@ -76,12 +83,20 @@ async fn main() -> anyhow::Result<()> {
         let clients: u8 = matches.value_of("clients").unwrap().parse().unwrap();
         let write_logs: bool = matches.is_present("logs");
         let seed = matches.value_of("seed");
+        let map_exchange_string = matches.value_of("map");
         let recreate = matches.is_present("new");
         let server_host = matches.value_of("server");
-        let (world, rcon) =
-            start_factorio(&settings, server_host, clients, recreate, seed, write_logs)
-                .await
-                .expect("failed to start factorio");
+        let (world, rcon) = start_factorio(
+            &settings,
+            server_host,
+            clients,
+            recreate,
+            map_exchange_string,
+            seed,
+            write_logs,
+        )
+        .await
+        .expect("failed to start factorio");
 
         if let Some(world) = world {
             build_rocket(settings, rcon, world)
@@ -93,7 +108,9 @@ async fn main() -> anyhow::Result<()> {
     } else if let Some(matches) = matches.subcommand_matches("rcon") {
         let command = matches.value_of("command").unwrap();
         let server_host = matches.value_of("server");
-        let rcon = FactorioRcon::new(&settings, server_host).await.unwrap();
+        let rcon = FactorioRcon::new(&settings, server_host, false)
+            .await
+            .unwrap();
         rcon.send(command).await.unwrap();
     } else {
         eprintln!("Missing required Sub Command!");

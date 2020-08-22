@@ -2,6 +2,9 @@ use crate::types::{Direction, Position, Rect};
 use noisy_float::types::r64;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
 
 pub fn hashmap_to_lua(map: HashMap<String, String>) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -95,4 +98,16 @@ pub fn move_position(pos: &Position, direction: Direction, offset: f64) -> Posit
             y: Box::new(r64(pos.y())),
         },
     }
+}
+
+pub fn read_to_value(path: &PathBuf) -> anyhow::Result<Value> {
+    let content = std::fs::read_to_string(path)?;
+    Ok(serde_json::from_str(content.as_str())?)
+}
+
+pub fn write_value_to(value: &Value, path: &PathBuf) -> anyhow::Result<()> {
+    let mut outfile = fs::File::create(&path)?;
+    let bytes = serde_json::to_string(value).unwrap();
+    outfile.write_all(bytes.as_ref())?;
+    Ok(())
 }

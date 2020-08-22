@@ -19,15 +19,16 @@ pub async fn start_factorio(
     server_host: Option<&str>,
     client_count: u8,
     recreate: bool,
+    map_exchange_string: Option<&str>,
     seed: Option<&str>,
     write_logs: bool,
 ) -> anyhow::Result<(Option<Arc<FactorioWorld>>, FactorioRcon)> {
     let mut world: Option<Arc<FactorioWorld>> = None;
     if server_host.is_none() {
-        setup_factorio_instance(&settings, "server", recreate, seed).await?;
+        setup_factorio_instance(&settings, "server", recreate, map_exchange_string, seed).await?;
         let started = Instant::now();
         world = Some(start_factorio_server(&settings, write_logs).await?);
-        let rcon = FactorioRcon::new(&settings, server_host).await?;
+        let rcon = FactorioRcon::new(&settings, server_host, false).await?;
         success!(
             "Started <bright-blue>server</> in <yellow>{:?}</>",
             started.elapsed()
@@ -37,10 +38,14 @@ pub async fn start_factorio(
     }
     let settings = settings.clone();
     // tokio::spawn(async move {
-    let rcon = FactorioRcon::new(&settings, server_host).await.unwrap();
+    let rcon = FactorioRcon::new(&settings, server_host, false)
+        .await
+        .unwrap();
     for instance_number in 0..client_count {
         let instance_name = format!("client{}", instance_number + 1);
-        if let Err(err) = setup_factorio_instance(&settings, &instance_name, false, None).await {
+        if let Err(err) =
+            setup_factorio_instance(&settings, &instance_name, false, None, None).await
+        {
             error!("Failed to setup Factorio <red>{}</>: ", err);
             break;
         }
@@ -155,7 +160,8 @@ pub async fn start_factorio_server(
             error!("<red>server stopped</> without exit code");
         }
     });
-    let (rx, world) = read_output(reader, log_path, write_logs).await?;
+    let (rx, world) = read_output(reader, log_path, write_logs, false).await?;
+    // await for factorio to start before returning
     rx.recv().unwrap();
     Ok(world)
 }
@@ -212,6 +218,8 @@ pub async fn start_factorio_client(
             // "--gfx-safe-mode",
             // "--low-vram",
             "--disable-audio",
+            "--fullscreen",
+            "false",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

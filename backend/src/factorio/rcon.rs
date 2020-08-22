@@ -22,6 +22,7 @@ const RCON_INTERFACE: &str = "botbridge";
 pub struct FactorioRcon {
     // conn: Mutex<Connection>,
     pool: bb8::Pool<ConnectionManager>,
+    silent: bool,
 }
 
 pub struct ConnectionManager {
@@ -62,28 +63,37 @@ impl bb8::ManageConnection for ConnectionManager {
 }
 
 impl FactorioRcon {
-    pub async fn new(settings: &Config, server_host: Option<&str>) -> anyhow::Result<Self> {
+    pub async fn new(
+        settings: &Config,
+        server_host: Option<&str>,
+        silent: bool,
+    ) -> anyhow::Result<Self> {
         let rcon_port: String = settings.get("rcon_port").unwrap();
         let rcon_pass: String = settings.get("rcon_pass").unwrap();
         let address = format!("{}:{}", server_host.unwrap_or("127.0.0.1"), rcon_port);
         let manager = ConnectionManager::new(&address, &rcon_pass);
         Ok(FactorioRcon {
             pool: bb8::Pool::builder().max_size(15).build(manager).await?,
+            silent,
         })
     }
 
     pub async fn send(&self, command: &str) -> anyhow::Result<Option<Vec<String>>> {
-        info!("<cyan>rcon</>  ⮜ <green>{}</>", command);
+        if !self.silent {
+            info!("<cyan>rcon</>  ⮜ <green>{}</>", command);
+        }
         // let started = Instant::now();
         let mut conn = self.pool.get().await?;
         let result = conn.cmd(&String::from(command).add("\n")).await?;
         drop(conn);
         // info!("send took {} ms", started.elapsed().as_millis());
         if !result.is_empty() {
-            info!(
-                "<cyan>rcon</>  ⮞ <green>{}</>",
-                &result[0..result.len() - 1]
-            );
+            if !self.silent {
+                info!(
+                    "<cyan>rcon</>  ⮞ <green>{}</>",
+                    &result[0..result.len() - 1]
+                );
+            }
             Ok(Some(
                 result[0..result.len() - 1]
                     .split('\n')
@@ -432,11 +442,13 @@ impl FactorioRcon {
             .await?;
         if let Some(lines) = lines {
             if lines.len() != 1 {
+                #[allow(clippy::needless_return)]
                 return Err(anyhow!("unexpected output {:?}", lines));
             }
             let line = &lines[0];
             let chars = UnicodeSegmentation::graphemes(line.as_str(), true).collect::<Vec<&str>>();
             if chars[0] == "{" {
+                #[allow(clippy::needless_return)]
                 return Ok(serde_json::from_str(&line).unwrap());
             } else if &line[..] == "§player_blocks_placement§" {
                 for test_direction in 0..8u8 {
@@ -665,6 +677,22 @@ impl FactorioRcon {
         Ok(serde_json::from_str(json.as_str())?)
     }
 
+    pub async fn parse_map_exchange_string(
+        &self,
+        name: &str,
+        map_exchange_string: &str,
+    ) -> anyhow::Result<()> {
+        let result = self
+            .remote_call(
+                "parse_map_exchange_string",
+                vec![&str_to_lua(name), &str_to_lua(map_exchange_string)],
+            )
+            .await?;
+        if result.is_some() {
+            return Err(anyhow!("{}", result.unwrap().join("\n")));
+        }
+        Ok(())
+    }
     pub async fn find_tiles_filtered(
         &self,
         area: Option<Rect>,

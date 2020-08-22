@@ -9,6 +9,7 @@ pub async fn read_output(
     reader: BufReader<ChildStdout>,
     log_path: PathBuf,
     write_logs: bool,
+    silent: bool,
 ) -> anyhow::Result<(mpsc::Receiver<()>, Arc<FactorioWorld>)> {
     let mut log_file = match write_logs {
         true => Some(File::create(log_path)?),
@@ -47,21 +48,23 @@ pub async fn read_output(
                                 if let Some(pos) = rest.find('§') {
                                     let action = &rest[0..pos];
                                     let rest = &rest[pos + 2..];
-                                    match action {
-                                        "on_player_changed_position"
-                                        | "on_player_main_inventory_changed"
-                                        | "entity_prototypes"
-                                        | "recipes"
-                                        | "item_prototypes"
-                                        | "graphics"
-                                        | "tiles"
-                                        | "resources"
-                                        | "objects" => {}
-                                        _ => {
-                                            info!(
-                                                "<cyan>server</>⮞ §{}§<bright-blue>{}</>§<green>{}</>",
-                                                tick, action, rest
-                                            );
+                                    if !silent {
+                                        match action {
+                                            "on_player_changed_position"
+                                            | "on_player_main_inventory_changed"
+                                            | "entity_prototypes"
+                                            | "recipes"
+                                            | "item_prototypes"
+                                            | "graphics"
+                                            | "tiles"
+                                            | "resources"
+                                            | "objects" => {}
+                                            _ => {
+                                                info!(
+                                                    "<cyan>server</>⮞ §{}§<bright-blue>{}</>§<green>{}</>",
+                                                    tick, action, rest
+                                                );
+                                            }
                                         }
                                     }
 
@@ -75,12 +78,10 @@ pub async fn read_output(
                                     }
                                 }
                             }
-                        } else {
-                            if line.contains("Error") {
-                                warn!("<cyan>server</>⮞ <red>{}</>", line);
-                            } else {
-                                info!("<cyan>server</>⮞ <magenta>{}</>", line);
-                            }
+                        } else if line.contains("Error") {
+                            warn!("<cyan>server</>⮞ <red>{}</>", line);
+                        } else if !silent {
+                            info!("<cyan>server</>⮞ <magenta>{}</>", line);
                         }
                     }
                 }

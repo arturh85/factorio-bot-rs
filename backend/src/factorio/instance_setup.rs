@@ -1,3 +1,6 @@
+use crate::factorio::output_reader::read_output;
+use crate::factorio::rcon::FactorioRcon;
+use crate::factorio::util::{read_to_value, write_value_to};
 use archiver_rs::{Archive, Compressed};
 use async_std::fs::create_dir;
 use config::Config;
@@ -7,15 +10,17 @@ use paris::Logger;
 use serde_json::Value;
 use std::fs;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::str::FromStr;
 use std::time::Instant;
 
 pub async fn setup_factorio_instance(
     settings: &Config,
     instance_name: &str,
     recreate: bool,
+    map_exchange_string: Option<&str>,
     seed: Option<&str>,
 ) -> anyhow::Result<()> {
     let is_server = instance_name == "server";
@@ -182,14 +187,15 @@ pub async fn setup_factorio_instance(
             std::os::windows::fs::symlink_dir(&data_botbridge_path, &mods_botbridge_path)?;
         }
     }
-    let script_output_put = instance_path.join(PathBuf::from("script-output"));
-    if script_output_put.exists() {
-        for entry in fs::read_dir(script_output_put)? {
-            let entry = entry.unwrap();
-            std::fs::remove_file(entry.path())
-                .unwrap_or_else(|_| panic!("failed to delete {}", entry.path().to_str().unwrap()));
-        }
-    }
+    // delete server/script-output/*
+    // let script_output_put = instance_path.join(PathBuf::from("script-output"));
+    // if script_output_put.exists() {
+    //     for entry in fs::read_dir(script_output_put)? {
+    //         let entry = entry.unwrap();
+    //         std::fs::remove_file(entry.path())
+    //             .unwrap_or_else(|_| panic!("failed to delete {}", entry.path().to_str().unwrap()));
+    //     }
+    // }
     if is_server {
         let server_settings_path = instance_path.join(PathBuf::from("server-settings.json"));
         if !server_settings_path.exists() {
@@ -207,6 +213,44 @@ pub async fn setup_factorio_instance(
         }
 
         let saves_level_path = saves_path.join(PathBuf::from("level.zip"));
+        if recreate {
+            if let Some(map_exchange_string) = map_exchange_string {
+                if !saves_level_path.exists() {
+                    let binary = if cfg!(windows) {
+                        "bin/x64/factorio.exe"
+                    } else {
+                        "bin/x64/factorio"
+                    };
+                    let factorio_binary_path = instance_path.join(PathBuf::from(binary));
+                    if !factorio_binary_path.exists() {
+                        error!(
+                            "factorio binary missing at <bright-blue>{:?}</>",
+                            factorio_binary_path
+                        );
+                        std::process::exit(1);
+                    }
+                    let mut args = vec!["--create", saves_level_path.to_str().unwrap()];
+                    if let Some(seed) = seed {
+                        args.push("--map-gen-seed");
+                        args.push(seed);
+                    }
+                    let output = Command::new(&factorio_binary_path)
+                        .args(args)
+                        .output()
+                        .expect("failed to run factorio --create");
+                    if !saves_level_path.exists() {
+                        error!(
+                            "failed to create factorio level. Output: \n\n{}\n\n{}",
+                            std::str::from_utf8(&output.stdout).unwrap(),
+                            std::str::from_utf8(&output.stderr).unwrap()
+                        );
+                        std::process::exit(1);
+                    }
+                }
+                update_map_gen_settings(settings, map_exchange_string).await?;
+            }
+        }
+
         if saves_level_path.exists() && recreate {
             std::fs::remove_file(&saves_level_path).unwrap_or_else(|_| {
                 panic!("failed to delete {}", &saves_level_path.to_str().unwrap())
@@ -214,11 +258,6 @@ pub async fn setup_factorio_instance(
         }
         if !saves_level_path.exists() {
             let mut logger = Logger::new();
-            logger.loading(format!(
-                "Creating Level at <bright-blue>{:?}</>...",
-                &saves_level_path
-            ));
-
             let binary = if cfg!(windows) {
                 "bin/x64/factorio.exe"
             } else {
@@ -237,6 +276,17 @@ pub async fn setup_factorio_instance(
                 args.push("--map-gen-seed");
                 args.push(seed);
             }
+            if map_exchange_string.is_some() {
+                args.push("--map-gen-settings");
+                args.push("workspace/server/map-gen-settings.json");
+                args.push("--map-settings");
+                args.push("workspace/server/map-settings.json");
+            }
+            logger.loading(format!(
+                "Creating Level at <bright-blue>{:?}</>...",
+                &saves_level_path
+            ));
+
             let output = Command::new(&factorio_binary_path)
                 .args(args)
                 .output()
@@ -263,12 +313,121 @@ pub async fn setup_factorio_instance(
             outfile.write_all(player_data)?;
             info!("Created <bright-blue>{:?}</>", &player_data_path);
         }
-        let player_data_content = std::fs::read_to_string(&player_data_path)?;
-        let mut value: Value = serde_json::from_str(player_data_content.as_str())?;
+        let mut value: Value = read_to_value(&player_data_path)?;
         value["service-username"] = Value::from(instance_name);
         let player_data_file = File::create(&player_data_path)?;
         serde_json::to_writer_pretty(player_data_file, &value)?;
     }
 
+    Ok(())
+}
+
+pub async fn update_map_gen_settings(
+    settings: &Config,
+    map_exchange_string: &str,
+) -> anyhow::Result<()> {
+    let instance_name = "server";
+    let workspace_path: String = settings.get("workspace_path")?;
+    let workspace_path = Path::new(&workspace_path);
+    if !workspace_path.exists() {
+        error!(
+            "Failed to find workspace at <bright-blue>{:?}</>",
+            workspace_path
+        );
+        std::process::exit(1);
+    }
+    let instance_path = workspace_path.join(PathBuf::from(instance_name));
+    let instance_path = Path::new(&instance_path);
+    if !instance_path.exists() {
+        error!(
+            "Failed to find instance at <bright-blue>{:?}</>",
+            instance_path
+        );
+        std::process::exit(1);
+    }
+    let binary = if cfg!(windows) {
+        "bin/x64/factorio.exe"
+    } else {
+        "bin/x64/factorio"
+    };
+    let factorio_binary_path = instance_path.join(PathBuf::from(binary));
+    if !factorio_binary_path.exists() {
+        error!(
+            "factorio binary missing at <bright-blue>{:?}</>",
+            factorio_binary_path
+        );
+        std::process::exit(1);
+    }
+    let saves_path = instance_path.join(PathBuf::from("saves"));
+    if !saves_path.exists() {
+        error!("saves missing at <bright-blue>{:?}</>", saves_path);
+        std::process::exit(1);
+    }
+    let saves_level_path = saves_path.join(PathBuf::from("level.zip"));
+    let server_settings_path = instance_path.join(PathBuf::from("server-settings.json"));
+    if !server_settings_path.exists() {
+        error!(
+            "server settings missing at <bright-blue>{:?}</>",
+            server_settings_path
+        );
+        std::process::exit(1);
+    }
+    let rcon_port: String = settings.get("rcon_port")?;
+    let rcon_pass: String = settings.get("rcon_pass")?;
+
+    let mut logger = Logger::new();
+    logger.loading(
+        "Updating <bright-blue>map-settings.json</> and <bright-blue>map-gen-settings.json</>",
+    );
+    let mut child = Command::new(&factorio_binary_path)
+        .args(&[
+            "--start-server",
+            saves_level_path.to_str().unwrap(),
+            "--rcon-port",
+            &rcon_port,
+            "--rcon-password",
+            &rcon_pass,
+            "--server-settings",
+            &server_settings_path.to_str().unwrap(),
+        ])
+        // .stdout(Stdio::from(outputs))
+        // .stderr(Stdio::from(errors))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to start server");
+
+    let stdout = child.stdout.take().unwrap();
+    let reader = BufReader::new(stdout);
+    let log_path = workspace_path.join(PathBuf::from_str(&"server-log.txt").unwrap());
+    let (rx, _) = read_output(reader, log_path, false, true).await?;
+    rx.recv().unwrap();
+
+    let rcon = FactorioRcon::new(&settings, None, true).await?;
+
+    let map_gen_settings_filename = "map-gen-settings.json";
+    let map_settings_filename = "map-settings.json";
+
+    rcon.silent_print("").await?;
+    rcon.parse_map_exchange_string(map_gen_settings_filename, map_exchange_string)
+        .await?;
+    child.kill()?;
+
+    let target_map_gen_settings_path =
+        instance_path.join(PathBuf::from_str(&map_gen_settings_filename).unwrap());
+    let target_map_settings_path =
+        instance_path.join(PathBuf::from_str(&map_settings_filename).unwrap());
+    let script_output_path = instance_path.join(PathBuf::from_str("script-output").unwrap());
+    let source_map_gen_settings_path =
+        script_output_path.join(PathBuf::from_str(&map_gen_settings_filename).unwrap());
+    let value: Value = read_to_value(&source_map_gen_settings_path)?;
+    write_value_to(&value["map_settings"], &target_map_settings_path)?;
+    write_value_to(&value["map_gen_settings"], &target_map_gen_settings_path)?;
+    fs::remove_file(&source_map_gen_settings_path)
+        .unwrap_or_else(|_| panic!("failed to delete {:?}", &source_map_gen_settings_path));
+
+    logger.success(
+        "Updated <bright-blue>map-settings.json</> and <bright-blue>map-gen-settings.json</>",
+    );
     Ok(())
 }

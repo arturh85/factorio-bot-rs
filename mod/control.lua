@@ -1520,6 +1520,9 @@ function rcon_cheat_blueprint(player_id, blueprint, pos_x, pos_y, direction, for
 	rcon.print(game.table_to_json(result))
 end
 
+function rcon_parse_map_exchange_string(name, map_exchange_str)
+	game.write_file(name, game.table_to_json(game.parse_map_exchange_string(map_exchange_str)))
+end
 function rcon_async_request_player_path(player_id, goal, radius)
 	local player = get_player(player_id)
 	if player == nil then
@@ -1625,6 +1628,7 @@ remote.add_interface("botbridge", {
 	find_tiles_filtered=rcon_find_tiles_filtered,
 	insert_to_inventory=rcon_insert_to_inventory,
 	remove_from_inventory=rcon_remove_from_inventory,
+	parse_map_exchange_string=rcon_parse_map_exchange_string,
 
 	async_request_player_path=rcon_async_request_player_path,
 	action_start_walk_waypoints=rcon_action_start_walk_waypoints,
