@@ -204,7 +204,7 @@ impl FactorioRcon {
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > MAX_DISTANCE {
-            warn!("distance to big, moving first!");
+            warn!("too far away, moving first!");
             self.move_player(world, player_id, position, Some(MAX_DISTANCE))
                 .await?;
         }
@@ -230,7 +230,11 @@ impl FactorioRcon {
         if json == "{}" {
             json = String::from("[]");
         }
-        Ok(serde_json::from_str(json.as_str())?)
+        if &json[0..1] == "[" {
+            Ok(serde_json::from_str(json.as_str())?)
+        } else {
+            Err(anyhow!("{}", json))
+        }
     }
 
     pub async fn cheat_blueprint(
@@ -331,7 +335,7 @@ impl FactorioRcon {
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > MAX_DISTANCE {
-            warn!("distance to big, moving first!");
+            warn!("too far away, moving first!");
             self.move_player(world, player_id, position, Some(MAX_DISTANCE))
                 .await?;
         }
@@ -425,7 +429,7 @@ impl FactorioRcon {
         const MAX_DISTANCE: f64 = 10.0;
         let distance = calculate_distance(&player_position, &entity_position);
         if distance > MAX_DISTANCE {
-            warn!("distance to big, moving first!");
+            warn!("too far away, moving first!");
             self.move_player(world, player_id, &entity_position, Some(MAX_DISTANCE))
                 .await?;
         }
@@ -442,62 +446,62 @@ impl FactorioRcon {
             .await?;
         if let Some(lines) = lines {
             if lines.len() != 1 {
-                #[allow(clippy::needless_return)]
-                return Err(anyhow!("unexpected output {:?}", lines));
-            }
-            let line = &lines[0];
-            let chars = UnicodeSegmentation::graphemes(line.as_str(), true).collect::<Vec<&str>>();
-            if chars[0] == "{" {
-                #[allow(clippy::needless_return)]
-                return Ok(serde_json::from_str(&line).unwrap());
-            } else if &line[..] == "§player_blocks_placement§" {
-                for test_direction in 0..8u8 {
-                    let test_position = move_position(
-                        &player_position,
-                        Direction::from_u8(test_direction).unwrap(),
-                        5.0,
-                    );
-                    if self
-                        .is_empty(None, Some(test_position.clone()), Some(2.0))
-                        .await?
-                    {
-                        self.move_player(world, player_id, &test_position, Some(1.0))
-                            .await?;
-                        let lines = self
-                            .remote_call(
-                                "place_entity",
-                                vec![
-                                    &player_id.to_string(),
-                                    &str_to_lua(&item_name),
-                                    &position_to_lua(&entity_position),
-                                    &direction.to_string(),
-                                ],
-                            )
-                            .await?;
-                        return if let Some(lines) = lines {
-                            if lines.len() != 1 {
-                                return Err(anyhow!("unexpected output {:?}", lines));
-                            }
-                            let line = &lines[0];
-                            let chars = UnicodeSegmentation::graphemes(line.as_str(), true)
-                                .collect::<Vec<&str>>();
-                            if chars[0] == "{" {
-                                Ok(serde_json::from_str(&line).unwrap())
-                            } else if &line[..] == "§player_blocks_placement§" {
-                                Err(anyhow!("player still blocks placement"))
-                            } else {
-                                Err(anyhow!("{}", line))
-                            }
-                        } else {
-                            Err(anyhow!("unexpected empty output"))
-                        };
-                    }
-                }
-                Err(anyhow!(
-                    "ERROR: player blocks placement in all directions! "
-                ))
+                Err(anyhow!("unexpected output {:?}", lines))
             } else {
-                Err(anyhow!("{}", line))
+                let line = &lines[0];
+                let chars =
+                    UnicodeSegmentation::graphemes(line.as_str(), true).collect::<Vec<&str>>();
+                if chars[0] == "{" {
+                    Ok(serde_json::from_str(&line).unwrap())
+                } else if &line[..] == "§player_blocks_placement§" {
+                    for test_direction in 0..8u8 {
+                        let test_position = move_position(
+                            &player_position,
+                            Direction::from_u8(test_direction).unwrap(),
+                            5.0,
+                        );
+                        if self
+                            .is_empty(None, Some(test_position.clone()), Some(2.0))
+                            .await?
+                        {
+                            self.move_player(world, player_id, &test_position, Some(1.0))
+                                .await?;
+                            let lines = self
+                                .remote_call(
+                                    "place_entity",
+                                    vec![
+                                        &player_id.to_string(),
+                                        &str_to_lua(&item_name),
+                                        &position_to_lua(&entity_position),
+                                        &direction.to_string(),
+                                    ],
+                                )
+                                .await?;
+                            return if let Some(lines) = lines {
+                                if lines.len() != 1 {
+                                    return Err(anyhow!("unexpected output {:?}", lines));
+                                }
+                                let line = &lines[0];
+                                let chars = UnicodeSegmentation::graphemes(line.as_str(), true)
+                                    .collect::<Vec<&str>>();
+                                if chars[0] == "{" {
+                                    Ok(serde_json::from_str(&line).unwrap())
+                                } else if &line[..] == "§player_blocks_placement§" {
+                                    Err(anyhow!("player still blocks placement"))
+                                } else {
+                                    Err(anyhow!("{}", line))
+                                }
+                            } else {
+                                Err(anyhow!("unexpected empty output"))
+                            };
+                        }
+                    }
+                    Err(anyhow!(
+                        "Error: player blocks placement in all directions! "
+                    ))
+                } else {
+                    Err(anyhow!("{}", line))
+                }
             }
         } else {
             Err(anyhow!("unexpected empty output"))
@@ -520,7 +524,7 @@ impl FactorioRcon {
         let distance = calculate_distance(&player.position, &entity_position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > MAX_DISTANCE {
-            warn!("distance to big, moving first!");
+            warn!("too far away, moving first!");
             self.move_player(world, player_id, &entity_position, Some(MAX_DISTANCE))
                 .await?;
         }
@@ -563,7 +567,7 @@ impl FactorioRcon {
         let distance = calculate_distance(&player.position, &entity_position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > MAX_DISTANCE {
-            warn!("distance to big, moving first!");
+            warn!("too far away, moving first!");
             self.move_player(world, player_id, &entity_position, Some(MAX_DISTANCE))
                 .await?;
         }

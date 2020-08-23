@@ -393,7 +393,7 @@ function writeout_pictures()
 	-- there's a limit of 200 characters per string.
 
 	if game.entity_prototypes["DATA_RAW_LEN"] == nil then
-		print("ERROR: no DATA_RAW_LEN entity prototype?!")
+		print("Error: no DATA_RAW_LEN entity prototype?!")
 	end
 
 	local n = tonumber(game.entity_prototypes["DATA_RAW_LEN"].order)
@@ -556,6 +556,7 @@ function on_tick(event)
 
 					if (math.abs(dx) < 0.3 and math.abs(dy) < 0.3) then
 						w.idx = w.idx + 1
+						w.idx_tick = event.tick
 						if w.idx > #w.waypoints then
 							player.walking_state = {walking=false}
 							action_completed(event.tick, w.action_id)
@@ -599,6 +600,10 @@ function on_tick(event)
 					end
 
 --					print("waypoint "..w.idx.." of "..#w.waypoints..", pos = "..coord(pos)..", dest = "..coord(dest).. ", dx/dy="..dx.."/"..dy..", dir="..direction)
+					if event.tick - w.idx_tick > 60 then
+						print("Player is stuck while moving, teleporting to next waypoint")
+						player.teleport(w.waypoints[w.idx])
+					end
 
 					if direction ~= "" then
 						player.walking_state = {walking=true, direction=defines.direction[direction]}
@@ -1039,7 +1044,7 @@ end
 -- id :: uint: Handle to associate the callback with a particular call to LuaSurface::request_path.
 -- try_again_later :: boolean: Indicates that the pathfinder failed because it is too busy, and you can retry later.
 function on_script_path_request_finished(event)
-	local result = "ERROR: failed to path find"
+	local result = "Error: failed to path find"
 	if event.path ~= nil then
 		local positions = {}
 		for k,v in pairs(event.path) do
@@ -1047,7 +1052,7 @@ function on_script_path_request_finished(event)
 		end
 		result = game.table_to_json(positions)
 	elseif event.try_again_later then
-		result = "ERROR: try again later!"
+		result = "Error: try again later!"
 	end
 	writeout(event.tick, "on_script_path_request_finished", tostring(event.id) .. "#" .. result)
 end
@@ -1162,7 +1167,7 @@ function rcon_action_start_mining(action_id, player_id, name, position, count)
 		global.p[player_id].mining = nil
 	else
 --		print("MINING ERROR")
-		rcon.print("ERROR: no entity to mine")
+		rcon.print("Error: no entity to mine")
 		global.p[player_id].mining = nil
 		action_failed(last_tick, action_id)
 	end
@@ -1460,13 +1465,17 @@ function rcon_place_blueprint(player_id, blueprint, pos_x, pos_y, direction, for
 	bp_entity.destroy()
 
 	local result = {}
-	local inventory = player.get_main_inventory().get_contents()
+	local main_inventory = player.get_main_inventory()
+	local inventory = main_inventory.get_contents()
+	local nothing = true
 	for _, ghost in pairs(ghosts) do
+		nothing = false
 		local item = ghost.ghost_name
 		if only_ghosts == false and inventory[item] ~= nil and inventory[item] > 0 then
 			local success, entity = ghost.revive()
 			if entity ~= nil then
-				inventory[item] = inventory[item] - 1
+				main_inventory.remove({name=item, count=1})
+				inventory = main_inventory.get_contents()
 				table.insert(result, serialize_entity(entity))
 			else
 				table.insert(result, serialize_entity(ghost))
@@ -1475,7 +1484,11 @@ function rcon_place_blueprint(player_id, blueprint, pos_x, pos_y, direction, for
 			table.insert(result, serialize_entity(ghost))
 		end
 	end
-	rcon.print(game.table_to_json(result))
+	if nothing == true then
+		rcon.print("Error: failed to build anything")
+	else
+		rcon.print(game.table_to_json(result))
+	end
 end
 
 
@@ -1595,12 +1608,12 @@ function get_player(player_id)
 	if global.p[player_id] ~= nil then
 		local player = game.players[player_id]
 		if player == nil or not player.connected or not player.character then
-			rcon.print("ERROR: player " .. tostring(player_id) .. " not connected")
+			rcon.print("Error: player " .. tostring(player_id) .. " not connected")
 		else
 			return player
 		end
 	else
-		rcon.print("ERROR: player not found. valid players: " .. table_keys(global.p))
+		rcon.print("Error: player not found. valid players: " .. table_keys(global.p))
 	end
 	return nil
 end

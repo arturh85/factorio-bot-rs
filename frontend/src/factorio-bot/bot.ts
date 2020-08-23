@@ -75,7 +75,7 @@ export class FactorioBot {
                     Direction.north
                 );
                 const conflictArea: Rect = {
-                    leftTop: {x: position.x , y: position.y - 10},
+                    leftTop: {x: position.x , y: position.y - 15},
                     rightBottom: {x: position.x + 18 , y: position.y},
                 }
                 const conflictEntities = await FactorioApi.findEntitiesInArea(conflictArea);
