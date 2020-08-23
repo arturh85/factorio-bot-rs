@@ -78,6 +78,17 @@ export class FactorioApi {
         return await response.json();
     }
 
+    static async reviveGhost(
+        playerId: number,
+        name: string,
+        position: Position
+    ): Promise<{ player: FactorioPlayer; entity: FactorioEntity }> {
+        const response = await fetch(
+            `${baseUrl}/api/${playerId}/reviveGhost?name=${name}&position=${positionParam(position)}`
+        );
+        return await response.json();
+    }
+
     static async cheatBlueprint(
         playerId: number,
         blueprint: string,

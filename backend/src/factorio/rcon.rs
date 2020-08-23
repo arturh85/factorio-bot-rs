@@ -237,6 +237,44 @@ impl FactorioRcon {
         }
     }
 
+    pub async fn revive_ghost(
+        &self,
+        player_id: u32,
+        name: &str,
+        position: &Position,
+        world: &State<'_, Arc<FactorioWorld>>,
+    ) -> anyhow::Result<FactorioEntity> {
+        let player = world.players.get_one(&player_id).unwrap();
+        const MAX_DISTANCE: f64 = 10.0;
+        let distance = calculate_distance(&player.position, &position);
+        drop(player); // wow, without this factorio (?) freezes (!)
+        if distance > MAX_DISTANCE {
+            warn!("too far away, moving first!");
+            self.move_player(world, player_id, position, Some(MAX_DISTANCE))
+                .await?;
+        }
+        let lines = self
+            .remote_call(
+                "revive_ghost",
+                vec![
+                    &player_id.to_string(),
+                    &str_to_lua(&name),
+                    &position.x().to_string(),
+                    &position.y().to_string(),
+                ],
+            )
+            .await?;
+        if lines.is_none() {
+            return Err(anyhow!("Unexpected Empty Response"));
+        }
+        let json = lines.unwrap().pop().unwrap();
+        if &json[0..1] == "{" {
+            Ok(serde_json::from_str(json.as_str())?)
+        } else {
+            Err(anyhow!("{}", json))
+        }
+    }
+
     pub async fn cheat_blueprint(
         &self,
         player_id: u32,

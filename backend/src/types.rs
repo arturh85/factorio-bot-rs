@@ -236,6 +236,7 @@ pub struct FactorioEntity {
     pub entity_type: String,
     pub position: Position,
     pub amount: Option<u32>,        // only type = resource
+    pub recipe: Option<String>,     // only CraftingMachines
     pub ghost_name: Option<String>, // only type = entity-ghost
     pub ghost_type: Option<String>, // only type = entity-ghost
 }

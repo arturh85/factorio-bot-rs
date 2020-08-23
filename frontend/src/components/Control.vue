@@ -3,8 +3,11 @@
     <v-card-title>Factorio Bot</v-card-title>
     <v-card-text>
       <!-- Page Content -->
-      <v-btn v-on:click="bots.researchAutomation()">Research automation</v-btn>
-<!--      <v-btn v-on:click="bots.researchRocketsilo()">Research rocket-silo</v-btn>-->
+      <v-btn v-on:click="bots.researchLogistics()">Research logistics</v-btn>
+      <v-btn v-on:click="bots.researchSteelProcessing()">Research steel-processing</v-btn>
+      <v-btn v-on:click="bots.researchLogisticSciencePack()">Research logistic-science-pack</v-btn>
+<!--      <v-btn v-on:click="bots.researchAutomation()">Research automation</v-btn>-->
+      <v-btn v-on:click="bots.researchRocketsilo()">Research rocket-silo</v-btn>
       <v-btn v-on:click="bots.updatePlayers()">Update Bots</v-btn>
       <v-btn v-on:click="bots.saveWorldAndServer()">Save</v-btn>
 <!--      <br/>-->
@@ -20,7 +23,8 @@
 <!--      <v-btn v-on:click="bots.testGatherTask('coal', 30)">Gather coal x30</v-btn>-->
 <!--      <v-btn v-on:click="bots.testGatherTask('stone', 30)">Gather stone x30</v-btn>-->
 <!--      <v-btn v-on:click="bots.testGatherTask('iron-plate', 20)">Gather iron-plate x20</v-btn>-->
-<!--      <v-btn v-on:click="bots.testCraftTask('steam-engine', 2)">Craft steam-engine x2</v-btn>-->
+<!--      <v-btn v-on:click="bots.testCraftTask('small-electric-pole', 1)">Craft small-electric-pole x1</v-btn>-->
+<!--      <v-btn v-on:click="bots.testCraftTask('small-electric-pole', 2)">Craft small-electric-pole x2</v-btn>-->
 <!--      <br/>-->
 <!--      <br/>-->
 <!--      <v-btn color="primary" v-on:click="bots.processTasks()">Process Tasks</v-btn>-->

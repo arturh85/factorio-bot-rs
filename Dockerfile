@@ -8,7 +8,7 @@ RUN rustup component add clippy
 COPY backend backend/
 COPY frontend frontend/
 COPY Cargo.* ./
-RUN cd frontend; npm install; cd ..
+RUN cd frontend; npm install; npm run test || exit 1; cd ..
 RUN cargo clippy --all-features -- -D warnings
 RUN bash -c "time cargo test"
 

@@ -1095,6 +1095,10 @@ function on_player_changed_position(event)
 	}))
 end
 
+function on_research_finished(event)
+	writeout_recipes()
+end
+
 function on_player_main_inventory_changed(event)
 	local tick = event.tick
 	local player_idx = event.player_index
@@ -1127,6 +1131,7 @@ script.on_event(defines.events.on_robot_mined_entity, on_some_entity_deleted) --
 script.on_event(defines.events.on_resource_depleted, on_some_entity_deleted) --entity
 
 script.on_event(defines.events.on_script_path_request_finished, on_script_path_request_finished)
+script.on_event(defines.events.on_research_finished, on_research_finished)
 
 script.on_event(defines.events.on_player_main_inventory_changed, on_player_main_inventory_changed)
 script.on_event(defines.events.on_player_changed_position, on_player_changed_position)
@@ -1416,6 +1421,38 @@ function rcon_action_start_crafting(action_id, player_id, recipe, count)
 	end
 end
 
+function rcon_revive_ghost(player_id, name, x, y)
+	local player = get_player(player_id)
+	if player == nil then
+		return
+	end
+	local main_inventory = player.get_main_inventory()
+	local contents = main_inventory.get_contents()
+	if contents[name] == nil or contents[name] < 1 then
+		complain("Error: player has no " .. name)
+		return
+	end
+	local ghosts = player.surface.find_entities_filtered({
+		ghost_name = name,
+		position = {x = x, y = y},
+	})
+	local ghost = nil
+	for _,v  in pairs(ghosts) do
+		ghost = v
+	end
+	if ghost == nil then
+		complain("Error: failed to find ghost")
+		return
+	end
+	local success, entity = ghost.revive()
+	if entity ~= nil then
+		main_inventory.remove({name=name, count=1})
+		rcon.print(game.table_to_json(serialize_entity(entity)))
+	else
+		complain("Error: failed to revive ghost")
+	end
+end
+
 function rcon_cheat_item(player_id, item, count)
 	local player = get_player(player_id)
 	if player == nil then
@@ -1642,6 +1679,7 @@ remote.add_interface("botbridge", {
 	insert_to_inventory=rcon_insert_to_inventory,
 	remove_from_inventory=rcon_remove_from_inventory,
 	parse_map_exchange_string=rcon_parse_map_exchange_string,
+	revive_ghost=rcon_revive_ghost,
 
 	async_request_player_path=rcon_async_request_player_path,
 	action_start_walk_waypoints=rcon_action_start_walk_waypoints,

@@ -41,6 +41,9 @@ export enum Entities {
  lab = "lab",
  automationSciencePack = "automation-science-pack",
  wood = "wood",
+ assemblingMachine1 = "assembling-machine-1",
+ inserter = "inserter",
+ ironGearWheel = "iron-gear-wheel",
 }
 export enum EntityTypes {
  tree = 'tree',
@@ -49,6 +52,7 @@ export enum Technologies {
  automation = "automation",
  logistics = "logistics",
  logisticSciencePack = "logistic-science-pack",
+ steelProcessing = "steel-processing",
  rocketSilo = "rocket-silo",
 }
 export type FactorioPlayerById = { [playerIdString: string]: FactorioPlayer };
@@ -83,7 +87,7 @@ export type World = {
  starterCoalLoops: StarterCoalLoop[] | null
  starterOffshorePump: Position | null
  starterSteamEngineBlueprints: FactorioEntity[][] | null
- starterLabs: Position[] | null
+ starterScienceBlueprints: FactorioEntity[][] | null
 }
 export type FactorioBlueprintResult = {
  blueprint: FactorioBlueprint
@@ -120,7 +124,7 @@ export type FactorioChunk = { objects: ChunkObject []; resources: ChunkResource 
 export type ChunkObject = { name: string; position: Position; direction: string; boundingBox: Rect; outputInventory: { [key: string]: number } | null; fuelInventory: { [key: string]: number } | null };
 export type ChunkResource = { name: string; position: Position };
 export type FactorioGraphic = { entityName: string; imagePath: string; width: number; height: number };
-export type FactorioEntity = { name: string; entityType: string; position: Position; amount: number | null; ghostName: string | null; ghostType: string | null };
+export type FactorioEntity = { name: string; entityType: string; position: Position; amount: number | null; recipe: string | null; ghostName: string | null; ghostType: string | null };
 export type FactorioEntityPrototype = { name: string; entityType: string; collisionMask: string [] | null; collisionBox: Rect; mineResult: { [key: string]: number } | null };
 export type FactorioItemPrototype = { name: string; itemType: string; stackSize: number; fuelValue: number; placeResult: string; group: string; subgroup: string };
 export type FactorioResult = { success: boolean; output: string [] };

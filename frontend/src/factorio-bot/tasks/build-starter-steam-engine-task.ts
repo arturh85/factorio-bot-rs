@@ -29,8 +29,9 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     if (bots.length === 0) {
         throw new Error("no bots?")
     }
-    if (store.state.world.starterOffshorePump === null) {
-        throw new Error("requires offshore pump")
+    const offshorePumpPosition = store.state.world.starterOffshorePump
+    if (!offshorePumpPosition) {
+        throw new Error("lab requires offshore pump")
     }
     // sort by already has correct item
     // bots.sort(sortBotsByInventory([minerName, furnaceName]))
@@ -60,8 +61,8 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         const blueprint = await bot.placeBlueprint(
             blueprintTileableStarterSteamEngineBoiler,
             {
-                x: store.state.world.starterOffshorePump.x + 2 + (steamIndex + offset) * 4,
-                y: store.state.world.starterOffshorePump.y - 7,
+                x: offshorePumpPosition.x + 2 + (steamIndex + offset) * 4,
+                y: offshorePumpPosition.y - 7,
             },
             Direction.north
         );

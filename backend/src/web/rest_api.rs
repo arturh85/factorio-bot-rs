@@ -390,23 +390,51 @@ pub async fn place_blueprint(
         )
         .await;
 
-    if result.is_ok() {
-        // wait for inventory update event
-        // loop {
-        //     let changed_player_id = world.rx_player_inventory_changed.recv().unwrap();
-        //     if player_id == changed_player_id {
-        //         break;
-        //     }
-        // }
-        async_std::task::sleep(Duration::from_millis(50)).await;
+    match result {
+        Ok(entities) => {
+            async_std::task::sleep(Duration::from_millis(50)).await;
+            let player =
+                serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
+            let entities = serde_json::to_value(entities).unwrap();
+            Ok(ApiResponse {
+                json: json!({"player": player, "entities": entities}),
+                status: Status::Ok,
+            })
+        }
+        Err(err) => Ok(ApiResponse {
+            json: json!({"error": err.to_string()}),
+            status: Status::InternalServerError,
+        }),
     }
-    let entities = result.unwrap();
-    let player = serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
-    let entities = serde_json::to_value(entities).unwrap();
-    Ok(ApiResponse {
-        json: json!({"player": player, "entities": entities}),
-        status: Status::Ok,
-    })
+}
+
+#[get("/<player_id>/reviveGhost?<position>&<name>")]
+#[allow(clippy::too_many_arguments)]
+pub async fn revive_ghost(
+    world: State<'_, Arc<FactorioWorld>>,
+    rcon: State<'_, Arc<FactorioRcon>>,
+    player_id: u32,
+    name: String,
+    position: String,
+) -> Result<ApiResponse, Debug<anyhow::Error>> {
+    let position = position.parse().unwrap();
+    let result = rcon.revive_ghost(player_id, &name, &position, &world).await;
+    match result {
+        Ok(entity) => {
+            async_std::task::sleep(Duration::from_millis(50)).await;
+            let player =
+                serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
+            let entity = serde_json::to_value(entity).unwrap();
+            Ok(ApiResponse {
+                json: json!({"player": player, "entity": entity}),
+                status: Status::Ok,
+            })
+        }
+        Err(err) => Ok(ApiResponse {
+            json: json!({"error": err.to_string()}),
+            status: Status::InternalServerError,
+        }),
+    }
 }
 
 #[get("/<player_id>/cheatBlueprint?<position>&<direction>&<force_build>&<blueprint>")]
@@ -429,24 +457,22 @@ pub async fn cheat_blueprint(
             force_build.unwrap_or(false),
         )
         .await;
-
-    if result.is_ok() {
-        // wait for inventory update event
-        // loop {
-        //     let changed_player_id = world.rx_player_inventory_changed.recv().unwrap();
-        //     if player_id == changed_player_id {
-        //         break;
-        //     }
-        // }
-        async_std::task::sleep(Duration::from_millis(50)).await;
+    match result {
+        Ok(entities) => {
+            async_std::task::sleep(Duration::from_millis(50)).await;
+            let player =
+                serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
+            let entities = serde_json::to_value(entities).unwrap();
+            Ok(ApiResponse {
+                json: json!({"player": player, "entities": entities}),
+                status: Status::Ok,
+            })
+        }
+        Err(err) => Ok(ApiResponse {
+            json: json!({"error": err.to_string()}),
+            status: Status::InternalServerError,
+        }),
     }
-    let entities = result.unwrap();
-    let player = serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
-    let entities = serde_json::to_value(entities).unwrap();
-    Ok(ApiResponse {
-        json: json!({"player": player, "entities": entities}),
-        status: Status::Ok,
-    })
 }
 
 #[get("/parseBlueprint?<blueprint>")]

@@ -12,7 +12,7 @@ import {
     StarterMinerFurnace,
     World
 } from "@/factorio-bot/types";
-import {emptyWorld} from "@/factorio-bot/util";
+import {emptyWorld, positionEqual} from "@/factorio-bot/util";
 
 Vue.use(Vuex);
 
@@ -76,8 +76,29 @@ export default new Vuex.Store({
         addStarterSteamEngineEntities(state: State, entities: FactorioEntity[]) {
             state.world = {...state.world, starterSteamEngineBlueprints: [...(state.world.starterSteamEngineBlueprints || []), entities] }
         },
-        addStarterLab(state: State, lab: Position) {
-            state.world = {...state.world, starterLabs: [...(state.world.starterLabs || []), lab] }
+        addStarterScienceEntities(state: State, entities: FactorioEntity[]) {
+            state.world = {...state.world, starterScienceBlueprints: [...(state.world.starterScienceBlueprints || []), entities] }
+        },
+        updateScienceGhost(state: State, newEntity: FactorioEntity) {
+            const blueprints = [...(state.world.starterScienceBlueprints || [])]
+            let found = false
+            for (const blueprint of blueprints) {
+                for(let i=0; i<blueprint.length; i++) {
+                    const entity = blueprint[i]
+                    if (positionEqual(entity.position, newEntity.position)) {
+                        blueprint[i] = newEntity
+                        found = true
+                        break
+                    }
+                }
+                if (found) {
+                    break
+                }
+            }
+            if (!found) {
+                throw new Error("no entity found to update entity ghost")
+            }
+            state.world = {...state.world, starterScienceBlueprints: blueprints }
         },
         updateRecipes(state: State, recipes: FactorioRecipeByName) {
             state.recipes = recipes

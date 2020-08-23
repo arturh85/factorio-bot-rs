@@ -893,6 +893,18 @@ describe("util", () => {
                 wood: 8,
             });
         });
+        it("should work with recipes which have more than one product like small-electric-pole with 1", () => {
+            expect(missingIngredients(allRecipes, {}, "small-electric-pole", 1)).toEqual({
+                wood: 1,
+                'copper-plate': 1,
+            });
+        });
+        it("should work with recipes which have more than one product like small-electric-pole with 2", () => {
+            expect(missingIngredients(allRecipes, {}, "small-electric-pole", 2)).toEqual({
+                wood: 1,
+                'copper-plate': 1,
+            });
+        });
         it("should work in basic case with recursion", () => {
             expect(
                 missingIngredients(allRecipes, {}, "burner-mining-drill", 1)

@@ -163,6 +163,17 @@ function serialize_entity(entity)
     elseif entity.type == "entity-ghost" then
         record.ghostName = entity.ghost_name
         record.ghostType = entity.ghost_type
+        if entity.ghost_type == "assembling-machine" then
+            local recipe = entity.get_recipe()
+            if recipe ~= nil then
+                record.recipe = recipe.name
+            end
+        end
+    elseif entity.type == "assembling-machine" then
+        local recipe = entity.get_recipe()
+        if recipe ~= nil then
+            record.recipe = recipe.name
+        end
     end
     return record
 end

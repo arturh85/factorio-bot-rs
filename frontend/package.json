@@ -79,6 +79,7 @@
     "overrides": [
       {
         "files": [
+          "src/**/*.spec.{j,t}s?(x)",
           "**/__tests__/*.{j,t}s?(x)",
           "**/tests/unit/**/*.spec.{j,t}s?(x)"
         ],
@@ -94,7 +95,8 @@
     "not dead"
   ],
   "jest": {
-    "preset": "@vue/cli-plugin-unit-jest/presets/typescript-and-babel"
+    "preset": "@vue/cli-plugin-unit-jest/presets/typescript-and-babel",
+    "testMatch": [ "**/__tests__/**/*.[jt]s?(x)", "**/?(*.)+(spec|test).[jt]s?(x)" ]
   },
   "gitHooks": {
     "pre-commit": "lint-staged"

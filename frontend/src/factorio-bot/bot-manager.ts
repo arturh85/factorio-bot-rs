@@ -149,11 +149,29 @@ export class FactorioBotManager {
     async researchRocketsilo(): Promise<void> {
         const task = await createResearchTask(this.$store, Technologies.rocketSilo)
         this.$store.commit('pushTask', task)
-        // await this.processTasks();
+        await this.processTasks();
     }
 
     async researchAutomation(): Promise<void> {
         const task = await createResearchTask(this.$store, Technologies.automation)
+        this.$store.commit('pushTask', task)
+        await this.processTasks();
+    }
+
+    async researchLogistics(): Promise<void> {
+        const task = await createResearchTask(this.$store, Technologies.logistics)
+        this.$store.commit('pushTask', task)
+        await this.processTasks();
+    }
+
+    async researchSteelProcessing(): Promise<void> {
+        const task = await createResearchTask(this.$store, Technologies.steelProcessing)
+        this.$store.commit('pushTask', task)
+        await this.processTasks();
+    }
+
+    async researchLogisticSciencePack(): Promise<void> {
+        const task = await createResearchTask(this.$store, Technologies.logisticSciencePack)
         this.$store.commit('pushTask', task)
         await this.processTasks();
     }

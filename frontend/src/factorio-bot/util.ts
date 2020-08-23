@@ -16,7 +16,7 @@ export const emptyWorld: World = {
     starterMinerChests: null,
     starterCoalLoops: null,
     starterOffshorePump: null,
-    starterLabs: null,
+    starterScienceBlueprints: null,
     starterSteamEngineBlueprints: null,
 };
 
@@ -254,6 +254,10 @@ export function missingIngredients(
     }
     if (!recipe) {
         return count > 0 ? {[recipeName]: count} : {};
+    }
+    const products = recipe.products[0]
+    if (products.amount > 1) {
+        count = Math.ceil(count / products.amount)
     }
     const addToMissing = (name: string, count: number) => {
         if (inventory[name]) {

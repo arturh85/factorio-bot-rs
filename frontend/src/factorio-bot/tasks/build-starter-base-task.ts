@@ -89,7 +89,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         await addAndExecuteSubtask(await createBuildStarterSteamEngineTask(store, 1))
     }
 
-    if (!store.state.world.starterLabs) {
+    if (!store.state.world.starterScienceBlueprints) {
         await addAndExecuteSubtask(await createBuildStarterLabTask(store, data.starterTargetLabs))
     }
 }

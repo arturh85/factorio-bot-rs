@@ -129,19 +129,22 @@ pub async fn start_factorio_server(
     }
     let rcon_port: String = settings.get("rcon_port")?;
     let rcon_pass: String = settings.get("rcon_pass")?;
-
-    info!("Starting <bright-blue>server</> at {:?}", &instance_path);
+    let args = &[
+        "--start-server",
+        saves_level_path.to_str().unwrap(),
+        "--rcon-port",
+        &rcon_port,
+        "--rcon-password",
+        &rcon_pass,
+        "--server-settings",
+        &server_settings_path.to_str().unwrap(),
+    ];
+    info!(
+        "Starting <bright-blue>server</> at {:?} with {:?}",
+        &instance_path, &args
+    );
     let mut child = Command::new(&factorio_binary_path)
-        .args(&[
-            "--start-server",
-            saves_level_path.to_str().unwrap(),
-            "--rcon-port",
-            &rcon_port,
-            "--rcon-password",
-            &rcon_pass,
-            "--server-settings",
-            &server_settings_path.to_str().unwrap(),
-        ])
+        .args(args)
         // .stdout(Stdio::from(outputs))
         // .stderr(Stdio::from(errors))
         .stdout(Stdio::piped())
@@ -203,24 +206,25 @@ pub async fn start_factorio_client(
         );
         std::process::exit(1);
     }
+    let args = &[
+        "--mp-connect",
+        server_host.unwrap_or("localhost"),
+        // "--graphics-quality", "very-low",
+        // "--force-graphics-preset", "very-low",
+        // "--video-memory-usage", "low",
+
+        // "--gfx-safe-mode",
+        // "--low-vram",
+        "--disable-audio",
+        "--window-size",
+        "maximized",
+    ];
     info!(
-        "Starting <bright-blue>{}</> at {:?}",
-        &instance_name, &instance_path
+        "Starting <bright-blue>{}</> at {:?} with {:?}",
+        &instance_name, &instance_path, &args
     );
     let mut child = Command::new(&factorio_binary_path)
-        .args(&[
-            "--mp-connect",
-            server_host.unwrap_or("localhost"),
-            // "--graphics-quality", "very-low",
-            // "--force-graphics-preset", "very-low",
-            // "--video-memory-usage", "low",
-
-            // "--gfx-safe-mode",
-            // "--low-vram",
-            "--disable-audio",
-            "--fullscreen",
-            "false",
-        ])
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

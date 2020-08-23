@@ -248,6 +248,10 @@ export class FactorioBot {
     }
 
     async craft(recipeName: string, count: number): Promise<void> {
+        const recipe = this.$store.state.recipes[recipeName]
+        if (recipe && recipe.products[0].amount > 1) {
+            count = Math.ceil(count / recipe.products[0].amount)
+        }
         const player = await FactorioApi.craft(
             this.playerId,
             recipeName,
@@ -270,6 +274,25 @@ export class FactorioBot {
             itemName,
             _placePosition,
             placeDirection
+        );
+        if (result.player && result.player.playerId == this.playerId) {
+            this.$store.commit('updatePlayer', result.player);
+        } else {
+            throw new Error('invalid response')
+        }
+        return result.entity;
+    }
+
+    async reviveGhost(
+        ghostEntity: FactorioEntity
+    ): Promise<FactorioEntity> {
+        if (!ghostEntity.ghostName) {
+            throw new Error("cannot revive non ghosts")
+        }
+        const result = await FactorioApi.reviveGhost(
+            this.playerId,
+            ghostEntity.ghostName,
+            ghostEntity.position
         );
         if (result.player && result.player.playerId == this.playerId) {
             this.$store.commit('updatePlayer', result.player);
