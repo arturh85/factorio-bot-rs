@@ -20,6 +20,7 @@ const TASK_TYPE = 'build-starter-lab'
 
 type TaskData = {
     labCount: number,
+    ignoreBlueprintEntities: boolean
 }
 
 async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: Task): Promise<FactorioEntity[]> {
@@ -35,24 +36,25 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
 
     const bot = bots[0]
-    // const result = await FactorioApi.parseBlueprint(blueprintTileableStarterScience)
-    // const entities = countEntitiesFromBlueprint(result.blueprint)
-    // const subtasks: Task[] = []
-    // for(const name of Object.keys(entities)) {
-    //     if (bot.mainInventory(name) < entities[name]) {
-    //         const subtask = await createCraftTask(store, name, entities[name], false)
-    //         store.commit('addSubTask', {id: task.id, task: subtask})
-    //         subtasks.push(subtask)
-    //     }
-    // }
-
-    // if(subtasks.length > 0) {
-    //     store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
-    //     for (const subTask of subtasks) {
-    //         await executeTask(store, bots, subTask)
-    //     }
-    //     store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
-    // }
+    if (!data.ignoreBlueprintEntities) {
+        const result = await FactorioApi.parseBlueprint(blueprintTileableStarterScience)
+        const entities = countEntitiesFromBlueprint(result.blueprint)
+        const subtasks: Task[] = []
+        for(const name of Object.keys(entities)) {
+            if (bot.mainInventory(name) < entities[name]) {
+                const subtask = await createCraftTask(store, name, entities[name], false)
+                store.commit('addSubTask', {id: task.id, task: subtask})
+                subtasks.push(subtask)
+            }
+        }
+        if(subtasks.length > 0) {
+            store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
+            for (const subTask of subtasks) {
+                await executeTask(store, bots, subTask)
+            }
+            store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
+        }
+    }
 
     let blueprintEntities: FactorioEntity[] = [];
     const offset = (store.state.world.starterScienceBlueprints || []).length
@@ -60,7 +62,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         const blueprint = await bot.placeBlueprint(
             blueprintTileableStarterScience,
             {
-                x: offshorePumpPosition.x + 2 + (scienceIndex + offset) * 4,
+                x: offshorePumpPosition.x + 2 + (scienceIndex + offset) * 6,
                 y: offshorePumpPosition.y - 18,
             },
             Direction.north
@@ -99,9 +101,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
 taskRunnerByType[TASK_TYPE] = executeThisTask
 
-export async function createBuildStarterLabTask(store: Store<State>, labCount: number): Promise<Task> {
+export async function createBuildStarterLabTask(store: Store<State>, labCount: number, ignoreBlueprintEntities: boolean): Promise<Task> {
     const data: TaskData = {
         labCount,
+        ignoreBlueprintEntities,
     }
     return createTask(TASK_TYPE, `Build Starter Lab x ${labCount}`, data)
 }

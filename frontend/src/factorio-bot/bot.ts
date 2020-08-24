@@ -12,6 +12,9 @@ import {Store} from "vuex"
 import {State} from "@/store"
 import {Task} from "@/factorio-bot/task";
 
+
+
+
 /*
 Source: https://factoriocheatsheet.com/#material-processing
  */
@@ -21,6 +24,8 @@ const MS_PER_SMELT = 3200;
 // const MS_PER_SMELT_STEEL = 16000
 // Stone and Steel Furnaces consume 0.0225 coal/second.
 const MS_COAL_BURN_TIME = 44444;
+
+export const MAX_ITEM_INVENTORY = 300
 
 export class FactorioBot {
     $store: Store<State>;
@@ -75,7 +80,7 @@ export class FactorioBot {
                     Direction.north
                 );
                 const conflictArea: Rect = {
-                    leftTop: {x: position.x , y: position.y - 15},
+                    leftTop: {x: position.x , y: position.y - 23},
                     rightBottom: {x: position.x + 18 , y: position.y},
                 }
                 const conflictEntities = await FactorioApi.findEntitiesInArea(conflictArea);

@@ -8,7 +8,7 @@ import type {
     Position, Rect,
     World,
 } from "@/factorio-bot/types";
-import {Direction, Entities} from "@/factorio-bot/types";
+import {Direction, Entities, RequestEntity} from "@/factorio-bot/types";
 import {FactorioBot} from "@/factorio-bot/bot";
 
 export const emptyWorld: World = {
@@ -308,3 +308,125 @@ export function formatDuration(ms: number): string {
     const seconds = secondsTotal % 60
     return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
+
+export function fuelRequestEntitiesFromWorld(world: World): RequestEntity[] {
+    let entities: RequestEntity[] = [];
+    if (world.starterCoalLoops) {
+        entities = entities.concat(
+            world.starterCoalLoops.flatMap(coalLoop => {
+                const entities: RequestEntity[] = [];
+                entities.push({
+                    name: coalLoop.minerType,
+                    position: coalLoop.minerPosition,
+                })
+                return entities;
+            }))
+    }
+    return entities
+}
+
+export function fuelableRequestEntitiesFromWorld(world: World): RequestEntity[] {
+    let entities: RequestEntity[] = [];
+    if (world.starterMinerChests) {
+        entities = entities.concat(
+            world.starterMinerChests.flatMap(minerChest => {
+                const entities: RequestEntity[] = [];
+                entities.push({
+                    name: minerChest.minerType,
+                    position: minerChest.minerPosition,
+                })
+                return entities;
+            }))
+    }
+    if (world.starterMinerFurnaces) {
+        entities = entities.concat(
+            world.starterMinerFurnaces.flatMap(minerFurnace => {
+                const entities: RequestEntity[] = [];
+                entities.push({
+                    name: minerFurnace.furnaceType,
+                    position: minerFurnace.furnacePosition,
+                })
+                entities.push({
+                    name: minerFurnace.minerType,
+                    position: minerFurnace.minerPosition,
+                })
+                return entities
+            }))
+    }
+    if (world.starterSteamEngineBlueprints) {
+        entities = entities.concat(
+            world.starterSteamEngineBlueprints.flatMap(blueprint => {
+                return blueprint.filter(entity => entity.name === Entities.boiler).map(boiler => ({
+                    name: boiler.name,
+                    position: boiler.position,
+                }))
+            }))
+    }
+    return entities
+}
+
+export function targetRequestEntitiesFromWorld(world: World, target: string): RequestEntity[] {
+    let entities: RequestEntity[] = [];
+    if (target === Entities.stone && world.starterMinerChests) {
+        entities = entities.concat(
+            world.starterMinerChests.flatMap(minerChest => {
+                const entities: RequestEntity[] = [];
+                entities.push({
+                    name: minerChest.chestType,
+                    position: minerChest.chestPosition,
+                })
+                return entities;
+            }))
+    }
+    if (target !== Entities.stone && target !== Entities.coal && world.starterMinerFurnaces) {
+        entities = entities.concat(
+            world.starterMinerFurnaces.flatMap(minerFurnace => {
+                const entities: RequestEntity[] = [];
+                entities.push({
+                    name: minerFurnace.furnaceType,
+                    position: minerFurnace.furnacePosition,
+                })
+                return entities
+            }))
+    }
+    if (target === Entities.coal && world.starterCoalLoops) {
+        entities = entities.concat(
+            world.starterCoalLoops.flatMap(coalLoop => {
+                const entities: RequestEntity[] = [];
+                entities.push({
+                    name: coalLoop.minerType,
+                    position: coalLoop.minerPosition,
+                })
+                return entities;
+            }))
+    }
+    return entities
+}
+
+export function targetAllRequestEntitiesFromWorld(world: World): RequestEntity[] {
+    let entities: RequestEntity[] = [];
+    if (world.starterMinerChests) {
+        entities = entities.concat(
+            world.starterMinerChests.flatMap(minerChest => {
+                const entities: RequestEntity[] = [];
+                entities.push({
+                    name: minerChest.chestType,
+                    position: minerChest.chestPosition,
+                })
+                return entities;
+            }))
+    }
+    if (world.starterMinerFurnaces) {
+        entities = entities.concat(
+            world.starterMinerFurnaces.flatMap(minerFurnace => {
+                const entities: RequestEntity[] = [];
+                entities.push({
+                    name: minerFurnace.furnaceType,
+                    position: minerFurnace.furnacePosition,
+                })
+                return entities
+            }))
+    }
+    return entities
+}
+

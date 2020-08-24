@@ -1,7 +1,7 @@
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::util::{
-    calculate_distance, hashmap_to_lua, move_position, position_to_lua, rect_to_lua, str_to_lua,
-    value_to_lua, vec_to_lua,
+    blueprint_build_area, calculate_distance, hashmap_to_lua, move_position, position_in_rect,
+    position_to_lua, rect_to_lua, str_to_lua, value_to_lua, vec_to_lua,
 };
 use crate::num_traits::FromPrimitive;
 use crate::types::{
@@ -200,14 +200,39 @@ impl FactorioRcon {
         world: &State<'_, Arc<FactorioWorld>>,
     ) -> anyhow::Result<Vec<FactorioEntity>> {
         let player = world.players.get_one(&player_id).unwrap();
-        const MAX_DISTANCE: f64 = 10.0;
         let distance = calculate_distance(&player.position, &position);
+        let build_distance = player.build_distance.unwrap_or(10) as f64;
         drop(player); // wow, without this factorio (?) freezes (!)
-        if distance > MAX_DISTANCE {
+        if distance > build_distance {
             warn!("too far away, moving first!");
-            self.move_player(world, player_id, position, Some(MAX_DISTANCE))
+            self.move_player(world, player_id, position, Some(build_distance))
                 .await?;
         }
+
+        let build_area = blueprint_build_area(&world.entity_prototypes, &blueprint);
+        let width_2 = build_area.width() / 2.0;
+        let height_2 = build_area.height() / 2.0;
+        let build_area = Rect {
+            left_top: Position::new(position.x() - width_2, position.y() - height_2),
+            right_bottom: Position::new(position.x() + width_2, position.y() + height_2),
+        };
+        let build_area_entities = self
+            .find_entities_filtered(Some(build_area.clone()), None, None, None, None)
+            .await?;
+
+        for entity in build_area_entities {
+            if entity.name != "character" && position_in_rect(&build_area, &entity.position) {
+                warn!(
+                    "mining entity in build area: {} @ {}/{}",
+                    entity.name,
+                    entity.position.x(),
+                    entity.position.y()
+                );
+                self.player_mine(world, player_id, &entity.name, &entity.position, 1)
+                    .await?;
+            }
+        }
+
         let lines = self
             .remote_call(
                 "place_blueprint",
@@ -245,12 +270,12 @@ impl FactorioRcon {
         world: &State<'_, Arc<FactorioWorld>>,
     ) -> anyhow::Result<FactorioEntity> {
         let player = world.players.get_one(&player_id).unwrap();
-        const MAX_DISTANCE: f64 = 10.0;
+        let build_distance = player.build_distance.unwrap_or(10) as f64;
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
-        if distance > MAX_DISTANCE {
+        if distance > build_distance {
             warn!("too far away, moving first!");
-            self.move_player(world, player_id, position, Some(MAX_DISTANCE))
+            self.move_player(world, player_id, position, Some(build_distance))
                 .await?;
         }
         let lines = self
@@ -369,12 +394,12 @@ impl FactorioRcon {
         *next_action_id = (*next_action_id + 1) % 1000;
         drop(next_action_id);
         let player = world.players.get_one(&player_id).unwrap();
-        const MAX_DISTANCE: f64 = 2.0;
+        let resource_reach_distance = player.resource_reach_distance.unwrap_or(3) as f64;
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
-        if distance > MAX_DISTANCE {
+        if distance > resource_reach_distance {
             warn!("too far away, moving first!");
-            self.move_player(world, player_id, position, Some(MAX_DISTANCE))
+            self.move_player(world, player_id, position, Some(resource_reach_distance))
                 .await?;
         }
         self.action_start_mining(action_id, player_id, name, position, count)
@@ -463,12 +488,12 @@ impl FactorioRcon {
     ) -> anyhow::Result<FactorioEntity> {
         let player = world.players.get_one(&player_id).unwrap();
         let player_position = player.position.clone();
+        let build_distance = player.build_distance.unwrap_or(10) as f64;
         drop(player); // wow, without this factorio (?) freezes (!)
-        const MAX_DISTANCE: f64 = 10.0;
         let distance = calculate_distance(&player_position, &entity_position);
-        if distance > MAX_DISTANCE {
+        if distance > build_distance {
             warn!("too far away, moving first!");
-            self.move_player(world, player_id, &entity_position, Some(MAX_DISTANCE))
+            self.move_player(world, player_id, &entity_position, Some(build_distance))
                 .await?;
         }
         let lines = self
@@ -558,12 +583,12 @@ impl FactorioRcon {
         world: &State<'_, Arc<FactorioWorld>>,
     ) -> anyhow::Result<()> {
         let player = world.players.get_one(&player_id).unwrap();
-        const MAX_DISTANCE: f64 = 10.0;
+        let reach_distance = player.reach_distance.unwrap_or(10) as f64;
         let distance = calculate_distance(&player.position, &entity_position);
         drop(player); // wow, without this factorio (?) freezes (!)
-        if distance > MAX_DISTANCE {
+        if distance > reach_distance {
             warn!("too far away, moving first!");
-            self.move_player(world, player_id, &entity_position, Some(MAX_DISTANCE))
+            self.move_player(world, player_id, &entity_position, Some(reach_distance))
                 .await?;
         }
 
@@ -601,12 +626,12 @@ impl FactorioRcon {
         world: &State<'_, Arc<FactorioWorld>>,
     ) -> anyhow::Result<()> {
         let player = world.players.get_one(&player_id).unwrap();
-        const MAX_DISTANCE: f64 = 10.0;
+        let reach_distance = player.reach_distance.unwrap_or(10) as f64;
         let distance = calculate_distance(&player.position, &entity_position);
         drop(player); // wow, without this factorio (?) freezes (!)
-        if distance > MAX_DISTANCE {
+        if distance > reach_distance {
             warn!("too far away, moving first!");
-            self.move_player(world, player_id, &entity_position, Some(MAX_DISTANCE))
+            self.move_player(world, player_id, &entity_position, Some(reach_distance))
                 .await?;
         }
         let player_id = player_id.to_string();

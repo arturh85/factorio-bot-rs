@@ -44,6 +44,7 @@ pub fn status() -> String {
 pub async fn build_rocket(
     settings: Config,
     rcon: FactorioRcon,
+    open_browser: bool,
     world: Arc<FactorioWorld>,
 ) -> rocket::Rocket {
     let frontend_path = match Path::new("public/").exists() {
@@ -52,7 +53,13 @@ pub async fn build_rocket(
     };
 
     // dotenv().ok();
-    info!("🚀 Webserver launched at http://localhost:7123/");
+    let url = "http://localhost:7123/";
+
+    info!("🚀 Webserver launched at <yellow><underline>{}</>", &url);
+    if open_browser {
+        webbrowser::open(&url).expect("failed to open browser");
+    }
+
     rocket::ignite()
         // .mount(
         //     "/workspace",

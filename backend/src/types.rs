@@ -43,6 +43,12 @@ pub struct FactorioPlayer {
     pub player_id: u32,
     pub position: Position,
     pub main_inventory: Box<BTreeMap<String, u32>>,
+    pub build_distance: Option<u32>,
+    pub reach_distance: Option<u32>,
+    pub drop_item_distance: Option<u32>,
+    pub item_pickup_distance: Option<u32>,
+    pub loot_pickup_distance: Option<u32>,
+    pub resource_reach_distance: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
@@ -88,6 +94,13 @@ pub enum Direction {
 }
 
 impl Position {
+    pub fn new(x: f64, y: f64) -> Position {
+        Position {
+            x: Box::new(r64(x)),
+            y: Box::new(r64(y)),
+        }
+    }
+
     pub fn x(&self) -> f64 {
         (*self.x).to_f64().expect("failed to cast r64 to f64")
     }
@@ -106,10 +119,7 @@ impl FromStr for Position {
                 str
             ));
         }
-        Ok(Position {
-            x: Box::new(r64(parts[0].parse()?)),
-            y: Box::new(r64(parts[1].parse()?)),
-        })
+        Ok(Position::new(parts[0].parse()?, parts[1].parse()?))
     }
 }
 
@@ -119,7 +129,14 @@ pub struct Rect {
     pub left_top: Position,
     pub right_bottom: Position,
 }
+
 impl Rect {
+    pub fn new(left_top: &Position, right_bottom: &Position) -> Rect {
+        Rect {
+            left_top: left_top.clone(),
+            right_bottom: right_bottom.clone(),
+        }
+    }
     pub fn width(&self) -> f64 {
         self.right_bottom.x() - self.left_top.x()
     }
@@ -260,6 +277,17 @@ pub struct FactorioResult {
     pub output: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerChangedDistanceEvent {
+    pub player_id: u32,
+    pub build_distance: u32,
+    pub reach_distance: u32,
+    pub drop_item_distance: u32,
+    pub item_pickup_distance: u32,
+    pub loot_pickup_distance: u32,
+    pub resource_reach_distance: u32,
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerChangedPositionEvent {

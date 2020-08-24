@@ -209,15 +209,14 @@ pub async fn start_factorio_client(
     let args = &[
         "--mp-connect",
         server_host.unwrap_or("localhost"),
-        // "--graphics-quality", "very-low",
+        "--graphics-quality",
+        "low",
         // "--force-graphics-preset", "very-low",
         // "--video-memory-usage", "low",
 
         // "--gfx-safe-mode",
         // "--low-vram",
         "--disable-audio",
-        "--window-size",
-        "maximized",
     ];
     info!(
         "Starting <bright-blue>{}</> at {:?} with {:?}",

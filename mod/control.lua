@@ -195,6 +195,8 @@ end
 
 -- TODO: use simplify_amount
 function products_to_dict(products) -- input: array of products, output: dict["item"] = amount
+	if products == nil then return nil end
+
 	local result = {}
 	for _,product in ipairs(products) do
 		if product.amount then
@@ -600,7 +602,7 @@ function on_tick(event)
 					end
 
 --					print("waypoint "..w.idx.." of "..#w.waypoints..", pos = "..coord(pos)..", dest = "..coord(dest).. ", dx/dy="..dx.."/"..dy..", dir="..direction)
-					if event.tick - w.idx_tick > 60 then
+					if w.idx_tick ~= nil and event.tick - w.idx_tick > 60 then
 						print("Player is stuck while moving, teleporting to next waypoint")
 						player.teleport(w.waypoints[w.idx])
 					end
@@ -922,6 +924,7 @@ function wait_for_player_inventory(event)
 	if main_inventory ~= nil then
 		wait_for_player = false
 		on_player_main_inventory_changed(event)
+		on_player_changed_distance(event)
 	else
 		wait_for_player = true
 		local use1 = false
@@ -1095,8 +1098,23 @@ function on_player_changed_position(event)
 	}))
 end
 
+function on_player_changed_distance(event)
+	for idx, player in pairs(game.players) do
+		writeout(event.tick, "on_player_changed_distance", game.table_to_json({
+			playerId = idx,
+			buildDistance = player.build_distance,
+			reachDistance = player.reach_distance,
+			dropItemDistance = player.drop_item_distance,
+			itemPickupDistance = math.ceil(player.item_pickup_distance),
+			lootPickupDistance = math.ceil(player.loot_pickup_distance),
+			resourceReachDistance = math.ceil(player.resource_reach_distance),
+		}))
+	end
+end
+
 function on_research_finished(event)
 	writeout_recipes()
+	on_player_changed_distance(event)
 end
 
 function on_player_main_inventory_changed(event)
@@ -1198,7 +1216,7 @@ function rcon_place_entity(player_id, item_name, entity_position, direction)
 	print("entity_position " .. game.table_to_json(entity_position))
 
 	if not surface.can_place_entity{name=entproto.name, position=entity_position, direction=direction, force=player.force, build_check_type=defines.build_check_type.manual} then
-		local bb = add_to_bounding_box(entproto.collision_box, {x = entity_position[1], y = entity_position[2]})
+		local bb = add_to_bounding_box(expand_rect_floor_ceil(entproto.collision_box), {x = entity_position[1], y = entity_position[2]})
 		if position_in_rect(player.position, bb) then
 			rcon.print("§player_blocks_placement§")
 		else
@@ -1222,6 +1240,13 @@ function add_to_bounding_box(bb, center_position)
 	return {
 		left_top = { x = bb.left_top.x + center_position.x, y = bb.left_top.y + center_position.y},
 		right_bottom = { x = bb.right_bottom.x + center_position.x, y = bb.right_bottom.y + center_position.y},
+	}
+end
+
+function expand_rect_floor_ceil(bb)
+	return {
+		left_top = { x = math.floor(bb.left_top.x * 2.0) / 2.0 , y = math.floor(bb.left_top.y * 2.0) / 2.0 },
+		right_bottom = { x = math.ceil(bb.right_bottom.x * 2.0) / 2.0 , y = math.ceil(bb.right_bottom.y * 2.0) / 2.0},
 	}
 end
 
@@ -1449,7 +1474,22 @@ function rcon_revive_ghost(player_id, name, x, y)
 		main_inventory.remove({name=name, count=1})
 		rcon.print(game.table_to_json(serialize_entity(entity)))
 	else
-		complain("Error: failed to revive ghost")
+		local prototype = game.entity_prototypes[ghost.ghost_name]
+		local bb = add_to_bounding_box(expand_rect_floor_ceil(prototype.collision_box), {x = ghost.position.x, y = ghost.position.y})
+		--				print("ghost bb: " .. game.table_to_json(bb))
+		if position_in_rect(player.position, bb) then
+			print("Player is standing inside entity ghost, teleporting player away!")
+			player.teleport({x = bb.right_bottom.x + 1, y = bb.right_bottom.y + 1})
+			local success, entity = ghost.revive()
+			if entity ~= nil then
+				main_inventory.remove({name=name, count=1})
+				rcon.print(game.table_to_json(serialize_entity(entity)))
+			else
+				complain("Error: failed to revive ghost")
+			end
+		else
+			complain("Error: failed to revive ghost")
+		end
 	end
 end
 
@@ -1515,7 +1555,26 @@ function rcon_place_blueprint(player_id, blueprint, pos_x, pos_y, direction, for
 				inventory = main_inventory.get_contents()
 				table.insert(result, serialize_entity(entity))
 			else
-				table.insert(result, serialize_entity(ghost))
+				local prototype = game.entity_prototypes[item]
+--				print("player position: " .. game.table_to_json(player.position))
+--				print("ghost position: " .. game.table_to_json(ghost.position))
+--				print("ghost collision_box: " .. game.table_to_json(prototype.collision_box))
+				local bb = add_to_bounding_box(expand_rect_floor_ceil(prototype.collision_box), {x = ghost.position.x, y = ghost.position.y})
+--				print("ghost bb: " .. game.table_to_json(bb))
+				if position_in_rect(player.position, bb) then
+					print("Player is standing inside entity ghost, teleporting player away!")
+					player.teleport({x = bb.right_bottom.x + 1, y = bb.right_bottom.y + 1})
+					local success, entity = ghost.revive()
+					if entity ~= nil then
+						main_inventory.remove({name=item, count=1})
+						inventory = main_inventory.get_contents()
+						table.insert(result, serialize_entity(entity))
+					else
+						table.insert(result, serialize_entity(ghost))
+					end
+				else
+					table.insert(result, serialize_entity(ghost))
+				end
 			end
 		else
 			table.insert(result, serialize_entity(ghost))

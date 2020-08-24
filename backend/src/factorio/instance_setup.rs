@@ -317,8 +317,17 @@ pub async fn setup_factorio_instance(
         value["service-username"] = Value::from(instance_name);
         let player_data_file = File::create(&player_data_path)?;
         serde_json::to_writer_pretty(player_data_file, &value)?;
-    }
 
+        let config_path = instance_path.join(PathBuf::from("config"));
+        if !config_path.exists() {
+            create_dir(&config_path).await?;
+            let config_ini_data = include_bytes!("../data/config.ini");
+            let config_ini_path = config_path.join(PathBuf::from("config.ini"));
+            let mut outfile = fs::File::create(&config_ini_path)?;
+            outfile.write_all(config_ini_data)?;
+            info!("Created <bright-blue>{:?}</>", &config_ini_path);
+        }
+    }
     Ok(())
 }
 

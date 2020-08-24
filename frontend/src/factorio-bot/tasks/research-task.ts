@@ -8,6 +8,8 @@ import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {missingIngredients, sleep} from "@/factorio-bot/util";
 import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
+import {createLoopResearchTask} from "@/factorio-bot/tasks/loop-research-task";
+import {createBuildStarterLabTask} from "@/factorio-bot/tasks/build-starter-lab-task";
 
 const TASK_TYPE = 'research'
 
@@ -35,7 +37,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         await executeTask(store, bots, subtask)
     }
     if (!store.state.world.starterScienceBlueprints) {
-        await addAndExecuteSubtask(await createBuildStarterBase(store, 4, 2, 2, 4, 1))
+        await addAndExecuteSubtask(await createBuildStarterBase(store, 6, 4, 3, 6, 1))
     }
     if (!store.state.world.starterScienceBlueprints || store.state.world.starterScienceBlueprints.length === 0) {
         throw new Error("should have one lab?")
@@ -58,7 +60,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         await addAndExecuteSubtask(await createResearchTask(store, Technologies.automation))
     }
     // prioritize logistics research
-    if (!store.state.force.technologies[Technologies.logistics].researched && data.name !== Technologies.logistics) {
+    if (!store.state.force.technologies[Technologies.logistics].researched && data.name !== Technologies.logistics && data.name !== Technologies.automation) {
         await addAndExecuteSubtask(await createResearchTask(store, Technologies.logistics))
     }
 
@@ -112,6 +114,13 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
                 }
             }
         }
+
+        if (store.state.world.starterScienceBlueprints.length < 3) {
+            const subtask = await createBuildStarterLabTask(store, 1, false)
+            store.commit('addSubTask', {id: task.id, task: subtask})
+            store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
+            await executeTask(store, bots, subtask)
+        }
     } else {
         for (const ingredient of tech.researchUnitIngredients) {
             if (bot.mainInventory(ingredient.name) < tech.researchUnitCount) {
@@ -136,14 +145,17 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         }))
         for(const boiler of boilerInventories) {
             const fuel = (boiler.fuelInventory || {})[Entities.coal] || 0
-            if (fuel < 5) {
-                await bot.insertToInventory(
-                    Entities.boiler,
-                    boiler.position,
-                    InventoryType.chest_or_fuel,
-                    Entities.coal,
-                    5 - fuel
-                );
+            if (fuel < 10) {
+                const toInsert = Math.min(bot.mainInventory(Entities.coal), 10 - fuel)
+                if (toInsert > 0) {
+                    await bot.insertToInventory(
+                        Entities.boiler,
+                        boiler.position,
+                        InventoryType.chest_or_fuel,
+                        Entities.coal,
+                        toInsert
+                    );
+                }
             }
         }
         const starterLabs = store.state.world.starterScienceBlueprints.flatMap(blueprintEntities => blueprintEntities
@@ -170,16 +182,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
             }
         }
     }
-    for(let _retry = 0; _retry < tech.researchUnitCount * 30; _retry++) {
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
-        store.commit('updateForce', await FactorioApi.playerForce());
-        if (store.state.force.technologies[data.name].researched) {
-            store.commit('updateRecipes', await FactorioApi.allRecipes());
-            break
-        }
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
-        await sleep(10000);
-    }
+    const subtask = await createLoopResearchTask(store, Entities.coal, data.name)
+    store.commit('addSubTask', {id: task.id, task: subtask})
+    store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
+    await executeTask(store, bots, subtask)
 }
 
 taskRunnerByType[TASK_TYPE] = executeThisTask

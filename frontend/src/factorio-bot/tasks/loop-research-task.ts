@@ -8,16 +8,15 @@ import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
 import {
     fuelableRequestEntitiesFromWorld, fuelRequestEntitiesFromWorld,
     sleep,
-    sortEntitiesByDistanceTo,
+    sortEntitiesByDistanceTo, targetAllRequestEntitiesFromWorld,
     targetRequestEntitiesFromWorld
 } from "@/factorio-bot/util";
 
-const TASK_TYPE = 'loop-starter-miners'
+const TASK_TYPE = 'loop-research'
 
 type TaskData = {
     fuelName: string,
     name: string,
-    count: number,
 }
 
 async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: Task): Promise<void> {
@@ -25,33 +24,46 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     if (bots.length === 0) {
         return
     }
+
+    const checkResearchDone = async () => {
+        store.commit('updateForce', await FactorioApi.playerForce());
+        if (store.state.force.technologies[data.name].researched) {
+            store.commit('updateRecipes', await FactorioApi.allRecipes());
+            return true
+        }
+        return false
+    }
+
     // bots.sort(sortBotsByInventory([data.name]))
     const bot = bots[0]
-    let remaining = data.count - bot.mainInventory(data.name)
-    while (remaining > 0) {
+    while (true) {
         store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
-        const targetInventories = await FactorioApi.inventoryContentsAt(targetRequestEntitiesFromWorld(store.state.world, data.name))
+        const targetInventories = await FactorioApi.inventoryContentsAt(targetAllRequestEntitiesFromWorld(store.state.world))
         targetInventories.sort(sortEntitiesByDistanceTo(bot.player().position))
         // console.log('targetInventories', targetInventories)
         // first get all target items
         for (const entity of targetInventories) {
-            if (entity.outputInventory && entity.outputInventory[data.name]) {
-                const take = entity.outputInventory[data.name]
-                store.commit('updateTask', updateTaskStatus(task, TaskStatus.WALKING));
-                try {
-                    await bot.removeFromInventory(entity.name, entity.position,
-                        data.name === Entities.coal || data.name === Entities.stone ?
-                            InventoryType.chest_or_fuel : InventoryType.furnace_result, data.name, take)
-                } catch (err) {
-                    // ignore errors here ...
+            for (const itemName of Object.keys(entity.outputInventory || {})) {
+                const needs = MAX_ITEM_INVENTORY - bot.mainInventory(itemName)
+                const take = Math.min(needs, (entity.outputInventory || {})[itemName])
+                if (take > 0) {
+                    store.commit('updateTask', updateTaskStatus(task, TaskStatus.WALKING));
+                    try {
+                        await bot.removeFromInventory(entity.name, entity.position,
+                            itemName === Entities.coal || itemName === Entities.stone ?
+                                InventoryType.chest_or_fuel : InventoryType.furnace_result, itemName, take)
+                    } catch (err) {
+                        // ignore errors here ...
+                    }
+                    store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
                 }
-                store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
             }
         }
-        remaining = data.count - bot.mainInventory(data.name)
-        if (remaining <= 0) {
+
+        if (await checkResearchDone()) {
             break
         }
+
         // then use up all of our fuel
         const targetFuel = bot.mainInventory(data.fuelName) > 50 ? 10 : 5
         const minFuel = 2
@@ -100,10 +112,20 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
             store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
             await executeTask(store, bots, subtask)
         }
-        remaining = data.count - bot.mainInventory(data.name)
-        if (remaining <= 0) {
+
+        if (await checkResearchDone()) {
             break
         }
+
+        // const assemblingMachines = (store.state.world.starterScienceBlueprints || [])
+        //     .flatMap(blueprint => blueprint.filter(entity => entity.recipe === Entities.ironGearWheel))
+        //
+        // for(const machine of assemblingMachines) {
+        //     await bot.insertToInventory(machine.name, machine.position, InventoryType.furnace_source, name, Math.ceil(ingredients[name] / assemblingMachines.length))
+        // }
+        //
+        //
+
         store.commit('updateTask', updateTaskStatus(task, TaskStatus.SLEEPING));
         await sleep(2000)
     }
@@ -111,11 +133,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
 taskRunnerByType[TASK_TYPE] = executeThisTask
 
-export async function createLoopStarterMinersTask(store: Store<State>, fuelName: string, name: string, count: number): Promise<Task> {
+export async function createLoopResearchTask(store: Store<State>, fuelName: string, name: string): Promise<Task> {
     const data: TaskData = {
         fuelName,
         name,
-        count,
     }
-    return createTask(TASK_TYPE, `Loop Starter Miners until ${name} x ${count}`, data)
+    return createTask(TASK_TYPE, `Loop Research until ${name}`, data)
 }

@@ -273,8 +273,8 @@ pub async fn all_players(
     world: State<'_, Arc<FactorioWorld>>,
 ) -> Result<ApiResponse, Debug<anyhow::Error>> {
     let mut players: Vec<FactorioPlayer> = Vec::new();
-    for player_id in 0..8u32 {
-        let player = world.players.get_one(&player_id);
+    for (_, player) in &world.players.read().unwrap() {
+        let player = player.get_one();
         if player.is_some() {
             players.push(player.unwrap().clone());
         }

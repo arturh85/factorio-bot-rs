@@ -18,13 +18,11 @@ export default Vue.extend({
   beforeUpdate() {
     if (this.$data.durationInterval === null && this.$props.task && this.$props.task.startedAt && !this.$props.task.finishedAt) {
       const updateDuration = () => {
-        if (this.$props.task.finishedAt) {
-          clearInterval(this.$data.durationInterval)
-          this.$data.durationInterval = null
+        if (this.$props.task && this.$props.task.startedAt && !this.$props.task.finishedAt) {
+          this.$data.duration = formatDuration(new Date().getTime() - this.$props.task.startedAt)
+        } else {
           this.$data.duration = null
-          return
         }
-        this.$data.duration = formatDuration(new Date().getTime() - this.$props.task.startedAt)
       }
       this.$data.durationInterval = setInterval(updateDuration)
       updateDuration()

@@ -116,7 +116,8 @@ export type InventoryResponse = { name: string; position: Position; outputInvent
 export type FactorioRecipe = { name: string; valid: boolean; enabled: boolean; category: string; ingredients: FactorioIngredient []; products: FactorioProduct []; hidden: boolean; energy: number; order: string; group: string; subgroup: string };
 export type FactorioIngredient = { name: string; ingredientType: string; amount: number };
 export type FactorioProduct = { name: string; productType: string; amount: number; probability: number };
-export type FactorioPlayer = { playerId: number; position: Position; mainInventory: { [key: string]: number } };
+export type FactorioPlayer = { playerId: number; position: Position; mainInventory: { [key: string]: number };
+ buildDistance: number | null; reachDistance: number | null; dropItemDistance: number | null; itemPickupDistance: number | null; lootPickupDistance: number | null; resourceReachDistance: number | null };
 export type ChunkPosition = { x: number; y: number };
 export type Position = { x: number; y: number };
 export type Rect = { leftTop: Position; rightBottom: Position };

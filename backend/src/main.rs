@@ -63,6 +63,12 @@ async fn main() -> anyhow::Result<()> {
                         .help("recreate level by deleting server map if exists"),
                 )
                 .arg(
+                    Arg::with_name("open")
+                        .long("open")
+                        .short("o")
+                        .help("open web interface with default browser"),
+                )
+                .arg(
                     Arg::with_name("logs")
                         .short("l")
                         .long("logs")
@@ -85,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
         let seed = matches.value_of("seed");
         let map_exchange_string = matches.value_of("map");
         let recreate = matches.is_present("new");
+        let open_browser = matches.is_present("open");
         let server_host = matches.value_of("server");
         let (world, rcon) = start_factorio(
             &settings,
@@ -99,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
         .expect("failed to start factorio");
 
         if let Some(world) = world {
-            build_rocket(settings, rcon, world)
+            build_rocket(settings, rcon, open_browser, world)
                 .await
                 .launch()
                 .await

@@ -63,8 +63,20 @@ end
 function serialize_player(player)
     local record = table_properties(
         player,
-        {"name", "index", "position"},
-        {index = "playerId"}
+        {
+            "name", "index", "position", "build_distance",
+            "reach_distance", "drop_item_distance", "item_pickup_distance",
+            "loot_pickup_distance", "resource_reach_distance"
+        },
+        {
+            index = "playerId",
+            build_distance = "buildDistance",
+            reach_distance = "reachDistance",
+            drop_item_distance = "dropItemDistance",
+            item_pickup_distance = "itemPickupDistance",
+            loot_pickup_distance = "lootPickupDistance",
+            resource_reach_distance = "resourceReachDistance"
+        }
     )
     local main_inventory = player.get_main_inventory()
     record.mainInventory = main_inventory.get_contents()

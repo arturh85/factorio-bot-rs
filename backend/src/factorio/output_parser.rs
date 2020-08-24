@@ -1,12 +1,12 @@
 use crate::types::{
     ChunkObject, ChunkPosition, ChunkResource, FactorioChunk, FactorioEntityPrototype,
     FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
-    PlayerChangedPositionEvent, PlayerMainInventoryChangedEvent, Position, Rect,
+    PlayerChangedDistanceEvent, PlayerChangedPositionEvent, PlayerMainInventoryChangedEvent,
+    Position, Rect,
 };
 use async_std::sync::Mutex;
 use evmap::{ReadHandle, WriteHandle};
 use image::RgbaImage;
-use noisy_float::types::r64;
 use num_traits::cast::ToPrimitive;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc::{Receiver, Sender};
@@ -227,20 +227,24 @@ impl OutputParser {
             }
             "on_player_left_game" => {
                 self.players_writer.empty(rest.parse()?);
+                self.players_writer.refresh();
             }
             "on_player_main_inventory_changed" => {
                 let event: PlayerMainInventoryChangedEvent = serde_json::from_str(rest)?;
                 if self.players_writer.contains_key(&event.player_id) {
+                    let existing_player = self.players_writer.get_one(&event.player_id).unwrap();
                     let player = FactorioPlayer {
                         player_id: event.player_id,
-                        position: self
-                            .players_writer
-                            .get_one(&event.player_id)
-                            .unwrap()
-                            .position
-                            .clone(),
+                        position: existing_player.position.clone(),
                         main_inventory: event.main_inventory,
+                        build_distance: existing_player.build_distance,
+                        reach_distance: existing_player.reach_distance,
+                        drop_item_distance: existing_player.drop_item_distance,
+                        item_pickup_distance: existing_player.item_pickup_distance,
+                        loot_pickup_distance: existing_player.loot_pickup_distance,
+                        resource_reach_distance: existing_player.resource_reach_distance,
                     };
+                    drop(existing_player);
                     self.players_writer.empty(event.player_id);
                     self.players_writer.insert(event.player_id, player);
                 } else {
@@ -248,11 +252,14 @@ impl OutputParser {
                         event.player_id,
                         FactorioPlayer {
                             player_id: event.player_id,
-                            position: Position {
-                                x: Box::new(r64(0.0)),
-                                y: Box::new(r64(0.0)),
-                            },
+                            position: Position::new(0.0, 0.0),
                             main_inventory: event.main_inventory.clone(),
+                            build_distance: None,
+                            reach_distance: None,
+                            drop_item_distance: None,
+                            item_pickup_distance: None,
+                            loot_pickup_distance: None,
+                            resource_reach_distance: None,
                         },
                     );
                 }
@@ -262,16 +269,19 @@ impl OutputParser {
             "on_player_changed_position" => {
                 let event: PlayerChangedPositionEvent = serde_json::from_str(rest)?;
                 if self.players_writer.contains_key(&event.player_id) {
+                    let existing_player = self.players_writer.get_one(&event.player_id).unwrap();
                     let player = FactorioPlayer {
                         player_id: event.player_id,
                         position: event.position,
-                        main_inventory: self
-                            .players_writer
-                            .get_one(&event.player_id)
-                            .unwrap()
-                            .main_inventory
-                            .clone(),
+                        main_inventory: existing_player.main_inventory.clone(),
+                        build_distance: existing_player.build_distance,
+                        reach_distance: existing_player.reach_distance,
+                        drop_item_distance: existing_player.drop_item_distance,
+                        item_pickup_distance: existing_player.item_pickup_distance,
+                        loot_pickup_distance: existing_player.loot_pickup_distance,
+                        resource_reach_distance: existing_player.resource_reach_distance,
                     };
+                    drop(existing_player);
                     self.players_writer.empty(event.player_id);
                     self.players_writer.insert(event.player_id, player);
                 } else {
@@ -281,6 +291,48 @@ impl OutputParser {
                             player_id: event.player_id,
                             position: event.position,
                             main_inventory: Box::new(BTreeMap::new()),
+                            build_distance: None,
+                            reach_distance: None,
+                            drop_item_distance: None,
+                            item_pickup_distance: None,
+                            loot_pickup_distance: None,
+                            resource_reach_distance: None,
+                        },
+                    );
+                }
+                self.players_writer.refresh();
+            }
+            "on_player_changed_distance" => {
+                let event: PlayerChangedDistanceEvent = serde_json::from_str(rest)?;
+                if self.players_writer.contains_key(&event.player_id) {
+                    let existing_player = self.players_writer.get_one(&event.player_id).unwrap();
+                    let player = FactorioPlayer {
+                        player_id: event.player_id,
+                        position: existing_player.position.clone(),
+                        main_inventory: existing_player.main_inventory.clone(),
+                        build_distance: Some(event.build_distance),
+                        reach_distance: Some(event.reach_distance),
+                        drop_item_distance: Some(event.drop_item_distance),
+                        item_pickup_distance: Some(event.item_pickup_distance),
+                        loot_pickup_distance: Some(event.loot_pickup_distance),
+                        resource_reach_distance: Some(event.resource_reach_distance),
+                    };
+                    drop(existing_player);
+                    self.players_writer.empty(event.player_id);
+                    self.players_writer.insert(event.player_id, player);
+                } else {
+                    self.players_writer.insert(
+                        event.player_id,
+                        FactorioPlayer {
+                            player_id: event.player_id,
+                            position: Position::new(0.0, 0.0),
+                            main_inventory: Box::new(BTreeMap::new()),
+                            build_distance: Some(event.build_distance),
+                            reach_distance: Some(event.reach_distance),
+                            drop_item_distance: Some(event.drop_item_distance),
+                            item_pickup_distance: Some(event.item_pickup_distance),
+                            loot_pickup_distance: Some(event.loot_pickup_distance),
+                            resource_reach_distance: Some(event.resource_reach_distance),
                         },
                     );
                 }
@@ -307,14 +359,10 @@ impl OutputParser {
                         FactorioTile {
                             name: parts[0].trim().into(),
                             player_collidable: parts[1].parse::<u8>().unwrap() == 1,
-                            position: Position {
-                                x: Box::new(r64(
-                                    (chunk_position.x * 32 + (index % 32) as i32) as f64
-                                )),
-                                y: Box::new(r64(
-                                    (chunk_position.y * 32 + (index / 32) as i32) as f64
-                                )),
-                            },
+                            position: Position::new(
+                                (chunk_position.x * 32 + (index % 32) as i32) as f64,
+                                (chunk_position.y * 32 + (index / 32) as i32) as f64,
+                            ),
                         }
                     })
                     .collect();
