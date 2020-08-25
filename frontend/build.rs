@@ -31,6 +31,8 @@ fn typescriptify() {
     output += &FactorioForce::type_script_ify();
     output += &InventoryResponse::type_script_ify();
     output += &FactorioRecipe::type_script_ify();
+    output += &PlaceEntityResult::type_script_ify();
+    output += &PlaceEntitiesResult::type_script_ify();
     output += &FactorioIngredient::type_script_ify();
     output += &FactorioProduct::type_script_ify();
     output += &FactorioPlayer::type_script_ify();

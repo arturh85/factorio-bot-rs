@@ -5,17 +5,22 @@ authors = ["Artur Hallmann <arturh@arturh.de>"]
 edition = "2018"
 
 [dependencies]
+rand = "*"
 rcon = "0.3.0"
 bb8 = "0.4.2"
-rocket = { git = "https://github.com/SergioBenitez/Rocket", branch = "master", default-features = false, features = [] }
-rocket_contrib = { git = "https://github.com/SergioBenitez/Rocket", branch = "master" }
+actix = "0.9.0"
+actix-web = "2.0.0"
+actix-rt = "1.1.0"
+actix-files = "0.2.1"
+actix-cors = "0.2.0"
+actix-broker = "0.3.0"
+actix-web-actors = "2.0"
 serde = "^1.0"
 serde_derive = "^1.0"
 serde_json = "^1.0"
 clap = "2"
-config = "0.9"
+config = "0.10.1"
 webbrowser = "0.5.5"
-tokio = { version = "0.2", features = ["full"] }
 paris = { version = "1.5", features = ["timestamps", "macros"] }
 color-eyre = "0.5.1"
 petgraph = { version = "0.5.1", features = ["all"] }

@@ -6,21 +6,21 @@ use image::{DynamicImage, GenericImage, ImageFormat, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_text_mut};
 use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut};
 use imageproc::rect::Rect;
-use rocket::http::ContentType;
-use rocket::response::content::Content;
-use rocket::State;
 use rusttype::{Font, Scale};
-use std::path::Path;
 use std::sync::Arc;
 // use std::time::Instant;
 
-#[get("/tiles/<tile_z>/<tile_x>/<tile_y>/tile.png")]
+use actix_web::{web, HttpResponse};
+use std::path::Path;
+
 pub async fn map_tiles(
-    tile_z: i32,
-    tile_x: i32,
-    tile_y: i32,
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Content<Vec<u8>> {
+    world: web::Data<Arc<FactorioWorld>>,
+    info: web::Path<(i32, i32, i32)>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let tile_z = info.0;
+    let tile_x = info.1;
+    let tile_y = info.2;
+
     // let started = Instant::now();
     let ((top_left_x, top_left_y), (bottom_right_x, _bottom_right_y)) =
         chunk_zoom(tile_z, tile_x, tile_y);
@@ -344,7 +344,9 @@ pub async fn map_tiles(
         .write_to(&mut buf, ImageFormat::Png)
         .expect("failed to write image");
     // info!("image writing took <yellow>{:?}</>", started.elapsed());
-    Content(ContentType::PNG, buf)
+    // Content(ContentType::PNG, buf)
+
+    Ok(HttpResponse::Ok().content_type("image/png").body(buf))
 }
 
 pub fn chunk_zoom(z: i32, x: i32, y: i32) -> ((f64, f64), (f64, f64)) {

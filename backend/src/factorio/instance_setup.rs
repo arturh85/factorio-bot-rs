@@ -388,17 +388,18 @@ pub async fn update_map_gen_settings(
     logger.loading(
         "Updating <bright-blue>map-settings.json</> and <bright-blue>map-gen-settings.json</>",
     );
+    let args = &[
+        "--start-server",
+        saves_level_path.to_str().unwrap(),
+        "--rcon-port",
+        &rcon_port,
+        "--rcon-password",
+        &rcon_pass,
+        "--server-settings",
+        &server_settings_path.to_str().unwrap(),
+    ];
     let mut child = Command::new(&factorio_binary_path)
-        .args(&[
-            "--start-server",
-            saves_level_path.to_str().unwrap(),
-            "--rcon-port",
-            &rcon_port,
-            "--rcon-password",
-            &rcon_pass,
-            "--server-settings",
-            &server_settings_path.to_str().unwrap(),
-        ])
+        .args(args)
         // .stdout(Stdio::from(outputs))
         // .stderr(Stdio::from(errors))
         .stdout(Stdio::piped())
@@ -409,19 +410,14 @@ pub async fn update_map_gen_settings(
     let stdout = child.stdout.take().unwrap();
     let reader = BufReader::new(stdout);
     let log_path = workspace_path.join(PathBuf::from_str(&"server-log.txt").unwrap());
-    let (rx, _) = read_output(reader, log_path, false, true).await?;
-    rx.recv().unwrap();
-
+    read_output(reader, log_path, false, true).await?;
     let rcon = FactorioRcon::new(&settings, None, true).await?;
-
     let map_gen_settings_filename = "map-gen-settings.json";
     let map_settings_filename = "map-settings.json";
-
     rcon.silent_print("").await?;
     rcon.parse_map_exchange_string(map_gen_settings_filename, map_exchange_string)
         .await?;
     child.kill()?;
-
     let target_map_gen_settings_path =
         instance_path.join(PathBuf::from_str(&map_gen_settings_filename).unwrap());
     let target_map_settings_path =

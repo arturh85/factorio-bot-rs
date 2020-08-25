@@ -10,7 +10,6 @@ use crate::types::{
 };
 use config::Config;
 use rcon::Connection;
-use rocket::State;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ops::Add;
@@ -197,9 +196,13 @@ impl FactorioRcon {
         direction: u8,
         force_build: bool,
         only_ghosts: bool,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<Vec<FactorioEntity>> {
-        let player = world.players.get_one(&player_id).unwrap();
+        let player = world.players.get_one(&player_id);
+        if player.is_none() {
+            return Err(anyhow!("player not found"));
+        }
+        let player = player.unwrap();
         let distance = calculate_distance(&player.position, &position);
         let build_distance = player.build_distance.unwrap_or(10) as f64;
         drop(player); // wow, without this factorio (?) freezes (!)
@@ -267,9 +270,13 @@ impl FactorioRcon {
         player_id: u32,
         name: &str,
         position: &Position,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<FactorioEntity> {
-        let player = world.players.get_one(&player_id).unwrap();
+        let player = world.players.get_one(&player_id);
+        if player.is_none() {
+            return Err(anyhow!("player not found"));
+        }
+        let player = player.unwrap();
         let build_distance = player.build_distance.unwrap_or(10) as f64;
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
@@ -358,7 +365,7 @@ impl FactorioRcon {
 
     pub async fn move_player(
         &self,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
         player_id: u32,
         goal: &Position,
         radius: Option<f64>,
@@ -383,17 +390,21 @@ impl FactorioRcon {
 
     pub async fn player_mine(
         &self,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
         player_id: u32,
         name: &str,
         position: &Position,
         count: u32,
     ) -> anyhow::Result<()> {
+        let player = world.players.get_one(&player_id);
+        if player.is_none() {
+            return Err(anyhow!("player not found"));
+        }
+        let player = player.unwrap();
         let mut next_action_id = world.as_ref().next_action_id.lock().await;
         let action_id: u32 = *next_action_id;
         *next_action_id = (*next_action_id + 1) % 1000;
         drop(next_action_id);
-        let player = world.players.get_one(&player_id).unwrap();
         let resource_reach_distance = player.resource_reach_distance.unwrap_or(3) as f64;
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
@@ -415,7 +426,7 @@ impl FactorioRcon {
 
     pub async fn player_craft(
         &self,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
         player_id: u32,
         recipe: &str,
         count: u32,
@@ -484,9 +495,13 @@ impl FactorioRcon {
         item_name: String,
         entity_position: Position,
         direction: u8,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<FactorioEntity> {
-        let player = world.players.get_one(&player_id).unwrap();
+        let player = world.players.get_one(&player_id);
+        if player.is_none() {
+            return Err(anyhow!("player not found"));
+        }
+        let player = player.unwrap();
         let player_position = player.position.clone();
         let build_distance = player.build_distance.unwrap_or(10) as f64;
         drop(player); // wow, without this factorio (?) freezes (!)
@@ -580,9 +595,13 @@ impl FactorioRcon {
         inventory_type: u32,
         item_name: String,
         item_count: u32,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<()> {
-        let player = world.players.get_one(&player_id).unwrap();
+        let player = world.players.get_one(&player_id);
+        if player.is_none() {
+            return Err(anyhow!("player not found"));
+        }
+        let player = player.unwrap();
         let reach_distance = player.reach_distance.unwrap_or(10) as f64;
         let distance = calculate_distance(&player.position, &entity_position);
         drop(player); // wow, without this factorio (?) freezes (!)
@@ -623,9 +642,13 @@ impl FactorioRcon {
         inventory_type: u32,
         item_name: String,
         item_count: u32,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<()> {
-        let player = world.players.get_one(&player_id).unwrap();
+        let player = world.players.get_one(&player_id);
+        if player.is_none() {
+            return Err(anyhow!("player not found"));
+        }
+        let player = player.unwrap();
         let reach_distance = player.reach_distance.unwrap_or(10) as f64;
         let distance = calculate_distance(&player.position, &entity_position);
         drop(player); // wow, without this factorio (?) freezes (!)
@@ -841,7 +864,7 @@ impl FactorioRcon {
     */
     pub async fn player_path(
         &self,
-        world: &State<'_, Arc<FactorioWorld>>,
+        world: &Arc<FactorioWorld>,
         player_id: u32,
         goal: &Position,
         radius: Option<f64>,

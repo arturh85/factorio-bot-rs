@@ -420,7 +420,6 @@ impl OutputParser {
             tx_actions,
             tx_path_requests,
             tx_player_inventory_changed,
-
             world: Arc::new(FactorioWorld {
                 image_cache,
                 image_cache_writer: std::sync::Mutex::new(image_cache_writer),

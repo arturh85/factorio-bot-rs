@@ -1,6 +1,7 @@
 import Vue from "vue";
 import Vuex from "vuex";
 import {findTask, Task} from "@/factorio-bot/task";
+
 import {
     FactorioEntity,
     FactorioEntityPrototypeByName,

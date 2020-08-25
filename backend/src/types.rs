@@ -277,6 +277,19 @@ pub struct FactorioResult {
     pub output: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaceEntityResult {
+    pub player: FactorioPlayer,
+    pub entity: FactorioEntity,
+}
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaceEntitiesResult {
+    pub player: FactorioPlayer,
+    pub entities: Vec<FactorioEntity>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerChangedDistanceEvent {

@@ -60,6 +60,16 @@ export default Vue.extend({
     })
     w.bots = manager
     w.api = FactorioApi
+
+    const ws = new WebSocket('ws://localhost:7123/ws/');
+    ws.onmessage = (evt: MessageEvent) => {
+      console.log('WS MESSAGE', evt);
+    };
+  },
+  beforeDestroy() {
+
   }
+
+
 });
 </script>

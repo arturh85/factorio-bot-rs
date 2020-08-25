@@ -14,6 +14,7 @@
     "types": [
       "webpack-env",
       "jest",
+      "websocket",
       "leaflet",
       "vuetify"
     ],

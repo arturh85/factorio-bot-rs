@@ -163,9 +163,9 @@ pub async fn start_factorio_server(
             error!("<red>server stopped</> without exit code");
         }
     });
-    let (rx, world) = read_output(reader, log_path, write_logs, false).await?;
+    let world = read_output(reader, log_path, write_logs, false).await?;
     // await for factorio to start before returning
-    rx.recv().unwrap();
+
     Ok(world)
 }
 
@@ -254,36 +254,39 @@ pub async fn start_factorio_client(
         exit_code
     });
     let is_client = server_host.is_some();
-    let (tx, rx) = channel(100);
-    tokio::spawn(async move {
-        let mut initialized = false;
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                // wait for factorio init before sending confirmation
-                if !initialized && line.find("my_client_id").is_some() {
-                    initialized = true;
-                    // info!("XXX player_path XXX CLIENT START SENDING");
-                    tx.send(()).await;
-                    // info!("XXX player_path XXX CLIENT START SEND");
-                }
-                log_file.iter_mut().for_each(|log_file| {
-                    // filter out 6.6 million lines like 6664601 / 6665150...
-                    if initialized || !line.contains(" / ") {
-                        log_file
-                            .write_all(line.as_bytes())
-                            .expect("failed to write log file");
-                        log_file.write_all(b"\n").expect("failed to write log file");
+    let (tx, rx) = channel(1);
+    tx.send(()).await;
+    std::thread::spawn(move || {
+        actix::run(async move {
+            let mut initialized = false;
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    // wait for factorio init before sending confirmation
+                    if !initialized && line.find("my_client_id").is_some() {
+                        initialized = true;
+                        rx.recv().await.unwrap();
+                        rx.recv().await.unwrap();
                     }
-                });
-                if is_client && !line.contains(" / ") && !line.starts_with("§") {
-                    info!("<cyan>{}</>⮞ <magenta>{}</>", &log_instance_name, line);
+                    log_file.iter_mut().for_each(|log_file| {
+                        // filter out 6.6 million lines like 6664601 / 6665150...
+                        if initialized || !line.contains(" / ") {
+                            log_file
+                                .write_all(line.as_bytes())
+                                .expect("failed to write log file");
+                            log_file.write_all(b"\n").expect("failed to write log file");
+                        }
+                    });
+                    if is_client && !line.contains(" / ") && !line.starts_with("§") {
+                        info!("<cyan>{}</>⮞ <magenta>{}</>", &log_instance_name, line);
+                    }
+                } else {
+                    error!("failed to read client log");
+                    break;
                 }
-            } else {
-                error!("failed to read client log");
-                break;
             }
-        }
+        })
+        .unwrap();
     });
-    rx.recv().await?;
+    tx.send(()).await;
     Ok(handle)
 }

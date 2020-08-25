@@ -1,10 +1,10 @@
 #![warn(clippy::all, clippy::pedantic)]
 use clap::{App, Arg};
-use factorio_bot_backend::build_rocket;
 use factorio_bot_backend::factorio::process_control::start_factorio;
 use factorio_bot_backend::factorio::rcon::FactorioRcon;
+use factorio_bot_backend::web::server::start_webserver;
 
-#[tokio::main]
+#[actix_rt::main]
 async fn main() -> anyhow::Result<()> {
     color_eyre::install().unwrap();
     let matches = App::new("factorio-bot-rs")
@@ -80,10 +80,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut settings = config::Config::default();
     settings
-        .merge(config::File::with_name("Settings"))
-        .unwrap()
-        .merge(config::Environment::with_prefix("APP"))
-        .unwrap();
+        .merge(config::File::with_name("Settings"))?
+        .merge(config::Environment::with_prefix("APP"))?;
 
     if let Some(matches) = matches.subcommand_matches("start") {
         let clients: u8 = matches.value_of("clients").unwrap().parse().unwrap();
@@ -106,11 +104,7 @@ async fn main() -> anyhow::Result<()> {
         .expect("failed to start factorio");
 
         if let Some(world) = world {
-            build_rocket(settings, rcon, open_browser, world)
-                .await
-                .launch()
-                .await
-                .unwrap();
+            start_webserver(rcon, open_browser, world).await;
         }
     } else if let Some(matches) = matches.subcommand_matches("rcon") {
         let command = matches.value_of("command").unwrap();

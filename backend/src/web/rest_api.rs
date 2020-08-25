@@ -1,83 +1,111 @@
+use crate::types::{
+    FactorioEntity, FactorioEntityPrototype, FactorioForce, FactorioItemPrototype, FactorioPlayer,
+    FactorioRecipe, FactorioTile, InventoryResponse, PlaceEntitiesResult, PlaceEntityResult,
+    Position, RequestEntity,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use rocket::response::{Debug, Responder};
-use rocket::{response, Request, Response, State};
-use rocket_contrib::json::{Json, JsonValue};
-
-use crate::types::{
-    FactorioEntityPrototype, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioResult,
-    Position, RequestEntity,
-};
-
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::rcon::FactorioRcon;
+use actix_web::http::StatusCode;
+use actix_web::web::{Json, Path as PathInfo};
+use actix_web::{web, HttpResponse};
 use factorio_blueprint::BlueprintCodec;
-use rocket::http::{ContentType, Status};
-use serde::Serialize;
+use serde::export::Formatter;
 use serde_json::Value;
-use tokio::time::Duration;
+use std::fmt::Display;
+use std::time::Duration;
 
 #[derive(Debug)]
-pub struct ApiResponse {
-    json: JsonValue,
-    status: Status,
+pub struct MyError {
+    err: anyhow::Error,
 }
-impl<'r> Responder<'r, 'r> for ApiResponse {
-    fn respond_to(self, req: &Request) -> response::Result<'r> {
-        Response::build_from(self.json.respond_to(&req).unwrap())
-            .status(self.status)
-            .header(ContentType::JSON)
-            .ok()
+impl Display for MyError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_str("ERROR")?;
+        Ok(())
     }
 }
 
-#[get("/findEntities?<area>&<position>&<radius>&<name>&<entity_type>")]
-pub async fn find_entities(
+impl actix_web::error::ResponseError for MyError {
+    fn status_code(&self) -> StatusCode {
+        StatusCode::INTERNAL_SERVER_ERROR
+    }
+
+    fn error_response(&self) -> actix_web::HttpResponse {
+        HttpResponse::InternalServerError().body(self.err.to_string())
+    }
+}
+impl From<anyhow::Error> for MyError {
+    fn from(err: anyhow::Error) -> MyError {
+        MyError { err }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct FindEntitiesQueryParams {
     area: Option<String>,
     position: Option<String>,
     radius: Option<f64>,
     name: Option<String>,
     entity_type: Option<String>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    response_from_serialize_result(
-        rcon.find_entities_filtered(
-            area.map(|area| area.parse().unwrap()),
-            position.map(|position| position.parse().unwrap()),
-            radius,
-            name,
-            entity_type,
-        )
-        .await,
-    )
 }
 
-#[get("/findTiles?<area>&<position>&<radius>&<name>")]
-pub async fn find_tiles(
+// #[get("/findEntities?<area>&<position>&<radius>&<name>&<entity_type>")]
+pub async fn find_entities(
+    rcon: web::Data<Arc<FactorioRcon>>,
+    info: actix_web::web::Query<FindEntitiesQueryParams>,
+) -> Result<Json<Vec<FactorioEntity>>, MyError> {
+    Ok(Json(
+        rcon.find_entities_filtered(
+            info.area.clone().map(|area| area.parse().unwrap()),
+            info.position
+                .clone()
+                .map(|position| position.parse().unwrap()),
+            info.radius,
+            info.name.clone(),
+            info.entity_type.clone(),
+        )
+        .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+pub struct FindTilesQueryParams {
     area: Option<String>,
     position: Option<String>,
     radius: Option<f64>,
     name: Option<String>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    response_from_serialize_result(
+}
+// #[get("/findTiles?<area>&<position>&<radius>&<name>")]
+pub async fn find_tiles(
+    rcon: web::Data<Arc<FactorioRcon>>,
+    info: actix_web::web::Query<FindTilesQueryParams>,
+) -> Result<Json<Vec<FactorioTile>>, MyError> {
+    Ok(Json(
         rcon.find_tiles_filtered(
-            area.map(|area| area.parse().unwrap()),
-            position.map(|position| position.parse().unwrap()),
-            radius,
-            name,
+            info.area.clone().map(|area| area.parse().unwrap()),
+            info.position
+                .clone()
+                .map(|position| position.parse().unwrap()),
+            info.radius,
+            info.name.clone(),
         )
-        .await,
-    )
+        .await?,
+    ))
 }
 
-#[get("/inventoryContentsAt?<query>")]
-pub async fn inventory_contents_at(
+#[derive(Deserialize)]
+pub struct InventoryContentsAtQueryParams {
     query: String,
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let parts: Vec<&str> = query.split(';').collect();
+}
+// #[get("/inventoryContentsAt?<query>")]
+pub async fn inventory_contents_at(
+    rcon: web::Data<Arc<FactorioRcon>>,
+    info: actix_web::web::Query<InventoryContentsAtQueryParams>,
+) -> Result<Json<Vec<Option<InventoryResponse>>>, MyError> {
+    let parts: Vec<&str> = info.query.split(';').collect();
     let entities: Vec<RequestEntity> = parts
         .iter()
         .map(|part| {
@@ -88,190 +116,203 @@ pub async fn inventory_contents_at(
             }
         })
         .collect();
-    response_from_serialize_result(rcon.inventory_contents_at(entities).await)
+    Ok(Json(rcon.inventory_contents_at(entities).await?))
 }
 
-#[get("/<player_id>/move?<goal>&<radius>")]
-pub async fn move_player(
-    player_id: u32,
+#[derive(Deserialize)]
+pub struct MovePlayerQueryParams {
     goal: String,
     radius: Option<f64>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let goal: Position = goal.parse()?;
-    response_from_result(
-        Some(player_id),
-        &world,
-        rcon.move_player(&world, player_id, &goal, radius).await,
-    )
+}
+// #[get("/<player_id>/move?<goal>&<radius>")]
+pub async fn move_player(
+    info: actix_web::web::Query<MovePlayerQueryParams>,
+    path: PathInfo<u32>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<FactorioPlayer>, MyError> {
+    let player_id = *path;
+    let goal: Position = info.goal.parse()?;
+    rcon.move_player(&world, player_id, &goal, info.radius)
+        .await?;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(player.clone())),
+        None => Err(MyError::from(anyhow!("player not found"))),
+    }
 }
 
-#[get("/<player_id>/playerInfo")]
+// #[get("/<player_id>/playerInfo")]
 pub async fn player_info(
-    player_id: u32,
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let player = world.players.get_one(&player_id).unwrap();
-    Ok(ApiResponse {
-        json: JsonValue::from(serde_json::to_value(&*player).unwrap()),
-        status: Status::Ok,
-    })
+    path: PathInfo<u32>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<FactorioPlayer>, MyError> {
+    let player_id = *path;
+
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(player.clone())),
+        None => Err(MyError::from(anyhow!("player not found"))),
+    }
 }
 
-#[get("/<player_id>/placeEntity?<item>&<position>&<direction>")]
-pub async fn place_entity(
-    player_id: u32,
+#[derive(Deserialize)]
+pub struct PlaceEntityQueryParams {
     item: String,
     position: String,
     direction: u8,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let position: Position = position.parse()?;
-    match rcon
-        .place_entity(player_id, item, position, direction, &world)
-        .await
-    {
-        Ok(entity) => {
-            async_std::task::sleep(Duration::from_millis(50)).await;
-            let player =
-                serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
-            let entity = serde_json::to_value(entity).unwrap();
-            Ok(ApiResponse {
-                json: json!({"player": player, "entity": entity}),
-                status: Status::Ok,
-            })
-        }
-        Err(err) => Ok(ApiResponse {
-            json: json!({ "error": err.to_string() }),
-            status: Status::InternalServerError,
-        }),
+}
+
+// #[get("/<player_id>/placeEntity?<item>&<position>&<direction>")]
+pub async fn place_entity(
+    path: PathInfo<u32>,
+    info: actix_web::web::Query<PlaceEntityQueryParams>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<PlaceEntityResult>, MyError> {
+    let player_id = *path;
+    let entity = rcon
+        .place_entity(
+            player_id,
+            info.item.clone(),
+            info.position.parse()?,
+            info.direction,
+            &world,
+        )
+        .await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(PlaceEntityResult {
+            entity,
+            player: player.clone(),
+        })),
+        None => Err(MyError::from(anyhow!("player not found"))),
     }
 }
 
-#[get("/<player_id>/cheatItem?<name>&<count>")]
-#[allow(clippy::too_many_arguments)]
-pub async fn cheat_item(
-    player_id: u32,
+#[derive(Deserialize)]
+pub struct CheatItemQueryParams {
     name: String,
     count: u32,
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let result = rcon.cheat_item(player_id, &name, count).await;
-    if result.is_ok() {
-        // wait for inventory update event
-        // loop {
-        //     let changed_player_id = world.rx_player_inventory_changed.recv().unwrap();
-        //     if player_id == changed_player_id {
-        //         break;
-        //     }
-        // }
-        async_std::task::sleep(Duration::from_millis(50)).await;
+}
+// #[get("/<player_id>/cheatItem?<name>&<count>")]
+#[allow(clippy::too_many_arguments)]
+pub async fn cheat_item(
+    path: PathInfo<u32>,
+    info: actix_web::web::Query<CheatItemQueryParams>,
+    world: web::Data<Arc<FactorioWorld>>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+) -> Result<Json<FactorioPlayer>, MyError> {
+    let player_id = *path;
+    rcon.cheat_item(player_id, &info.name, info.count).await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(player.clone())),
+        None => Err(MyError::from(anyhow!("player not found"))),
     }
-    response_from_result(Some(player_id), &world, result)
 }
 
-#[get("/cheatTechnology?<tech>")]
-#[allow(clippy::too_many_arguments)]
-pub async fn cheat_technology(
+#[derive(Deserialize)]
+pub struct CheatTechnologyQueryParams {
     tech: String,
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    response_from_result(None, &world, rcon.cheat_technology(&tech).await)
 }
 
-#[get("/cheatAllTechnologies")]
-#[allow(clippy::too_many_arguments)]
+// #[get("/cheatTechnology?<tech>")]
+pub async fn cheat_technology(
+    info: actix_web::web::Query<CheatTechnologyQueryParams>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+) -> Result<Json<Value>, MyError> {
+    rcon.cheat_technology(&info.tech).await?;
+    Ok(Json(json!({"status": "ok"})))
+}
+
+// #[get("/cheatAllTechnologies")]
 pub async fn cheat_all_technologies(
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    response_from_result(None, &world, rcon.cheat_all_technologies().await)
+    rcon: web::Data<Arc<FactorioRcon>>,
+) -> Result<Json<Value>, MyError> {
+    rcon.cheat_all_technologies().await?;
+    Ok(Json(json!({"status": "ok"})))
 }
 
-#[get("/<player_id>/insertToInventory?<entity_name>&<entity_position>&<inventory_type>&<item_name>&<item_count>")]
+#[derive(Deserialize)]
+pub struct InsertToInventoryQueryParams {
+    entity_name: String,
+    entity_position: String,
+    inventory_type: u32,
+    item_name: String,
+    item_count: u32,
+}
+// #[get("/<player_id>/insertToInventory?<entity_name>&<entity_position>&<inventory_type>&<item_name>&<item_count>")]
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_to_inventory(
-    player_id: u32,
+    info: actix_web::web::Query<InsertToInventoryQueryParams>,
+    path: PathInfo<u32>,
+    world: web::Data<Arc<FactorioWorld>>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+) -> Result<Json<FactorioPlayer>, MyError> {
+    let player_id = *path;
+    rcon.insert_to_inventory(
+        player_id,
+        info.entity_name.clone(),
+        info.entity_position.parse()?,
+        info.inventory_type,
+        info.item_name.clone(),
+        info.item_count,
+        &world,
+    )
+    .await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(player.clone())),
+        None => Err(MyError::from(anyhow!("player not found"))),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RemoveFromInventoryQueryParams {
     entity_name: String,
     entity_position: String,
     inventory_type: u32,
     item_name: String,
     item_count: u32,
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let entity_position: Position = entity_position.parse()?;
-    let result = rcon
-        .insert_to_inventory(
-            player_id,
-            entity_name,
-            entity_position,
-            inventory_type,
-            item_name,
-            item_count,
-            &world,
-        )
-        .await;
-    if result.is_ok() {
-        // wait for inventory update event
-        // loop {
-        //     let changed_player_id = world.rx_player_inventory_changed.recv().unwrap();
-        //     if player_id == changed_player_id {
-        //         break;
-        //     }
-        // }
-        async_std::task::sleep(Duration::from_millis(50)).await;
-    }
-    response_from_result(Some(player_id), &world, result)
 }
 
-#[get(
-    "/<player_id>/removeFromInventory?<entity_name>&<entity_position>&<inventory_type>&<item_name>&<item_count>"
-)]
-#[allow(clippy::too_many_arguments)]
+// #[get(
+//     "/<player_id>/removeFromInventory?<entity_name>&<entity_position>&<inventory_type>&<item_name>&<item_count>"
+// )]
+// #[allow(clippy::too_many_arguments)]
 pub async fn remove_from_inventory(
-    player_id: u32,
-    entity_name: String,
-    entity_position: String,
-    inventory_type: u32,
-    item_name: String,
-    item_count: u32,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let entity_position: Position = entity_position.parse()?;
-    let result = rcon
-        .remove_from_inventory(
-            player_id,
-            entity_name,
-            entity_position,
-            inventory_type,
-            item_name,
-            item_count,
-            &world,
-        )
-        .await;
-    if result.is_ok() {
-        // wait for inventory update event
-        // loop {
-        //     let changed_player_id = world.rx_player_inventory_changed.recv().unwrap();
-        //     if player_id == changed_player_id {
-        //         break;
-        //     }
-        // }
-        async_std::task::sleep(Duration::from_millis(50)).await;
+    path: PathInfo<u32>,
+    info: actix_web::web::Query<RemoveFromInventoryQueryParams>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<FactorioPlayer>, MyError> {
+    let player_id = *path;
+    rcon.remove_from_inventory(
+        player_id,
+        info.entity_name.clone(),
+        info.entity_position.parse()?,
+        info.inventory_type,
+        info.item_name.clone(),
+        info.item_count,
+        &world,
+    )
+    .await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(player.clone())),
+        None => Err(MyError::from(anyhow!("player not found"))),
     }
-    response_from_result(Some(player_id), &world, result)
 }
 
-#[get("/players")]
+// #[get("/players")]
 pub async fn all_players(
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<Vec<FactorioPlayer>>, MyError> {
     let mut players: Vec<FactorioPlayer> = Vec::new();
     for (_, player) in &world.players.read().unwrap() {
         let player = player.get_one();
@@ -279,215 +320,198 @@ pub async fn all_players(
             players.push(player.unwrap().clone());
         }
     }
-
-    Ok(ApiResponse {
-        json: JsonValue::from(serde_json::to_value(players).unwrap()),
-        status: Status::Ok,
-    })
+    Ok(Json(players))
 }
 
-#[get("/itemPrototypes")]
+// #[get("/itemPrototypes")]
 pub async fn item_prototypes(
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<HashMap<String, FactorioItemPrototype>>, MyError> {
     let mut data: HashMap<String, FactorioItemPrototype> = HashMap::new();
     for (key, value) in &world.item_prototypes.read().unwrap() {
         let value = value.get_one().unwrap();
         data.insert(key.clone(), value.clone());
     }
-    Ok(ApiResponse {
-        json: JsonValue::from(serde_json::to_value(data).unwrap()),
-        status: Status::Ok,
-    })
+    Ok(Json(data))
 }
 
-#[get("/entityPrototypes")]
+// #[get("/entityPrototypes")]
 pub async fn entity_prototypes(
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<HashMap<String, FactorioEntityPrototype>>, MyError> {
     let mut data: HashMap<String, FactorioEntityPrototype> = HashMap::new();
     for (key, value) in &world.entity_prototypes.read().unwrap() {
         let value = value.get_one().unwrap();
         data.insert(key.clone(), value.clone());
     }
-    Ok(ApiResponse {
-        json: JsonValue::from(serde_json::to_value(data).unwrap()),
-        status: Status::Ok,
-    })
+    Ok(Json(data))
 }
 
-#[get("/serverSave")]
-pub async fn server_save(
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    response_from_result(None, &world, rcon.server_save().await)
+// #[get("/serverSave")]
+pub async fn server_save(rcon: web::Data<Arc<FactorioRcon>>) -> Result<Json<Value>, MyError> {
+    rcon.server_save().await?;
+    Ok(Json(json!({"status": "ok"})))
 }
 
-#[get("/addResearch?<tech>")]
-pub async fn add_research(
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
+#[derive(Deserialize)]
+pub struct AddResearchQueryParams {
     tech: String,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    response_from_result(None, &world, rcon.add_research(&tech).await)
+}
+// #[get("/addResearch?<tech>")]
+pub async fn add_research(
+    info: actix_web::web::Query<AddResearchQueryParams>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+) -> Result<Json<Value>, MyError> {
+    rcon.add_research(&info.tech).await?;
+    Ok(Json(json!({"status": "ok"})))
 }
 
-#[post("/storeMapData?<key>", format = "application/json", data = "<value>")]
+#[derive(Deserialize)]
+pub struct StoreMapDataQueryParams {
+    key: String,
+}
+
+// #[post("/storeMapData?<key>", format = "application/json", data = "<value>")]
 pub async fn store_map_data(
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    key: String,
-    value: Json<Value>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    response_from_result(
-        None,
-        &world,
-        rcon.store_map_data(&key, value.into_inner()).await,
-    )
+    rcon: web::Data<Arc<FactorioRcon>>,
+    data: Json<Value>,
+    info: actix_web::web::Query<StoreMapDataQueryParams>,
+) -> Result<Json<Value>, MyError> {
+    rcon.store_map_data(&info.key, data.into_inner()).await?;
+    Ok(Json(json!({"status": "ok"})))
 }
-#[get("/retrieveMapData?<key>")]
+// #[get("/retrieveMapData?<key>")]
 pub async fn retrieve_map_data(
-    rcon: State<'_, Arc<FactorioRcon>>,
+    rcon: web::Data<Arc<FactorioRcon>>,
     key: String,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
+) -> Result<Json<Value>, MyError> {
     let res = rcon.retrieve_map_data(&key).await?;
-
     match res {
-        Some(result) => Ok(ApiResponse {
-            json: JsonValue::from(result),
-            status: Status::Ok,
-        }),
-        None => Ok(ApiResponse {
-            json: json!(null),
-            status: Status::Ok,
-        }),
+        Some(result) => Ok(Json(result)),
+        None => Ok(Json(json!(null))),
     }
 }
 
-#[get("/<player_id>/placeBlueprint?<position>&<direction>&<force_build>&<blueprint>&<only_ghosts>")]
-#[allow(clippy::too_many_arguments)]
-pub async fn place_blueprint(
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    player_id: u32,
+#[derive(Deserialize)]
+pub struct PlaceBlueprintQueryParams {
     blueprint: String,
     position: String,
     direction: Option<u8>,
     force_build: Option<bool>,
     only_ghosts: Option<bool>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let position = position.parse().unwrap();
-    let result = rcon
+}
+// #[get("/<player_id>/placeBlueprint?<position>&<direction>&<force_build>&<blueprint>&<only_ghosts>")]
+// #[allow(clippy::too_many_arguments)]
+pub async fn place_blueprint(
+    world: web::Data<Arc<FactorioWorld>>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+    path: PathInfo<u32>,
+    info: actix_web::web::Query<PlaceBlueprintQueryParams>,
+) -> Result<Json<PlaceEntitiesResult>, MyError> {
+    let player_id = *path;
+    let entities = rcon
         .place_blueprint(
             player_id,
-            blueprint,
-            &position,
-            direction.unwrap_or(0),
-            force_build.unwrap_or(false),
-            only_ghosts.unwrap_or(false),
+            info.blueprint.clone(),
+            &info.position.parse()?,
+            info.direction.unwrap_or(0),
+            info.force_build.unwrap_or(false),
+            info.only_ghosts.unwrap_or(false),
             &world,
         )
-        .await;
-
-    match result {
-        Ok(entities) => {
-            async_std::task::sleep(Duration::from_millis(50)).await;
-            let player =
-                serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
-            let entities = serde_json::to_value(entities).unwrap();
-            Ok(ApiResponse {
-                json: json!({"player": player, "entities": entities}),
-                status: Status::Ok,
-            })
-        }
-        Err(err) => Ok(ApiResponse {
-            json: json!({"error": err.to_string()}),
-            status: Status::InternalServerError,
-        }),
+        .await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(PlaceEntitiesResult {
+            player: player.clone(),
+            entities,
+        })),
+        None => Err(MyError::from(anyhow!("player not found"))),
     }
 }
 
-#[get("/<player_id>/reviveGhost?<position>&<name>")]
-#[allow(clippy::too_many_arguments)]
-pub async fn revive_ghost(
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    player_id: u32,
+#[derive(Deserialize)]
+pub struct ReviveGhostQueryParams {
     name: String,
     position: String,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let position = position.parse().unwrap();
-    let result = rcon.revive_ghost(player_id, &name, &position, &world).await;
-    match result {
-        Ok(entity) => {
-            async_std::task::sleep(Duration::from_millis(50)).await;
-            let player =
-                serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
-            let entity = serde_json::to_value(entity).unwrap();
-            Ok(ApiResponse {
-                json: json!({"player": player, "entity": entity}),
-                status: Status::Ok,
-            })
-        }
-        Err(err) => Ok(ApiResponse {
-            json: json!({"error": err.to_string()}),
-            status: Status::InternalServerError,
-        }),
+}
+// #[get("/<player_id>/reviveGhost?<position>&<name>")]
+// #[allow(clippy::too_many_arguments)]
+pub async fn revive_ghost(
+    info: actix_web::web::Query<ReviveGhostQueryParams>,
+    path: PathInfo<u32>,
+    world: web::Data<Arc<FactorioWorld>>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+) -> Result<Json<PlaceEntityResult>, MyError> {
+    let player_id = *path;
+    let entity = rcon
+        .revive_ghost(player_id, &info.name, &info.position.parse()?, &world)
+        .await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(PlaceEntityResult {
+            player: player.clone(),
+            entity,
+        })),
+        None => Err(MyError::from(anyhow!("player not found"))),
     }
 }
 
-#[get("/<player_id>/cheatBlueprint?<position>&<direction>&<force_build>&<blueprint>")]
-pub async fn cheat_blueprint(
-    world: State<'_, Arc<FactorioWorld>>,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    player_id: u32,
+#[derive(Deserialize)]
+pub struct CheatBlueprintQueryParams {
     blueprint: String,
     position: String,
     direction: Option<u8>,
     force_build: Option<bool>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let position = position.parse().unwrap();
-    let result = rcon
+}
+// #[get("/<player_id>/cheatBlueprint?<position>&<direction>&<force_build>&<blueprint>")]
+pub async fn cheat_blueprint(
+    world: web::Data<Arc<FactorioWorld>>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+    info: actix_web::web::Query<CheatBlueprintQueryParams>,
+    path: PathInfo<u32>,
+) -> Result<Json<PlaceEntitiesResult>, MyError> {
+    let player_id = *path;
+    let entities = rcon
         .cheat_blueprint(
             player_id,
-            blueprint,
-            &position,
-            direction.unwrap_or(0),
-            force_build.unwrap_or(false),
+            info.blueprint.clone(),
+            &info.position.parse()?,
+            info.direction.unwrap_or(0),
+            info.force_build.unwrap_or(false),
         )
-        .await;
-    match result {
-        Ok(entities) => {
-            async_std::task::sleep(Duration::from_millis(50)).await;
-            let player =
-                serde_json::to_value(world.players.get_one(&player_id).unwrap().clone()).unwrap();
-            let entities = serde_json::to_value(entities).unwrap();
-            Ok(ApiResponse {
-                json: json!({"player": player, "entities": entities}),
-                status: Status::Ok,
-            })
-        }
-        Err(err) => Ok(ApiResponse {
-            json: json!({"error": err.to_string()}),
-            status: Status::InternalServerError,
-        }),
+        .await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(PlaceEntitiesResult {
+            player: player.clone(),
+            entities,
+        })),
+        None => Err(MyError::from(anyhow!("player not found"))),
     }
 }
 
-#[get("/parseBlueprint?<blueprint>")]
-pub async fn parse_blueprint(blueprint: String) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let decoded = BlueprintCodec::decode_string(&blueprint).expect("failed to parse blueprint");
-    Ok(ApiResponse {
-        json: JsonValue::from(serde_json::to_value(decoded).unwrap()),
-        status: Status::Ok,
-    })
+#[derive(Deserialize)]
+pub struct ParseBlueprintQueryParams {
+    blueprint: String,
 }
 
-#[get("/recipes")]
+// #[get("/parseBlueprint?<blueprint>")]
+pub async fn parse_blueprint(
+    info: actix_web::web::Query<ParseBlueprintQueryParams>,
+) -> Result<Json<Value>, MyError> {
+    let decoded =
+        BlueprintCodec::decode_string(&info.blueprint).expect("failed to parse blueprint");
+    Ok(Json(serde_json::to_value(decoded).unwrap()))
+}
+
+// #[get("/recipes")]
 pub async fn all_recipes(
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<HashMap<String, FactorioRecipe>>, MyError> {
     let mut map: HashMap<String, FactorioRecipe> = HashMap::new();
     if let Some(recipes) = &world.recipes.read() {
         for (name, recipe) in recipes {
@@ -496,125 +520,66 @@ pub async fn all_recipes(
             }
         }
     }
-    Ok(ApiResponse {
-        json: JsonValue::from(serde_json::to_value(map).unwrap()),
-        status: Status::Ok,
-    })
+    Ok(Json(map))
 }
-#[get("/playerForce")]
+// #[get("/playerForce")]
 pub async fn player_force(
-    rcon: State<'_, Arc<FactorioRcon>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let result = rcon.player_force().await?;
-    Ok(ApiResponse {
-        json: JsonValue::from(serde_json::to_value(result).unwrap()),
-        status: Status::Ok,
-    })
+    rcon: web::Data<Arc<FactorioRcon>>,
+) -> Result<Json<FactorioForce>, MyError> {
+    Ok(Json(rcon.player_force().await?))
 }
 
-#[get("/<player_id>/mine?<name>&<position>&<count>")]
-pub async fn mine(
-    player_id: u32,
+// #[get("/<player_id>/mine?<name>&<position>&<count>")]
+
+#[derive(Deserialize)]
+pub struct MineQueryParams {
     name: String,
     position: String,
     count: u32,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let position: Position = position.parse()?;
-    let result = rcon
-        .player_mine(&world, player_id, &name, &position, count)
-        .await;
-
-    if result.is_ok() {
-        // wait for inventory update event
-        // loop {
-        //     let changed_player_id = world.rx_player_inventory_changed.recv().unwrap();
-        //     if player_id == changed_player_id {
-        //         break;
-        //     }
-        // }
-        async_std::task::sleep(Duration::from_millis(50)).await;
+}
+pub async fn mine(
+    info: actix_web::web::Query<MineQueryParams>,
+    path: PathInfo<u32>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<FactorioPlayer>, MyError> {
+    let player_id = *path;
+    rcon.player_mine(
+        &world,
+        player_id,
+        &info.name,
+        &info.position.parse()?,
+        info.count,
+    )
+    .await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(player.clone())),
+        None => Err(MyError::from(anyhow!("player not found"))),
     }
-    response_from_result(Some(player_id), &world, result)
 }
 
-#[get("/<player_id>/craft?<recipe>&<count>")]
-pub async fn craft(
-    player_id: u32,
+// #[get("/<player_id>/craft?<recipe>&<count>")]
+
+#[derive(Deserialize)]
+pub struct CraftQueryParams {
     recipe: String,
     count: u32,
-    rcon: State<'_, Arc<FactorioRcon>>,
-    world: State<'_, Arc<FactorioWorld>>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    let result = rcon.player_craft(&world, player_id, &recipe, count).await;
-    if result.is_ok() {
-        // wait for inventory update event
-        // loop {
-        //     let changed_player_id = world.rx_player_inventory_changed.recv().unwrap();
-        //     if player_id == changed_player_id {
-        //         break;
-        //     }
-        // }
-        async_std::task::sleep(Duration::from_millis(50)).await;
-    }
-    response_from_result(Some(player_id), &world, result)
 }
-
-pub fn response_from_result(
-    player_id: Option<u32>,
-    world: &State<'_, Arc<FactorioWorld>>,
-    result: Result<(), anyhow::Error>,
-) -> Result<ApiResponse, Debug<anyhow::Error>> {
-    match result {
-        Ok(_) => {
-            let response = match player_id {
-                Some(player_id) => {
-                    serde_json::to_value(world.players.get_one(&player_id).unwrap().clone())
-                }
-                None => serde_json::to_value(FactorioResult {
-                    success: true,
-                    output: vec![],
-                }),
-            };
-            Ok(ApiResponse {
-                json: JsonValue::from(response.unwrap()),
-                status: Status::Ok,
-            })
-        }
-        Err(err) => {
-            let response = FactorioResult {
-                success: false,
-                output: vec![err.to_string()],
-            };
-            Ok(ApiResponse {
-                json: JsonValue::from(serde_json::to_value(response).unwrap()),
-                status: Status::InternalServerError,
-            })
-        }
-    }
-}
-
-pub fn response_from_serialize_result<T>(
-    result: Result<T, anyhow::Error>,
-) -> Result<ApiResponse, Debug<anyhow::Error>>
-where
-    T: Serialize,
-{
-    match result {
-        Ok(response) => Ok(ApiResponse {
-            json: JsonValue::from(serde_json::to_value(response).unwrap()),
-            status: Status::Ok,
-        }),
-        Err(err) => {
-            let response = FactorioResult {
-                success: false,
-                output: vec![err.to_string()],
-            };
-            Ok(ApiResponse {
-                json: JsonValue::from(serde_json::to_value(response).unwrap()),
-                status: Status::InternalServerError,
-            })
-        }
+pub async fn craft(
+    info: actix_web::web::Query<CraftQueryParams>,
+    path: PathInfo<u32>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<FactorioPlayer>, MyError> {
+    let player_id = *path;
+    rcon.player_craft(&world, player_id, &info.recipe, info.count)
+        .await?;
+    async_std::task::sleep(Duration::from_millis(50)).await;
+    let player = world.players.get_one(&player_id);
+    match player {
+        Some(player) => Ok(Json(player.clone())),
+        None => Err(MyError::from(anyhow!("player not found"))),
     }
 }
