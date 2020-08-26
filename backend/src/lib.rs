@@ -17,4 +17,3 @@ extern crate num_traits;
 pub mod factorio;
 pub mod types;
 pub mod web;
-pub mod ws;

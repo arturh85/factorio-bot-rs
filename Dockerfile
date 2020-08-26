@@ -30,7 +30,6 @@ FROM frolvlad/alpine-glibc:latest
 WORKDIR /home/factoriobot/
 COPY mod mod/
 COPY Settings.toml .
-COPY Rocket.toml .
 COPY --from=build /home/rust/src/frontend/dist/ public/
 COPY --from=build /home/rust/src/target/x86_64-unknown-linux-musl/release/factorio-bot-backend .
 RUN mkdir workspace && chmod 0777 . -R && chown 1000.1000 . -R

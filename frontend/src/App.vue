@@ -63,7 +63,10 @@ export default Vue.extend({
 
     const ws = new WebSocket('ws://localhost:7123/ws/');
     ws.onmessage = (evt: MessageEvent) => {
-      console.log('WS MESSAGE', evt);
+      if (evt.data !== 'Heartbeat') {
+        const player = JSON.parse(evt.data);
+        this.$store.commit('updatePlayer', player);
+      }
     };
   },
   beforeDestroy() {

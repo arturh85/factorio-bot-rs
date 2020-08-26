@@ -410,7 +410,7 @@ pub async fn update_map_gen_settings(
     let stdout = child.stdout.take().unwrap();
     let reader = BufReader::new(stdout);
     let log_path = workspace_path.join(PathBuf::from_str(&"server-log.txt").unwrap());
-    read_output(reader, log_path, false, true).await?;
+    read_output(reader, log_path, None, false, true).await?;
     let rcon = FactorioRcon::new(&settings, None, true).await?;
     let map_gen_settings_filename = "map-gen-settings.json";
     let map_settings_filename = "map-settings.json";

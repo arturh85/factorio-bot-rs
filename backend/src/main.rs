@@ -1,7 +1,9 @@
 #![warn(clippy::all, clippy::pedantic)]
+use actix::Actor;
 use clap::{App, Arg};
 use factorio_bot_backend::factorio::process_control::start_factorio;
 use factorio_bot_backend::factorio::rcon::FactorioRcon;
+use factorio_bot_backend::factorio::ws::FactorioWebSocketServer;
 use factorio_bot_backend::web::server::start_webserver;
 
 #[actix_rt::main]
@@ -91,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
         let recreate = matches.is_present("new");
         let open_browser = matches.is_present("open");
         let server_host = matches.value_of("server");
+        let websocket_server = FactorioWebSocketServer { listeners: vec![] }.start();
         let (world, rcon) = start_factorio(
             &settings,
             server_host,
@@ -98,13 +101,14 @@ async fn main() -> anyhow::Result<()> {
             recreate,
             map_exchange_string,
             seed,
+            Some(websocket_server.clone()),
             write_logs,
         )
         .await
         .expect("failed to start factorio");
 
         if let Some(world) = world {
-            start_webserver(rcon, open_browser, world).await;
+            start_webserver(rcon, websocket_server, open_browser, world).await;
         }
     } else if let Some(matches) = matches.subcommand_matches("rcon") {
         let command = matches.value_of("command").unwrap();

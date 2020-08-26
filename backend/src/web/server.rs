@@ -3,7 +3,8 @@ use crate::factorio::rcon::FactorioRcon;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::ws::session::WsChatSession;
+use crate::factorio::ws::{FactorioWebSocketClient, FactorioWebSocketServer, RegisterWSClient};
+use actix::Addr;
 use actix_cors::Cors;
 use actix_files as fs;
 use actix_web::{
@@ -16,18 +17,29 @@ async fn status() -> impl Responder {
     HttpResponse::Ok().body("ok")
 }
 
-async fn ws_index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
-    ws::start(WsChatSession::default(), &req, stream)
+async fn ws_index(
+    r: HttpRequest,
+    stream: web::Payload,
+    data: web::Data<Addr<FactorioWebSocketServer>>,
+) -> Result<HttpResponse, Error> {
+    let (addr, res) = ws::start_with_addr(FactorioWebSocketClient {}, &r, stream)?;
+    data.get_ref().do_send(RegisterWSClient { addr });
+    Ok(res)
 }
 
-pub async fn start_webserver(rcon: FactorioRcon, open_browser: bool, world: Arc<FactorioWorld>) {
+pub async fn start_webserver(
+    rcon: FactorioRcon,
+    websocket_server: Addr<FactorioWebSocketServer>,
+    open_browser: bool,
+    world: Arc<FactorioWorld>,
+) {
     let port: u16 = env::var("PORT")
         .unwrap_or_else(|_| "7123".into())
         .parse()
         .expect("invalid PORT env");
 
     let url = format!("http://localhost:{}", port);
-    info!("🚀 Webserver ready at: <yellow><underline>{}", url);
+    info!("🚀 Webserver ready at: <yellow><underline>{}</>", url);
     if open_browser {
         webbrowser::open(&url).expect("failed to open browser");
     }
@@ -36,10 +48,12 @@ pub async fn start_webserver(rcon: FactorioRcon, open_browser: bool, world: Arc<
         false => "frontend/dist/",
     };
     let rcon = Arc::new(rcon);
+
     HttpServer::new(move || {
         App::new()
             .data(world.clone())
             .data(rcon.clone())
+            .data(websocket_server.clone())
             .wrap(
                 Cors::new()
                     .allowed_methods(vec!["GET", "POST"])

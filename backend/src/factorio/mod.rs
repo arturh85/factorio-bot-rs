@@ -4,3 +4,4 @@ pub mod output_reader;
 pub mod process_control;
 pub mod rcon;
 pub mod util;
+pub mod ws;

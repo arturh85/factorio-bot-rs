@@ -2,6 +2,8 @@ use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::output_reader::read_output;
 use crate::factorio::rcon::FactorioRcon;
+use crate::factorio::ws::FactorioWebSocketServer;
+use actix::Addr;
 use async_std::sync::channel;
 use config::Config;
 use std::fs::File;
@@ -14,6 +16,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn start_factorio(
     settings: &Config,
     server_host: Option<&str>,
@@ -21,13 +24,14 @@ pub async fn start_factorio(
     recreate: bool,
     map_exchange_string: Option<&str>,
     seed: Option<&str>,
+    websocket_server: Option<Addr<FactorioWebSocketServer>>,
     write_logs: bool,
 ) -> anyhow::Result<(Option<Arc<FactorioWorld>>, FactorioRcon)> {
     let mut world: Option<Arc<FactorioWorld>> = None;
     if server_host.is_none() {
         setup_factorio_instance(&settings, "server", recreate, map_exchange_string, seed).await?;
         let started = Instant::now();
-        world = Some(start_factorio_server(&settings, write_logs).await?);
+        world = Some(start_factorio_server(&settings, websocket_server, write_logs).await?);
         let rcon = FactorioRcon::new(&settings, server_host, false).await?;
         success!(
             "Started <bright-blue>server</> in <yellow>{:?}</>",
@@ -72,6 +76,7 @@ pub async fn start_factorio(
 
 pub async fn start_factorio_server(
     settings: &Config,
+    websocket_server: Option<Addr<FactorioWebSocketServer>>,
     write_logs: bool,
 ) -> anyhow::Result<Arc<FactorioWorld>> {
     let instance_name = "server";
@@ -163,7 +168,7 @@ pub async fn start_factorio_server(
             error!("<red>server stopped</> without exit code");
         }
     });
-    let world = read_output(reader, log_path, write_logs, false).await?;
+    let world = read_output(reader, log_path, websocket_server, write_logs, false).await?;
     // await for factorio to start before returning
 
     Ok(world)

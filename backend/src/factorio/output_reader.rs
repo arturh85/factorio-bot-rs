@@ -1,4 +1,6 @@
 use crate::factorio::output_parser::{FactorioWorld, OutputParser};
+use crate::factorio::ws::FactorioWebSocketServer;
+use actix::Addr;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -8,6 +10,7 @@ use std::sync::Arc;
 pub async fn read_output(
     reader: BufReader<ChildStdout>,
     log_path: PathBuf,
+    websocket_server: Option<Addr<FactorioWebSocketServer>>,
     write_logs: bool,
     silent: bool,
 ) -> anyhow::Result<Arc<FactorioWorld>> {
@@ -15,7 +18,7 @@ pub async fn read_output(
         true => Some(File::create(log_path)?),
         false => None,
     };
-    let mut parser = OutputParser::new();
+    let mut parser = OutputParser::new(websocket_server);
 
     let (tx, rx) = async_std::sync::channel(1);
     tx.send(()).await;

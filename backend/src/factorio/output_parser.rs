@@ -1,9 +1,11 @@
+use crate::factorio::ws::{FactorioWebSocketServer, PlayerChangedEvent};
 use crate::types::{
     ChunkObject, ChunkPosition, ChunkResource, FactorioChunk, FactorioEntityPrototype,
     FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
     PlayerChangedDistanceEvent, PlayerChangedPositionEvent, PlayerMainInventoryChangedEvent,
     Position, Rect,
 };
+use actix::Addr;
 use async_std::sync::Mutex;
 use evmap::{ReadHandle, WriteHandle};
 use image::RgbaImage;
@@ -35,6 +37,7 @@ unsafe impl Sync for FactorioWorld {}
 
 pub struct OutputParser {
     world: Arc<FactorioWorld>,
+    websocket_server: Option<Addr<FactorioWebSocketServer>>,
     chunks_writer: WriteHandle<ChunkPosition, FactorioChunk>,
     graphics_writer: WriteHandle<String, FactorioGraphic>,
     recipes_writer: WriteHandle<String, FactorioRecipe>,
@@ -244,24 +247,36 @@ impl OutputParser {
                         loot_pickup_distance: existing_player.loot_pickup_distance,
                         resource_reach_distance: existing_player.resource_reach_distance,
                     };
+                    if let Some(websocket_server) = self.websocket_server.as_ref() {
+                        websocket_server
+                            .send(PlayerChangedEvent {
+                                player: player.clone(),
+                            })
+                            .await?;
+                    }
                     drop(existing_player);
                     self.players_writer.empty(event.player_id);
                     self.players_writer.insert(event.player_id, player);
                 } else {
-                    self.players_writer.insert(
-                        event.player_id,
-                        FactorioPlayer {
-                            player_id: event.player_id,
-                            position: Position::new(0.0, 0.0),
-                            main_inventory: event.main_inventory.clone(),
-                            build_distance: None,
-                            reach_distance: None,
-                            drop_item_distance: None,
-                            item_pickup_distance: None,
-                            loot_pickup_distance: None,
-                            resource_reach_distance: None,
-                        },
-                    );
+                    let player = FactorioPlayer {
+                        player_id: event.player_id,
+                        position: Position::new(0.0, 0.0),
+                        main_inventory: event.main_inventory.clone(),
+                        build_distance: None,
+                        reach_distance: None,
+                        drop_item_distance: None,
+                        item_pickup_distance: None,
+                        loot_pickup_distance: None,
+                        resource_reach_distance: None,
+                    };
+                    if let Some(websocket_server) = self.websocket_server.as_ref() {
+                        websocket_server
+                            .send(PlayerChangedEvent {
+                                player: player.clone(),
+                            })
+                            .await?;
+                    }
+                    self.players_writer.insert(event.player_id, player);
                 }
                 self.players_writer.refresh();
                 self.tx_player_inventory_changed.send(event.player_id)?;
@@ -282,23 +297,35 @@ impl OutputParser {
                         resource_reach_distance: existing_player.resource_reach_distance,
                     };
                     drop(existing_player);
+                    if let Some(websocket_server) = self.websocket_server.as_ref() {
+                        websocket_server
+                            .send(PlayerChangedEvent {
+                                player: player.clone(),
+                            })
+                            .await?;
+                    }
                     self.players_writer.empty(event.player_id);
                     self.players_writer.insert(event.player_id, player);
                 } else {
-                    self.players_writer.insert(
-                        event.player_id,
-                        FactorioPlayer {
-                            player_id: event.player_id,
-                            position: event.position,
-                            main_inventory: Box::new(BTreeMap::new()),
-                            build_distance: None,
-                            reach_distance: None,
-                            drop_item_distance: None,
-                            item_pickup_distance: None,
-                            loot_pickup_distance: None,
-                            resource_reach_distance: None,
-                        },
-                    );
+                    let player = FactorioPlayer {
+                        player_id: event.player_id,
+                        position: event.position,
+                        main_inventory: Box::new(BTreeMap::new()),
+                        build_distance: None,
+                        reach_distance: None,
+                        drop_item_distance: None,
+                        item_pickup_distance: None,
+                        loot_pickup_distance: None,
+                        resource_reach_distance: None,
+                    };
+                    if let Some(websocket_server) = self.websocket_server.as_ref() {
+                        websocket_server
+                            .send(PlayerChangedEvent {
+                                player: player.clone(),
+                            })
+                            .await?;
+                    }
+                    self.players_writer.insert(event.player_id, player);
                 }
                 self.players_writer.refresh();
             }
@@ -318,23 +345,35 @@ impl OutputParser {
                         resource_reach_distance: Some(event.resource_reach_distance),
                     };
                     drop(existing_player);
+                    if let Some(websocket_server) = self.websocket_server.as_ref() {
+                        websocket_server
+                            .send(PlayerChangedEvent {
+                                player: player.clone(),
+                            })
+                            .await?;
+                    }
                     self.players_writer.empty(event.player_id);
                     self.players_writer.insert(event.player_id, player);
                 } else {
-                    self.players_writer.insert(
-                        event.player_id,
-                        FactorioPlayer {
-                            player_id: event.player_id,
-                            position: Position::new(0.0, 0.0),
-                            main_inventory: Box::new(BTreeMap::new()),
-                            build_distance: Some(event.build_distance),
-                            reach_distance: Some(event.reach_distance),
-                            drop_item_distance: Some(event.drop_item_distance),
-                            item_pickup_distance: Some(event.item_pickup_distance),
-                            loot_pickup_distance: Some(event.loot_pickup_distance),
-                            resource_reach_distance: Some(event.resource_reach_distance),
-                        },
-                    );
+                    let player = FactorioPlayer {
+                        player_id: event.player_id,
+                        position: Position::new(0.0, 0.0),
+                        main_inventory: Box::new(BTreeMap::new()),
+                        build_distance: Some(event.build_distance),
+                        reach_distance: Some(event.reach_distance),
+                        drop_item_distance: Some(event.drop_item_distance),
+                        item_pickup_distance: Some(event.item_pickup_distance),
+                        loot_pickup_distance: Some(event.loot_pickup_distance),
+                        resource_reach_distance: Some(event.resource_reach_distance),
+                    };
+                    if let Some(websocket_server) = self.websocket_server.as_ref() {
+                        websocket_server
+                            .send(PlayerChangedEvent {
+                                player: player.clone(),
+                            })
+                            .await?;
+                    }
+                    self.players_writer.insert(event.player_id, player);
                 }
                 self.players_writer.refresh();
             }
@@ -396,7 +435,7 @@ impl OutputParser {
     }
 
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new(websocket_server: Option<Addr<FactorioWebSocketServer>>) -> Self {
         let (players_reader, players_writer) = evmap::new::<u32, FactorioPlayer>();
         let (chunks_reader, chunks_writer) = evmap::new::<ChunkPosition, FactorioChunk>();
         let (graphics_reader, graphics_writer) = evmap::new::<String, FactorioGraphic>();
@@ -411,6 +450,7 @@ impl OutputParser {
         let (tx_player_inventory_changed, rx_player_inventory_changed) = mpsc::channel();
 
         OutputParser {
+            websocket_server,
             players_writer,
             chunks_writer,
             graphics_writer,
