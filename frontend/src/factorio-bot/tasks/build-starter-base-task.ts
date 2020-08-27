@@ -49,8 +49,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
     // 1.: 2x iron miner/furnace
     if (!store.state.world.starterMinerFurnaces) {
-        await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.ironOre, Entities.ironPlate, 1))
-        await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.ironOre, Entities.ironPlate, 1))
+        await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.ironOre, Entities.ironPlate, 2))
     }
     // 2.: 2x coal miner loop
     if (!store.state.world.starterCoalLoops) {
@@ -62,24 +61,16 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
     // 4.: rest of iron miner/furnaces
     const remainingIron = data.starterTargetIron - (store.state.world.starterMinerFurnaces || []).filter(minerFurnace => minerFurnace.plateName === Entities.ironPlate).length
-    for (let i = 0; i < remainingIron; i++) {
-        await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.ironOre, Entities.ironPlate, 1))
-    }
+    await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.ironOre, Entities.ironPlate, remainingIron))
     // 5.: rest of coal loops
     const remainingCoal = data.starterTargetCoal - (store.state.world.starterCoalLoops || []).length
-    for (let i = 0; i < remainingCoal/2; i++) {
-        await addAndExecuteSubtask(await createBuildStarterMinerCoalTask(store, 2))
-    }
+    await addAndExecuteSubtask(await createBuildStarterMinerCoalTask(store, remainingCoal/2))
     // 6.: rest of copper miner/furnaces
     const remainingCopper = data.starterTargetCopper - (store.state.world.starterMinerFurnaces || []).filter(minerFurnace => minerFurnace.plateName === Entities.copperPlate).length
-    for (let i = 0; i < remainingCopper; i++) {
-        await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.copperOre, Entities.copperPlate, 1))
-    }
+    await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.copperOre, Entities.copperPlate, remainingCopper))
     // 7.: rest of stone miner/chests
     const remainingStone = data.starterTargetStone - (store.state.world.starterMinerChests || []).filter(minerChest => minerChest.oreName === Entities.stone).length
-    for (let i = 0; i < remainingStone; i++) {
-        await addAndExecuteSubtask(await createBuildStarterMinerChestTask(store, Entities.stone, 1))
-    }
+    await addAndExecuteSubtask(await createBuildStarterMinerChestTask(store, Entities.stone, remainingStone))
 
     // 8.: place offshore pump
     if (!store.state.world.starterOffshorePump) {

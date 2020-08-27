@@ -2,9 +2,11 @@ import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
-import {sortBotsByInventory} from "@/factorio-bot/util";
-import {Entities, InventoryType, StarterMinerFurnace} from "@/factorio-bot/types";
+import {sortEntitiesByDistanceTo} from "@/factorio-bot/util";
+import {Entities, StarterMinerFurnace} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
+import {FactorioApi} from "@/factorio-bot/restApi";
+import {createPlaceStarterMinerFurnaceTask} from "@/factorio-bot/tasks/place-starter-miner-furnace";
 
 const TASK_TYPE = 'build-starter-miner-furnace'
 const minerName = Entities.burnerMiningDrill;
@@ -18,39 +20,54 @@ type TaskData = {
 
 async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: Task): Promise<StarterMinerFurnace[]> {
     const data: TaskData = task.data as TaskData
-    if (bots.length === 0) {
-        throw new Error("no bots?")
-    }
-    // sort by already has correct item
-    bots.sort(sortBotsByInventory([minerName, furnaceName]))
-    const bot = bots[0]
 
+    const firstBot = bots[0]
+    // if this is the absolute beginning, first mine some huge rocks if found
     if (!store.state.world.starterMinerFurnaces) {
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WALKING));
-        await bots[0].tryMineNearest(Entities.rockHuge, 1)
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
+        const rockSearchAnchor = firstBot.player().position
+        const results = await FactorioApi.findEntities(rockSearchAnchor, 500, Entities.rockHuge)
+        if (results.length > 0) {
+            store.commit('updateTask', updateTaskStatus(task, TaskStatus.WALKING));
+            results.sort(sortEntitiesByDistanceTo(rockSearchAnchor));
+            await (Promise.all(results.slice(0, bots.length).map((result, index) =>
+                bots[index].mine(result.position, Entities.rockHuge, 1))))
+            store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
+        }
     }
 
-    const subtasks: Task[] = []
-    if (bot.mainInventory(minerName) < data.minerSmelterCount) {
-        const subtask = await createCraftTask(store, minerName, data.minerSmelterCount, false)
-        store.commit('addSubTask', {id: task.id, task: subtask})
-        subtasks.push(subtask)
-    }
-    if (bot.mainInventory(furnaceName) < data.minerSmelterCount) {
-        const subtask = await createCraftTask(store, furnaceName, data.minerSmelterCount, false)
-        store.commit('addSubTask', {id: task.id, task: subtask})
-        subtasks.push(subtask)
-    }
-    if (subtasks.length > 0) {
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
-        for (const subTask of subtasks) {
-            await executeTask(store, bots, subTask)
+    // each bot should first craft what it needs
+    const craftTasksByPlayerId: {[playerId: string]: Task[]} = {}
+    let toCraft = data.minerSmelterCount
+    for(const bot of bots) {
+        const playerId = bot.playerId.toString()
+        if (!craftTasksByPlayerId[playerId]) {
+            craftTasksByPlayerId[playerId] = []
         }
+        const botMinerSmelter = Math.min(toCraft, Math.ceil(data.minerSmelterCount / bots.length))
+        if (bot.mainInventory(minerName) < botMinerSmelter) {
+            const subtask = await createCraftTask(store, minerName, botMinerSmelter, false)
+            store.commit('addSubTask', {id: task.id, task: subtask})
+            craftTasksByPlayerId[playerId].push(subtask)
+        }
+        if (bot.mainInventory(furnaceName) < botMinerSmelter) {
+            const subtask = await createCraftTask(store, furnaceName, botMinerSmelter, false)
+            store.commit('addSubTask', {id: task.id, task: subtask})
+            craftTasksByPlayerId[playerId].push(subtask)
+        }
+        toCraft -= botMinerSmelter
+    }
+    if (Object.keys(craftTasksByPlayerId).length > 0) {
+        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
+        await Promise.all(Object.keys(craftTasksByPlayerId).map(async (playerId) => {
+            const subtaskBots: FactorioBot[] = [bots.find(bot => bot.playerId.toString() === playerId) as FactorioBot]
+            for (const subtask of craftTasksByPlayerId[playerId]) {
+                await executeTask(store, subtaskBots, subtask)
+            }
+        }))
         store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
     }
     const excludePositions = Object.keys(store.state.players).map(key => store.state.players[key].position)
-    const oreFieldTopLeft = await bot.findNearestRect(
+    const oreFieldTopLeft = await firstBot.findNearestRect(
         data.oreName,
         2 * data.minerSmelterCount,
         4,
@@ -63,28 +80,33 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     const anchor = {...oreFieldTopLeft};
     anchor.x = Math.floor(anchor.x);
     anchor.y = Math.floor(anchor.y);
-    const minerFurnaces = []
-    for (let x = 0; x < data.minerSmelterCount; x++) {
-        const minerPosition = {x: anchor.x + x * 2, y: anchor.y};
-        const furnacePosition = {x: minerPosition.x, y: minerPosition.y + 2};
-        const minerEntity = await bot.placeEntity(minerName, minerPosition, 4); // place down/south
-        if (bot.mainInventory(Entities.coal) > 2) {
-            await bot.insertToInventory(minerName, minerEntity.position, InventoryType.chest_or_fuel, Entities.coal, 2)
+    const minerFurnaces: StarterMinerFurnace[] = []
+    let toPlace = data.minerSmelterCount
+    const placeTasksByPlayerId: {[playerId: string]: Task[]} = {}
+    // each bot should place what it is responsible for
+    for(const bot of bots) {
+        const playerId = bot.playerId.toString()
+        if (!placeTasksByPlayerId[playerId]) {
+            placeTasksByPlayerId[playerId] = []
         }
-        const furnaceEntity = await bot.placeEntity(furnaceName, furnacePosition, 0); // place up/north but doesnt matter here
-        if (bot.mainInventory(Entities.coal) > 2) {
-            await bot.insertToInventory(furnaceName, furnaceEntity.position, InventoryType.chest_or_fuel, Entities.coal, 2)
+        const botMinerSmelter = Math.min(toPlace, Math.ceil(data.minerSmelterCount / bots.length))
+        for(let i=0; i<botMinerSmelter; i++) {
+            const x = data.minerSmelterCount - toPlace
+            const minerPosition = {x: anchor.x + x * 2, y: anchor.y};
+            const furnacePosition = {x: minerPosition.x, y: minerPosition.y + 2};
+            const subtask = await createPlaceStarterMinerFurnaceTask(store, minerName, furnaceName, minerPosition, furnacePosition, data.plateName, data.oreName)
+            store.commit('addSubTask', {id: task.id, task: subtask})
+            placeTasksByPlayerId[playerId].push(subtask)
+            toPlace -= 1
         }
-        const minerFurnace: StarterMinerFurnace = {
-            minerPosition: minerEntity.position,
-            furnacePosition: furnaceEntity.position,
-            minerType: minerName,
-            furnaceType: furnaceName,
-            plateName: data.plateName,
-            oreName: data.oreName
-        }
-        store.commit("addStarterMinerFurnace", minerFurnace)
-        minerFurnaces.push(minerFurnace)
+    }
+    if (Object.keys(placeTasksByPlayerId).length > 0) {
+        await Promise.all(Object.keys(placeTasksByPlayerId).map(async (playerId) => {
+            const subtaskBots: FactorioBot[] = [bots.find(bot => bot.playerId.toString() === playerId) as FactorioBot]
+            for (const subtask of placeTasksByPlayerId[playerId]) {
+                await executeTask(store, subtaskBots, subtask)
+            }
+        }))
     }
     return minerFurnaces
 }
