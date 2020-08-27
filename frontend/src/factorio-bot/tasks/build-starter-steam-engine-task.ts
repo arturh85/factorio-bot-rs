@@ -1,7 +1,15 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {
+    availableBots,
+    createTask,
+    executeTask,
+    Task,
+    taskRunnerByType,
+    TaskStatus,
+    updateTaskStatus
+} from "@/factorio-bot/task";
 import {countEntitiesFromBlueprint, entityRect, sortBotsByInventory} from "@/factorio-bot/util";
 import {
     Direction,

@@ -1,7 +1,15 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {
+    availableBots,
+    createTask,
+    executeTask,
+    Task,
+    taskRunnerByType,
+    TaskStatus,
+    updateTaskStatus
+} from "@/factorio-bot/task";
 import {Direction, Entities} from "@/factorio-bot/types";
 import {createBuildStarterMinerFurnaceTask} from "@/factorio-bot/tasks/build-starter-miner-furnace-task";
 import {createBuildStarterMinerCoalTask} from "@/factorio-bot/tasks/build-starter-miner-coal-task";
@@ -36,7 +44,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
     const addAndExecuteSubtask = async (subtask: Task): Promise<void> => {
         store.commit('addSubTask', {id: task.id, task: subtask})
-        await executeTask(store, bots, subtask)
+        await executeTask(store, await availableBots(store), subtask)
     }
     store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
     // 1.: 2x iron miner/furnace

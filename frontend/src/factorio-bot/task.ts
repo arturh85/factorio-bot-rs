@@ -1,7 +1,8 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {formatDuration} from "@/factorio-bot/util";
+import {formatDuration, sleep} from "@/factorio-bot/util";
+import {FactorioPlayer} from "@/factorio-bot/types";
 
 export enum TaskStatus {
     NEW = 'NEW',
@@ -102,4 +103,12 @@ export function taskLabel(labelBase: string, status: TaskStatus, startedAt: numb
     return `${taskIconByStatus[status]} ${labelBase}${startedAt && finishedAt ? (` (${formatDuration(finishedAt - startedAt)})`) : ''}`
 }
 
-
+export async function availableBots(store: Store<State>): Promise<FactorioBot[]> {
+    while(true) {
+        const available = store.getters.availablePlayers().map((player: FactorioPlayer) => new FactorioBot(store, player.playerId))
+        if (available.length > 0) {
+            return available
+        }
+        await sleep(100)
+    }
+}

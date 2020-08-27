@@ -1,7 +1,15 @@
 import {FactorioBot, MAX_ITEM_INVENTORY} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {
+    availableBots,
+    createTask,
+    executeTask,
+    Task,
+    taskRunnerByType,
+    TaskStatus,
+    updateTaskStatus
+} from "@/factorio-bot/task";
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {Entities, InventoryType, RequestEntity, World} from "@/factorio-bot/types";
 import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
@@ -21,17 +29,10 @@ type TaskData = {
 
 async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: Task): Promise<void> {
     const data: TaskData = task.data as TaskData
-    if (bots.length === 0) {
-        return
-    }
+
 
     const checkResearchDone = async () => {
-        store.commit('updateForce', await FactorioApi.playerForce());
-        if (store.state.force.technologies[data.name].researched) {
-            store.commit('updateRecipes', await FactorioApi.allRecipes());
-            return true
-        }
-        return false
+        return store.state.force.technologies[data.name].researched;
     }
 
     // bots.sort(sortBotsByInventory([data.name]))

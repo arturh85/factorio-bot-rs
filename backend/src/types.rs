@@ -43,12 +43,12 @@ pub struct FactorioPlayer {
     pub player_id: u32,
     pub position: Position,
     pub main_inventory: Box<BTreeMap<String, u32>>,
-    pub build_distance: Option<u32>,
-    pub reach_distance: Option<u32>,
-    pub drop_item_distance: Option<u32>,
-    pub item_pickup_distance: Option<u32>,
-    pub loot_pickup_distance: Option<u32>,
-    pub resource_reach_distance: Option<u32>,
+    pub build_distance: u32,
+    pub reach_distance: u32,
+    pub drop_item_distance: u32,
+    pub item_pickup_distance: u32,
+    pub loot_pickup_distance: u32,
+    pub resource_reach_distance: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
@@ -290,7 +290,7 @@ pub struct PlaceEntitiesResult {
     pub entities: Vec<FactorioEntity>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerChangedDistanceEvent {
     pub player_id: u32,
@@ -301,16 +301,23 @@ pub struct PlayerChangedDistanceEvent {
     pub loot_pickup_distance: u32,
     pub resource_reach_distance: u32,
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerChangedPositionEvent {
     pub player_id: u32,
     pub position: Position,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
-pub struct PlayerMainInventoryChangedEvent {
+pub struct PlayerChangedMainInventoryEvent {
     pub player_id: u32,
     pub main_inventory: Box<BTreeMap<String, u32>>,
+}
+
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerLeftEvent {
+    pub player_id: u32,
 }

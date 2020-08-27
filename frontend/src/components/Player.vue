@@ -1,6 +1,6 @@
 <template>
-  <v-card>
-    <v-card-title>Bot #{{ player.playerId }} @ {{ positionLabel(player.position) }}</v-card-title>
+  <v-card v-if="player">
+    <v-card-title>Bot #{{ player.playerId }} @ {{ positionLabel(player.position) }} <span v-if="$store.getters.isBusy(player.playerId)">👷</span></v-card-title>
     <v-list-item v-for="itemName in Object.keys(player.mainInventory)" v-bind:key="itemName">
       <v-list-item-content>
         <v-list-item-title>

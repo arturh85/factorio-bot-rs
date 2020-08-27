@@ -7,7 +7,7 @@ import {emptyWorld} from "@/factorio-bot/util";
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {blueprintTileableStarterSteamEngineBoiler} from "@/factorio-bot/blueprints";
 import {FactorioBot} from "@/factorio-bot/bot";
-import {executeTask, Task, TaskStatus} from "@/factorio-bot/task";
+import {availableBots, executeTask, Task, TaskStatus} from "@/factorio-bot/task";
 import {createResearchTask} from "@/factorio-bot/tasks/research-task";
 import {createBuildStarterMinerFurnaceTask} from "@/factorio-bot/tasks/build-starter-miner-furnace-task";
 import {createBuildStarterMinerCoalTask} from "@/factorio-bot/tasks/build-starter-miner-coal-task";
@@ -83,12 +83,11 @@ export class FactorioBotManager {
             // break;
             return;
         }
-        const availableBots = this.bots.filter(bot => bot.busyWith === null)
         // console.log('bots:', this.bots)
         // console.log('available bots:', availableBots)
-        for (let i = 0; i < availableTasks.length && i < this.bots.length; i++) {
+        for (const task of availableTasks) {
             try {
-                await executeTask(this.$store, availableBots, availableTasks[i])
+                await executeTask(this.$store, await availableBots(this.$store), task)
             } catch(err) {}
             doneSomething = true
         }

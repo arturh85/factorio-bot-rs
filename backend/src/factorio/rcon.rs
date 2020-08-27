@@ -204,7 +204,7 @@ impl FactorioRcon {
         }
         let player = player.unwrap();
         let distance = calculate_distance(&player.position, &position);
-        let build_distance = player.build_distance.unwrap_or(10) as f64;
+        let build_distance = player.build_distance as f64;
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > build_distance {
             warn!("too far away, moving first!");
@@ -277,7 +277,7 @@ impl FactorioRcon {
             return Err(anyhow!("player not found"));
         }
         let player = player.unwrap();
-        let build_distance = player.build_distance.unwrap_or(10) as f64;
+        let build_distance = player.build_distance as f64;
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > build_distance {
@@ -405,7 +405,7 @@ impl FactorioRcon {
         let action_id: u32 = *next_action_id;
         *next_action_id = (*next_action_id + 1) % 1000;
         drop(next_action_id);
-        let resource_reach_distance = player.resource_reach_distance.unwrap_or(3) as f64;
+        let resource_reach_distance = player.resource_reach_distance as f64;
         let distance = calculate_distance(&player.position, &position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > resource_reach_distance {
@@ -503,7 +503,7 @@ impl FactorioRcon {
         }
         let player = player.unwrap();
         let player_position = player.position.clone();
-        let build_distance = player.build_distance.unwrap_or(10) as f64;
+        let build_distance = player.build_distance as f64;
         drop(player); // wow, without this factorio (?) freezes (!)
         let distance = calculate_distance(&player_position, &entity_position);
         if distance > build_distance {
@@ -602,7 +602,7 @@ impl FactorioRcon {
             return Err(anyhow!("player not found"));
         }
         let player = player.unwrap();
-        let reach_distance = player.reach_distance.unwrap_or(10) as f64;
+        let reach_distance = player.reach_distance as f64;
         let distance = calculate_distance(&player.position, &entity_position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > reach_distance {
@@ -649,7 +649,7 @@ impl FactorioRcon {
             return Err(anyhow!("player not found"));
         }
         let player = player.unwrap();
-        let reach_distance = player.reach_distance.unwrap_or(10) as f64;
+        let reach_distance = player.reach_distance as f64;
         let distance = calculate_distance(&player.position, &entity_position);
         drop(player); // wow, without this factorio (?) freezes (!)
         if distance > reach_distance {

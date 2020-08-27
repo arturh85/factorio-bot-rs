@@ -5,11 +5,16 @@ import {findTask, Task} from "@/factorio-bot/task";
 import {
     FactorioEntity,
     FactorioEntityPrototypeByName,
-    FactorioForce,
+    FactorioForce, FactorioInventory,
     FactorioItemPrototypeByName,
     FactorioPlayer,
     FactorioPlayerById,
-    FactorioRecipeByName, Position, StarterCoalLoop, StarterMinerChest,
+    FactorioRecipeByName, PlayerChangedDistanceEvent,
+    PlayerChangedMainInventoryEvent,
+    PlayerChangedPositionEvent, PlayerLeftEvent,
+    Position,
+    StarterCoalLoop,
+    StarterMinerChest,
     StarterMinerFurnace,
     World
 } from "@/factorio-bot/types";
@@ -17,8 +22,11 @@ import {emptyWorld, positionEqual} from "@/factorio-bot/util";
 
 Vue.use(Vuex);
 
+type BusyCounterByPlayerId = {[playerId: string]: number}
+
 export type State = {
     players: FactorioPlayerById,
+    busyPlayers: BusyCounterByPlayerId,
     recipes: FactorioRecipeByName,
     force: FactorioForce,
     itemPrototypes: FactorioItemPrototypeByName,
@@ -30,6 +38,7 @@ export type State = {
 
 export const initialState: State = {
     players: {},
+    busyPlayers: {},
     recipes: {},
     itemPrototypes: {},
     entityPrototypes: {},
@@ -42,16 +51,45 @@ export const initialState: State = {
 export default new Vuex.Store({
     state: initialState,
     getters: {
-        getPlayer: (state: State) => (playerId: number) => {
+        availablePlayers: (state: State) => (): FactorioPlayer[] => {
+            return Object.keys(state.players)
+                .filter(playerId => !state.busyPlayers[playerId])
+                .map(playerId => state.players[playerId])
+        },
+        getPlayer: (state: State) => (playerId: number): FactorioPlayer => {
             return state.players[playerId.toString()]
         },
-        getMainInventory: (state: State) => (playerId: number) => {
+        isBusy: (state: State) => (playerId: number): boolean => {
+            return !!state.busyPlayers[playerId.toString()]
+        },
+        getMainInventory: (state: State) => (playerId: number): FactorioInventory => {
             return state.players[playerId].mainInventory
         },
     },
     mutations: {
         changeSelectedTask(state: State, task: Task | null) {
             state.selectedTask = task
+        },
+        playerWorkStarted(state: State, playerId: number) {
+            const strPlayerId = playerId.toString()
+            const busyPlayers = {...state.busyPlayers}
+            if (!busyPlayers[strPlayerId]) {
+                busyPlayers[strPlayerId] = 0
+            }
+            busyPlayers[strPlayerId] += 1
+            state.busyPlayers = busyPlayers
+        },
+        playerWorkFinished(state: State, playerId: number) {
+            const strPlayerId = playerId.toString()
+            const busyPlayers = {...state.busyPlayers}
+            if (!busyPlayers[strPlayerId]) {
+                return
+            }
+            busyPlayers[strPlayerId] -= 1
+            if (busyPlayers[strPlayerId] <= 0) {
+                delete busyPlayers[strPlayerId]
+            }
+            state.busyPlayers = busyPlayers
         },
         updateForce(state: State, force: FactorioForce) {
             state.force = force
@@ -123,6 +161,68 @@ export default new Vuex.Store({
         },
         updatePlayer(state: State, player: FactorioPlayer) {
             Vue.set(state.players, player.playerId.toString(), player)
+        },
+        playerLeft(state: State, event: PlayerLeftEvent) {
+            const _players: any = {}
+            const leftPlayerId = event.playerId.toString()
+            for (const playerId of Object.keys(state.players)) {
+                if (playerId !== leftPlayerId) {
+                    _players[playerId] = state.players[playerId]
+                }
+            }
+            Vue.set(state, 'players', _players)
+        },
+        updatePlayerPosition(state: State, event: PlayerChangedPositionEvent) {
+            const playerId = event.playerId.toString();
+            const player: FactorioPlayer = {...(state.players[playerId] ? state.players[playerId] : {
+                playerId: event.playerId,
+                position: {x: 0, y: 0},
+                mainInventory: {},
+                buildDistance: 0,
+                reachDistance: 0,
+                dropItemDistance: 0,
+                itemPickupDistance: 0,
+                lootPickupDistance: 0,
+                resourceReachDistance: 0,
+            }), position: event.position}
+            Vue.set(state.players, playerId, player)
+        },
+        updatePlayerMainInventory(state: State, event: PlayerChangedMainInventoryEvent) {
+            const playerId = event.playerId.toString();
+            const player: FactorioPlayer = {...(state.players[playerId] ? state.players[playerId] : {
+                    playerId: event.playerId,
+                    position: {x: 0, y: 0},
+                    mainInventory: {},
+                    buildDistance: 0,
+                    reachDistance: 0,
+                    dropItemDistance: 0,
+                    itemPickupDistance: 0,
+                    lootPickupDistance: 0,
+                    resourceReachDistance: 0,
+                }), mainInventory: event.mainInventory}
+            Vue.set(state.players, playerId, player)
+        },
+        updatePlayerDistance(state: State, event: PlayerChangedDistanceEvent) {
+            const playerId = event.playerId.toString();
+            const player: FactorioPlayer = {...(state.players[playerId] ? state.players[playerId] : {
+                    playerId: event.playerId,
+                    position: {x: 0, y: 0},
+                    mainInventory: {},
+                    buildDistance: 0,
+                    reachDistance: 0,
+                    dropItemDistance: 0,
+                    itemPickupDistance: 0,
+                    lootPickupDistance: 0,
+                    resourceReachDistance: 0,
+                }),
+                buildDistance: event.buildDistance,
+                reachDistance: event.reachDistance,
+                dropItemDistance: event.dropItemDistance,
+                itemPickupDistance: event.itemPickupDistance,
+                lootPickupDistance: event.lootPickupDistance,
+                resourceReachDistance: event.resourceReachDistance,
+            };
+            Vue.set(state.players, playerId, player)
         },
         updatePlayers(state: State, players: FactorioPlayer[]) {
             const _players: any = {}

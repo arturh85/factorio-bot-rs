@@ -14,6 +14,15 @@ import {Direction} from "@/factorio-bot/types";
 import {baseUrl} from "@/environment";
 import {positionParam, rectParam} from "@/factorio-bot/util";
 
+const fetch_retry = async (url: string, n: number, options: any = null): Promise<any> => {
+    try {
+        return await fetch(url, options)
+    } catch(err) {
+        if (n === 1) throw err;
+        return await fetch_retry(url, n - 1, options);
+    }
+};
+
 export class FactorioApi {
     static async insertToInventory(
         playerId: number,
@@ -240,17 +249,17 @@ export class FactorioApi {
     }
 
     static async allRecipes(): Promise<FactorioRecipeByName> {
-        const response = await fetch(`${baseUrl}/api/recipes`);
+        const response = await fetch_retry(`${baseUrl}/api/recipes`, 3);
         return await response.json();
     }
 
     static async allPlayers(): Promise<FactorioPlayer[]> {
-        const response = await fetch(`${baseUrl}/api/players`);
+        const response = await fetch_retry(`${baseUrl}/api/players`, 3);
         return await response.json();
     }
 
     static async playerForce(): Promise<FactorioForce> {
-        const response = await fetch(`${baseUrl}/api/playerForce`);
+        const response = await fetch_retry(`${baseUrl}/api/playerForce`, 3);
         return await response.json();
     }
 

@@ -48,7 +48,6 @@ export default Vue.extend({
     //
   }),
 
-
   created() {
     const manager: FactorioBotManager = new FactorioBotManager(this.$store)
     const w = window as any
@@ -60,12 +59,18 @@ export default Vue.extend({
     })
     w.bots = manager
     w.api = FactorioApi
-
     const ws = new WebSocket('ws://localhost:7123/ws/');
     ws.onmessage = (evt: MessageEvent) => {
       if (evt.data !== 'Heartbeat') {
-        const player = JSON.parse(evt.data);
-        this.$store.commit('updatePlayer', player);
+        const [action, payload] = JSON.parse(evt.data);
+        if (action === 'researchCompleted') {
+          FactorioApi.playerForce().then(force => {
+            this.$store.commit('updateForce', force)
+            FactorioApi.allRecipes().then(recipes => this.$store.commit('updateRecipes', recipes))
+          });
+        } else {
+          this.$store.commit(action, payload);
+        }
       }
     };
   },

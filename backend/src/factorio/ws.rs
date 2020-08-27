@@ -1,7 +1,11 @@
-use crate::types::FactorioPlayer;
+use crate::types::{
+    FactorioPlayer, PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent,
+    PlayerChangedPositionEvent, PlayerLeftEvent,
+};
 use actix::prelude::*;
 use actix_web_actors::ws;
 use actix_web_actors::ws::ProtocolError;
+use serde_json::Value;
 use std::time::Duration;
 
 pub struct FactorioWebSocketClient {}
@@ -56,9 +60,27 @@ struct ServerEvent {
 
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct PlayerChangedEvent {
+pub struct PlayerChangedPositionMessage {
     pub player: FactorioPlayer,
 }
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct PlayerDistanceChangedMessage {
+    pub player: FactorioPlayer,
+}
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct PlayerChangedMainInventoryMessage {
+    pub player: FactorioPlayer,
+}
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct PlayerLeftMessage {
+    pub player_id: u32,
+}
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct ResearchCompletedMessage {}
 
 pub struct FactorioWebSocketServer {
     pub listeners: Vec<Addr<FactorioWebSocketClient>>,
@@ -78,6 +100,16 @@ impl Actor for FactorioWebSocketServer {
     }
 }
 
+impl FactorioWebSocketServer {
+    fn broadcast(&mut self, event: Value) {
+        for l in &self.listeners {
+            l.do_send(ServerEvent {
+                event: serde_json::to_string(&event).expect("failed to serialize"),
+            });
+        }
+    }
+}
+
 impl Handler<RegisterWSClient> for FactorioWebSocketServer {
     type Result = ();
 
@@ -86,14 +118,74 @@ impl Handler<RegisterWSClient> for FactorioWebSocketServer {
     }
 }
 
-impl Handler<PlayerChangedEvent> for FactorioWebSocketServer {
+impl Handler<PlayerChangedPositionMessage> for FactorioWebSocketServer {
     type Result = ();
 
-    fn handle(&mut self, msg: PlayerChangedEvent, _: &mut Context<Self>) {
-        for l in &self.listeners {
-            l.do_send(ServerEvent {
-                event: serde_json::to_string(&msg.player).unwrap(),
-            });
-        }
+    fn handle(&mut self, msg: PlayerChangedPositionMessage, _: &mut Context<Self>) {
+        self.broadcast(json!([
+            "updatePlayerPosition",
+            serde_json::to_value(PlayerChangedPositionEvent {
+                player_id: msg.player.player_id,
+                position: msg.player.position
+            })
+            .expect("failed to serialize")
+        ]));
+    }
+}
+
+impl Handler<PlayerChangedMainInventoryMessage> for FactorioWebSocketServer {
+    type Result = ();
+
+    fn handle(&mut self, msg: PlayerChangedMainInventoryMessage, _: &mut Context<Self>) {
+        self.broadcast(json!([
+            "updatePlayerMainInventory",
+            serde_json::to_value(PlayerChangedMainInventoryEvent {
+                player_id: msg.player.player_id,
+                main_inventory: msg.player.main_inventory
+            })
+            .expect("failed to serialize")
+        ]));
+    }
+}
+
+impl Handler<PlayerDistanceChangedMessage> for FactorioWebSocketServer {
+    type Result = ();
+
+    fn handle(&mut self, msg: PlayerDistanceChangedMessage, _: &mut Context<Self>) {
+        self.broadcast(json!([
+            "updatePlayerDistance",
+            serde_json::to_value(PlayerChangedDistanceEvent {
+                player_id: msg.player.player_id,
+                build_distance: msg.player.build_distance,
+                reach_distance: msg.player.reach_distance,
+                drop_item_distance: msg.player.drop_item_distance,
+                item_pickup_distance: msg.player.item_pickup_distance,
+                loot_pickup_distance: msg.player.loot_pickup_distance,
+                resource_reach_distance: msg.player.resource_reach_distance,
+            })
+            .expect("failed to serialize")
+        ]));
+    }
+}
+
+impl Handler<PlayerLeftMessage> for FactorioWebSocketServer {
+    type Result = ();
+
+    fn handle(&mut self, msg: PlayerLeftMessage, _: &mut Context<Self>) {
+        self.broadcast(json!([
+            "playerLeft",
+            serde_json::to_value(PlayerLeftEvent {
+                player_id: msg.player_id,
+            })
+            .expect("failed to serialize")
+        ]));
+    }
+}
+
+impl Handler<ResearchCompletedMessage> for FactorioWebSocketServer {
+    type Result = ();
+
+    fn handle(&mut self, _msg: ResearchCompletedMessage, _: &mut Context<Self>) {
+        self.broadcast(json!(["researchCompleted",]));
     }
 }

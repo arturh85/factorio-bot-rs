@@ -3,16 +3,15 @@ import {Direction, Entities, InventoryType} from "@/factorio-bot/types"
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {
     distance,
-    findFreeRect, groupByPosition,
+    findFreeRect,
+    groupByPosition,
     movePositionInDirection,
-    positionEqual, positionStr,
+    positionStr,
     sortEntitiesByDistanceTo,
 } from "@/factorio-bot/util"
 import {Store} from "vuex"
 import {State} from "@/store"
 import {Task} from "@/factorio-bot/task";
-
-
 
 
 /*
@@ -30,7 +29,6 @@ export const MAX_ITEM_INVENTORY = 300
 export class FactorioBot {
     $store: Store<State>;
     playerId: number
-    busyWith: Task | null = null;
 
     constructor(
         store: Store<State>,
@@ -49,69 +47,75 @@ export class FactorioBot {
     }
 
     async placeOffshorePump(): Promise<FactorioEntity> {
-        for (let radius = 300; radius < 1000; radius += 200) {
-            let tiles = await FactorioApi.findTiles(
-                this.player().position,
-                radius,
-                Entities.water
-            );
-            if (tiles.length === 0) {
-                continue;
-            }
-            const groupedByPosition = groupByPosition(tiles)
-            tiles = tiles.filter(tile => {
-                // tile MUST NOT have water directly above
-                const above = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.north))]
-                if (above) {
-                    return false
-                }
-                // tile MUST have water directly left and right
-                const left = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.east))]
-                const right = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.west))]
-                return left && right;
-            })
-            if (tiles.length === 0) {
-                continue
-            }
-            tiles.sort(sortEntitiesByDistanceTo(this.player().position));
-            for (const tile of tiles) {
-                const position = movePositionInDirection(
-                    tile.position,
-                    Direction.north
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            for (let radius = 300; radius < 1000; radius += 200) {
+                let tiles = await FactorioApi.findTiles(
+                    this.player().position,
+                    radius,
+                    Entities.water
                 );
-                const conflictArea: Rect = {
-                    leftTop: {x: position.x , y: position.y - 23},
-                    rightBottom: {x: position.x + 18 , y: position.y},
-                }
-                const conflictEntities = await FactorioApi.findEntitiesInArea(conflictArea);
-                if (conflictEntities.length > 0) {
-                    // console.log('found conflicts for', tile.position, conflictArea, conflictEntities);
+                if (tiles.length === 0) {
                     continue;
                 }
-                const conflictTiles = await FactorioApi.findTilesInArea(conflictArea);
-                if (conflictTiles.filter(tile => tile.playerCollidable).length > 0) {
-                    // console.log('found conflicts for', tile.position, conflictArea, conflictTiles);
-                    continue;
+                const groupedByPosition = groupByPosition(tiles)
+                tiles = tiles.filter(tile => {
+                    // tile MUST NOT have water directly above
+                    const above = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.north))]
+                    if (above) {
+                        return false
+                    }
+                    // tile MUST have water directly left and right
+                    const left = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.east))]
+                    const right = groupedByPosition[positionStr(movePositionInDirection(tile.position, Direction.west))]
+                    return left && right;
+                })
+                if (tiles.length === 0) {
+                    continue
                 }
-                try {
-                    return await this.placeEntity(
-                        Entities.offshorePump,
-                        position,
-                        Direction.south
+                tiles.sort(sortEntitiesByDistanceTo(this.player().position));
+                for (const tile of tiles) {
+                    const position = movePositionInDirection(
+                        tile.position,
+                        Direction.north
                     );
-                } catch (err) {
+                    const conflictArea: Rect = {
+                        leftTop: {x: position.x, y: position.y - 23},
+                        rightBottom: {x: position.x + 18, y: position.y},
+                    }
+                    const conflictEntities = await FactorioApi.findEntitiesInArea(conflictArea);
+                    if (conflictEntities.length > 0) {
+                        // console.log('found conflicts for', tile.position, conflictArea, conflictEntities);
+                        continue;
+                    }
+                    const conflictTiles = await FactorioApi.findTilesInArea(conflictArea);
+                    if (conflictTiles.filter(tile => tile.playerCollidable).length > 0) {
+                        // console.log('found conflicts for', tile.position, conflictArea, conflictTiles);
+                        continue;
+                    }
+                    try {
+                        const entity = await this.placeEntity(
+                            Entities.offshorePump,
+                            position,
+                            Direction.south
+                        );
+                        return entity
+                    } catch (err) {
+                    }
                 }
+                throw Error(`failed to place ${Entities.offshorePump}`);
             }
-            throw Error(`failed to place ${Entities.offshorePump}`);
+            throw new Error("no nearby water found");
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
-        throw new Error("no nearby water found");
     }
 
     mainInventory(itemName: string): number {
         return this.player().mainInventory[itemName] || 0;
     }
 
-    async _findNearest(count: number, name: string|null, entityName: string|null): Promise<FactorioEntity> {
+    async _findNearest(count: number, name: string | null, entityName: string | null): Promise<FactorioEntity> {
         const searchRadius = 500;
         let target = null;
         for (let radius = 100; radius <= searchRadius; radius += 100) {
@@ -132,10 +136,11 @@ export class FactorioBot {
         return target;
     }
 
-    async findNearestType(name: string, count: number): Promise<FactorioEntity|null> {
-       return await this._findNearest(count, null, name)
+    async findNearestType(name: string, count: number): Promise<FactorioEntity | null> {
+        return await this._findNearest(count, null, name)
     }
-    async findNearest(name: string, count: number): Promise<Position|null> {
+
+    async findNearest(name: string, count: number): Promise<Position | null> {
         const entity = await this._findNearest(count, name, null)
         if (entity) {
             return entity.position
@@ -168,40 +173,52 @@ export class FactorioBot {
     }
 
     async tryMineNearest(name: string, count: number): Promise<void> {
+        this.$store.commit('playerWorkStarted', this.playerId)
         try {
             await this.mineNearest(name, count);
         } catch (err) {
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
     }
 
     async tryMineNearestFrom(names: string[], count: number): Promise<void> {
+        this.$store.commit('playerWorkStarted', this.playerId)
         try {
             await this.mineNearestFrom(names, count);
         } catch (err) {
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
     }
 
     async mineNearestFrom(names: string[], count: number): Promise<void> {
-        const targets = await Promise.all(names.map(name => this.findNearest(name, count)))
-        if (!targets) {
-            throw new Error(`not found: ${names.join(', ')}`)
-        }
-        let nearestTarget = null;
-        let nearestName = null;
-        let nearestDistance = 9999;
-        const playerPosition = this.player().position
-        for(let i=0; i<targets.length; i++) {
-            const d = distance(targets[i] as Position, playerPosition);
-            if (d < nearestDistance) {
-                nearestDistance = d
-                nearestTarget = targets[i]
-                nearestName = names[i]
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const targets = await Promise.all(names.map(name => this.findNearest(name, count)))
+            if (!targets) {
+                throw new Error(`not found: ${names.join(', ')}`)
             }
+            let nearestTarget = null;
+            let nearestName = null;
+            let nearestDistance = 9999;
+            const playerPosition = this.player().position
+            for (let i = 0; i < targets.length; i++) {
+                const d = distance(targets[i] as Position, playerPosition);
+                if (d < nearestDistance) {
+                    nearestDistance = d
+                    nearestTarget = targets[i]
+                    nearestName = names[i]
+                }
+            }
+            if (!nearestTarget || !nearestName) {
+                throw new Error(`not found: ${names.join(', ')}`)
+            }
+            return await this.mine(nearestTarget, nearestName, count)
+        } catch (err) {
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
-        if (!nearestTarget || !nearestName) {
-            throw new Error(`not found: ${names.join(', ')}`)
-        }
-        return await this.mine(nearestTarget, nearestName, count)
     }
 
     async mineNearestType(name: string, count: number): Promise<void> {
@@ -212,6 +229,7 @@ export class FactorioBot {
             throw new Error(`not found: ${name}`)
         }
     }
+
     async mineNearest(name: string, count: number): Promise<void> {
         const target = await this.findNearest(name, count);
         if (target) {
@@ -222,29 +240,39 @@ export class FactorioBot {
     }
 
     async mine(target: Position, name: string, count: number): Promise<void> {
-        const player = await FactorioApi.mine(
-            this.playerId,
-            target,
-            name,
-            count
-        );
-        if (player && player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', player);
-        } else {
-            throw new Error('invalid response')
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const player = await FactorioApi.mine(
+                this.playerId,
+                target,
+                name,
+                count
+            );
+            if (player && player.playerId == this.playerId) {
+                this.$store.commit('updatePlayer', player);
+            } else {
+                throw new Error('invalid response')
+            }
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
     }
 
     async move(target: Position, radius: number): Promise<void> {
-        const player = await FactorioApi.move(
-            this.playerId,
-            target,
-            radius
-        );
-        if (player && player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', player);
-        } else {
-            throw new Error('invalid response')
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const player = await FactorioApi.move(
+                this.playerId,
+                target,
+                radius
+            );
+            if (player && player.playerId == this.playerId) {
+                this.$store.commit('updatePlayer', player);
+            } else {
+                throw new Error('invalid response')
+            }
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
     }
 
@@ -253,19 +281,24 @@ export class FactorioBot {
     }
 
     async craft(recipeName: string, count: number): Promise<void> {
-        const recipe = this.$store.state.recipes[recipeName]
-        if (recipe && recipe.products[0].amount > 1) {
-            count = Math.ceil(count / recipe.products[0].amount)
-        }
-        const player = await FactorioApi.craft(
-            this.playerId,
-            recipeName,
-            count
-        );
-        if (player && player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', player);
-        } else {
-            throw new Error('invalid response')
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const recipe = this.$store.state.recipes[recipeName]
+            if (recipe && recipe.products[0].amount > 1) {
+                count = Math.ceil(count / recipe.products[0].amount)
+            }
+            const player = await FactorioApi.craft(
+                this.playerId,
+                recipeName,
+                count
+            );
+            if (player && player.playerId == this.playerId) {
+                this.$store.commit('updatePlayer', player);
+            } else {
+                throw new Error('invalid response')
+            }
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
     }
 
@@ -274,37 +307,47 @@ export class FactorioBot {
         _placePosition: Position,
         placeDirection: number
     ): Promise<FactorioEntity> {
-        const result = await FactorioApi.placeEntity(
-            this.playerId,
-            itemName,
-            _placePosition,
-            placeDirection
-        );
-        if (result.player && result.player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', result.player);
-        } else {
-            throw new Error('invalid response')
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const result = await FactorioApi.placeEntity(
+                this.playerId,
+                itemName,
+                _placePosition,
+                placeDirection
+            );
+            if (result.player && result.player.playerId == this.playerId) {
+                this.$store.commit('updatePlayer', result.player);
+            } else {
+                throw new Error('invalid response')
+            }
+            return result.entity;
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
-        return result.entity;
     }
 
     async reviveGhost(
         ghostEntity: FactorioEntity
     ): Promise<FactorioEntity> {
-        if (!ghostEntity.ghostName) {
-            throw new Error("cannot revive non ghosts")
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            if (!ghostEntity.ghostName) {
+                throw new Error("cannot revive non ghosts")
+            }
+            const result = await FactorioApi.reviveGhost(
+                this.playerId,
+                ghostEntity.ghostName,
+                ghostEntity.position
+            );
+            if (result.player && result.player.playerId == this.playerId) {
+                this.$store.commit('updatePlayer', result.player);
+            } else {
+                throw new Error('invalid response')
+            }
+            return result.entity;
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
-        const result = await FactorioApi.reviveGhost(
-            this.playerId,
-            ghostEntity.ghostName,
-            ghostEntity.position
-        );
-        if (result.player && result.player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', result.player);
-        } else {
-            throw new Error('invalid response')
-        }
-        return result.entity;
     }
 
     async transferItemsTo(
@@ -312,10 +355,15 @@ export class FactorioBot {
         itemName: string,
         itemCount: number
     ): Promise<void> {
-        const targetPlayer: FactorioPlayer = this.$store.getters.getPlayer(targetPlayerId)
-        const characterEntity = await FactorioApi.findEntities(targetPlayer.position, 1, 'character')
-        if (characterEntity.length > 0) {
-            return await this.insertToInventory('character', characterEntity[0].position, InventoryType.chest_or_fuel, itemName, itemCount)
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const targetPlayer: FactorioPlayer = this.$store.getters.getPlayer(targetPlayerId)
+            const characterEntity = await FactorioApi.findEntities(targetPlayer.position, 1, 'character')
+            if (characterEntity.length > 0) {
+                return await this.insertToInventory('character', characterEntity[0].position, InventoryType.chest_or_fuel, itemName, itemCount)
+            }
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
     }
 
@@ -326,16 +374,21 @@ export class FactorioBot {
         itemName: string,
         itemCount: number
     ): Promise<void> {
-        const player = await FactorioApi.insertToInventory(
-            this.player().playerId,
-            entityName,
-            entityPosition,
-            inventoryType,
-            itemName,
-            itemCount
-        );
-        if (player && player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', player);
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const player = await FactorioApi.insertToInventory(
+                this.player().playerId,
+                entityName,
+                entityPosition,
+                inventoryType,
+                itemName,
+                itemCount
+            );
+            if (player && player.playerId == this.playerId) {
+                this.$store.commit('updatePlayer', player);
+            }
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
     }
 
@@ -346,32 +399,42 @@ export class FactorioBot {
         itemName: string,
         itemCount: number
     ): Promise<void> {
-        const player = await FactorioApi.removeFromInventory(
-            this.player().playerId,
-            entityName,
-            entityPosition,
-            inventoryType,
-            itemName,
-            itemCount
-        );
-        if (player && player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', player);
-        }
-    }
-
-    async cheatItem(itemName: string, itemCount: number): Promise<void> {
-        itemCount -= this.mainInventory(itemName);
-        if (itemCount > 0) {
-            const player = await FactorioApi.cheatItem(
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const player = await FactorioApi.removeFromInventory(
                 this.player().playerId,
+                entityName,
+                entityPosition,
+                inventoryType,
                 itemName,
                 itemCount
             );
             if (player && player.playerId == this.playerId) {
                 this.$store.commit('updatePlayer', player);
-            } else {
-                throw new Error('invalid response')
             }
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
+        }
+    }
+
+    async cheatItem(itemName: string, itemCount: number): Promise<void> {
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            itemCount -= this.mainInventory(itemName);
+            if (itemCount > 0) {
+                const player = await FactorioApi.cheatItem(
+                    this.player().playerId,
+                    itemName,
+                    itemCount
+                );
+                if (player && player.playerId == this.playerId) {
+                    this.$store.commit('updatePlayer', player);
+                } else {
+                    throw new Error('invalid response')
+                }
+            }
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
     }
 
@@ -381,19 +444,24 @@ export class FactorioBot {
         direction: number,
         forceBuild = false
     ): Promise<FactorioEntity[]> {
-        const result = await FactorioApi.placeBlueprint(
-            this.playerId,
-            blueprint,
-            position,
-            direction,
-            forceBuild
-        );
-        if (result.player && result.player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', result.player);
-        } else {
-            throw new Error('invalid response')
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const result = await FactorioApi.placeBlueprint(
+                this.playerId,
+                blueprint,
+                position,
+                direction,
+                forceBuild
+            );
+            if (result.player && result.player.playerId == this.playerId) {
+                this.$store.commit('updatePlayer', result.player);
+            } else {
+                throw new Error('invalid response')
+            }
+            return result.entities;
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
-        return result.entities;
     }
 
     async cheatBlueprint(
@@ -402,18 +470,23 @@ export class FactorioBot {
         direction: number,
         forceBuild = false
     ): Promise<FactorioEntity[]> {
-        const result = await FactorioApi.cheatBlueprint(
-            this.playerId,
-            blueprint,
-            position,
-            direction,
-            forceBuild
-        );
-        if (result.player && result.player.playerId == this.playerId) {
-            this.$store.commit('updatePlayer', result.player);
-        } else {
-            throw new Error('invalid response')
+        this.$store.commit('playerWorkStarted', this.playerId)
+        try {
+            const result = await FactorioApi.cheatBlueprint(
+                this.playerId,
+                blueprint,
+                position,
+                direction,
+                forceBuild
+            );
+            if (result.player && result.player.playerId == this.playerId) {
+                this.$store.commit('updatePlayer', result.player);
+            } else {
+                throw new Error('invalid response')
+            }
+            return result.entities;
+        } finally {
+            this.$store.commit('playerWorkFinished', this.playerId)
         }
-        return result.entities;
     }
 }

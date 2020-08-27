@@ -913,7 +913,6 @@ function on_player_joined_game(event)
 --	print("player '"..game.players[event.player_index].name.."' joined")
 --	game.write_file("players_connected.txt", game.players[event.player_index].name..'\n', true, 0) -- only on server
 	global.n_clients = global.n_clients + 1
-	on_player_changed_position(event)
 	wait_for_player_inventory(event)
 end
 
@@ -925,6 +924,7 @@ function wait_for_player_inventory(event)
 		wait_for_player = false
 		on_player_main_inventory_changed(event)
 		on_player_changed_distance(event)
+		on_player_changed_position(event)
 	else
 		wait_for_player = true
 		local use1 = false
@@ -1091,11 +1091,15 @@ end
 function on_player_changed_position(event)
 	local tick = event.tick
 	local player_idx = event.player_index
-	local position = game.players[player_idx].position
-	writeout(event.tick, "on_player_changed_position", game.table_to_json({
-		playerId = player_idx,
-		position = position
-	}))
+	local player = game.players[player_idx]
+	if player.connected and player.character ~= nil then
+		local position = player.position
+
+		writeout(event.tick, "on_player_changed_position", game.table_to_json({
+			playerId = player_idx,
+			position = position
+		}))
+	end
 end
 
 function on_player_changed_distance(event)
@@ -1115,6 +1119,7 @@ end
 function on_research_finished(event)
 	writeout_recipes()
 	on_player_changed_distance(event)
+	writeout(event.tick, "on_research_finished", "")
 end
 
 function on_player_main_inventory_changed(event)

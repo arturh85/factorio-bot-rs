@@ -1,8 +1,11 @@
-use crate::factorio::ws::{FactorioWebSocketServer, PlayerChangedEvent};
+use crate::factorio::ws::{
+    FactorioWebSocketServer, PlayerChangedMainInventoryMessage, PlayerChangedPositionMessage,
+    PlayerDistanceChangedMessage, PlayerLeftMessage, ResearchCompletedMessage,
+};
 use crate::types::{
     ChunkObject, ChunkPosition, ChunkResource, FactorioChunk, FactorioEntityPrototype,
     FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
-    PlayerChangedDistanceEvent, PlayerChangedPositionEvent, PlayerMainInventoryChangedEvent,
+    PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent,
     Position, Rect,
 };
 use actix::Addr;
@@ -229,11 +232,22 @@ impl OutputParser {
                 // info!("STATIC_DATA_END!");
             }
             "on_player_left_game" => {
-                self.players_writer.empty(rest.parse()?);
+                let player_id: u32 = rest.parse()?;
+                self.players_writer.empty(player_id);
                 self.players_writer.refresh();
+                if let Some(websocket_server) = self.websocket_server.as_ref() {
+                    websocket_server
+                        .send(PlayerLeftMessage { player_id })
+                        .await?;
+                }
+            }
+            "on_research_finished" => {
+                if let Some(websocket_server) = self.websocket_server.as_ref() {
+                    websocket_server.send(ResearchCompletedMessage {}).await?;
+                }
             }
             "on_player_main_inventory_changed" => {
-                let event: PlayerMainInventoryChangedEvent = serde_json::from_str(rest)?;
+                let event: PlayerChangedMainInventoryEvent = serde_json::from_str(rest)?;
                 if self.players_writer.contains_key(&event.player_id) {
                     let existing_player = self.players_writer.get_one(&event.player_id).unwrap();
                     let player = FactorioPlayer {
@@ -249,7 +263,7 @@ impl OutputParser {
                     };
                     if let Some(websocket_server) = self.websocket_server.as_ref() {
                         websocket_server
-                            .send(PlayerChangedEvent {
+                            .send(PlayerChangedMainInventoryMessage {
                                 player: player.clone(),
                             })
                             .await?;
@@ -262,16 +276,16 @@ impl OutputParser {
                         player_id: event.player_id,
                         position: Position::new(0.0, 0.0),
                         main_inventory: event.main_inventory.clone(),
-                        build_distance: None,
-                        reach_distance: None,
-                        drop_item_distance: None,
-                        item_pickup_distance: None,
-                        loot_pickup_distance: None,
-                        resource_reach_distance: None,
+                        build_distance: 0,
+                        reach_distance: 0,
+                        drop_item_distance: 0,
+                        item_pickup_distance: 0,
+                        loot_pickup_distance: 0,
+                        resource_reach_distance: 0,
                     };
                     if let Some(websocket_server) = self.websocket_server.as_ref() {
                         websocket_server
-                            .send(PlayerChangedEvent {
+                            .send(PlayerChangedMainInventoryMessage {
                                 player: player.clone(),
                             })
                             .await?;
@@ -299,7 +313,7 @@ impl OutputParser {
                     drop(existing_player);
                     if let Some(websocket_server) = self.websocket_server.as_ref() {
                         websocket_server
-                            .send(PlayerChangedEvent {
+                            .send(PlayerChangedPositionMessage {
                                 player: player.clone(),
                             })
                             .await?;
@@ -311,16 +325,16 @@ impl OutputParser {
                         player_id: event.player_id,
                         position: event.position,
                         main_inventory: Box::new(BTreeMap::new()),
-                        build_distance: None,
-                        reach_distance: None,
-                        drop_item_distance: None,
-                        item_pickup_distance: None,
-                        loot_pickup_distance: None,
-                        resource_reach_distance: None,
+                        build_distance: 0,
+                        reach_distance: 0,
+                        drop_item_distance: 0,
+                        item_pickup_distance: 0,
+                        loot_pickup_distance: 0,
+                        resource_reach_distance: 0,
                     };
                     if let Some(websocket_server) = self.websocket_server.as_ref() {
                         websocket_server
-                            .send(PlayerChangedEvent {
+                            .send(PlayerChangedPositionMessage {
                                 player: player.clone(),
                             })
                             .await?;
@@ -337,17 +351,17 @@ impl OutputParser {
                         player_id: event.player_id,
                         position: existing_player.position.clone(),
                         main_inventory: existing_player.main_inventory.clone(),
-                        build_distance: Some(event.build_distance),
-                        reach_distance: Some(event.reach_distance),
-                        drop_item_distance: Some(event.drop_item_distance),
-                        item_pickup_distance: Some(event.item_pickup_distance),
-                        loot_pickup_distance: Some(event.loot_pickup_distance),
-                        resource_reach_distance: Some(event.resource_reach_distance),
+                        build_distance: event.build_distance,
+                        reach_distance: event.reach_distance,
+                        drop_item_distance: event.drop_item_distance,
+                        item_pickup_distance: event.item_pickup_distance,
+                        loot_pickup_distance: event.loot_pickup_distance,
+                        resource_reach_distance: event.resource_reach_distance,
                     };
                     drop(existing_player);
                     if let Some(websocket_server) = self.websocket_server.as_ref() {
                         websocket_server
-                            .send(PlayerChangedEvent {
+                            .send(PlayerDistanceChangedMessage {
                                 player: player.clone(),
                             })
                             .await?;
@@ -359,16 +373,16 @@ impl OutputParser {
                         player_id: event.player_id,
                         position: Position::new(0.0, 0.0),
                         main_inventory: Box::new(BTreeMap::new()),
-                        build_distance: Some(event.build_distance),
-                        reach_distance: Some(event.reach_distance),
-                        drop_item_distance: Some(event.drop_item_distance),
-                        item_pickup_distance: Some(event.item_pickup_distance),
-                        loot_pickup_distance: Some(event.loot_pickup_distance),
-                        resource_reach_distance: Some(event.resource_reach_distance),
+                        build_distance: event.build_distance,
+                        reach_distance: event.reach_distance,
+                        drop_item_distance: event.drop_item_distance,
+                        item_pickup_distance: event.item_pickup_distance,
+                        loot_pickup_distance: event.loot_pickup_distance,
+                        resource_reach_distance: event.resource_reach_distance,
                     };
                     if let Some(websocket_server) = self.websocket_server.as_ref() {
                         websocket_server
-                            .send(PlayerChangedEvent {
+                            .send(PlayerDistanceChangedMessage {
                                 player: player.clone(),
                             })
                             .await?;
