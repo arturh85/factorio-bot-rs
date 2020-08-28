@@ -14,8 +14,7 @@ use evmap::{ReadHandle, WriteHandle};
 use image::RgbaImage;
 use num_traits::cast::ToPrimitive;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct FactorioWorld {
@@ -30,9 +29,6 @@ pub struct FactorioWorld {
     pub actions: Mutex<HashMap<u32, String>>,
     pub path_requests: Mutex<HashMap<u32, String>>,
     pub next_action_id: Mutex<u32>,
-    pub rx_actions: Receiver<(u32, String)>,
-    pub rx_path_requests: Receiver<(u32, String)>,
-    pub rx_player_inventory_changed: Receiver<u32>,
 }
 
 unsafe impl Send for FactorioWorld {}
@@ -47,9 +43,6 @@ pub struct OutputParser {
     entity_prototypes_writer: WriteHandle<String, FactorioEntityPrototype>,
     item_prototypes_writer: WriteHandle<String, FactorioItemPrototype>,
     players_writer: WriteHandle<u32, FactorioPlayer>,
-    tx_actions: Sender<(u32, String)>,
-    tx_path_requests: Sender<(u32, String)>,
-    tx_player_inventory_changed: Sender<u32>,
 }
 
 impl OutputParser {
@@ -210,22 +203,19 @@ impl OutputParser {
                         }
                         _ => panic!(format!("unexpected action_completed: {}", action_status)),
                     };
-                    // let mut actions = self.world.actions.lock().await;
-                    // actions.insert(action_id, String::from(result));
-                    self.tx_actions
-                        .send((action_id, String::from(result)))
-                        .unwrap();
+                    let mut actions = self.world.actions.lock().await;
+                    actions.insert(action_id, String::from(result));
                 }
             }
             "on_script_path_request_finished" => {
                 let parts: Vec<&str> = rest.split('#').collect();
                 let id: u32 = parts[0].parse()?;
-                // let mut path_requests = self.world.path_requests.lock().await;
-                // path_requests.insert(id, String::from(parts[1]));
+                let mut path_requests = self.world.path_requests.lock().await;
+                path_requests.insert(id, String::from(parts[1]));
                 // info!("XXX player_path XXX sending");
-                self.tx_path_requests
-                    .send((id, String::from(parts[1])))
-                    .unwrap();
+                // self.tx_path_requests
+                //     .send((id, String::from(parts[1])))
+                //     .unwrap();
                 // info!("XXX player_path XXX sended");
             }
             "STATIC_DATA_END" => {
@@ -293,7 +283,6 @@ impl OutputParser {
                     self.players_writer.insert(event.player_id, player);
                 }
                 self.players_writer.refresh();
-                self.tx_player_inventory_changed.send(event.player_id)?;
             }
             "on_player_changed_position" => {
                 let event: PlayerChangedPositionEvent = serde_json::from_str(rest)?;
@@ -459,9 +448,6 @@ impl OutputParser {
             evmap::new::<String, FactorioEntityPrototype>();
         let (item_prototypes_reader, item_prototypes_writer) =
             evmap::new::<String, FactorioItemPrototype>();
-        let (tx_actions, rx_actions) = mpsc::channel();
-        let (tx_path_requests, rx_path_requests) = mpsc::channel();
-        let (tx_player_inventory_changed, rx_player_inventory_changed) = mpsc::channel();
 
         OutputParser {
             websocket_server,
@@ -471,9 +457,6 @@ impl OutputParser {
             recipes_writer,
             entity_prototypes_writer,
             item_prototypes_writer,
-            tx_actions,
-            tx_path_requests,
-            tx_player_inventory_changed,
             world: Arc::new(FactorioWorld {
                 image_cache,
                 image_cache_writer: std::sync::Mutex::new(image_cache_writer),
@@ -486,9 +469,6 @@ impl OutputParser {
                 actions: Mutex::new(HashMap::default()),
                 path_requests: Mutex::new(HashMap::default()),
                 next_action_id: Mutex::new(1),
-                rx_actions,
-                rx_path_requests,
-                rx_player_inventory_changed,
             }),
         }
     }

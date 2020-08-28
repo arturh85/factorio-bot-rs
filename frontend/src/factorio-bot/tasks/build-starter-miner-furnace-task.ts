@@ -1,7 +1,15 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {
+    buildBotQueue, buildBotQueueToCraft,
+    createTask,
+    executeTask, processBotQueue,
+    Task,
+    taskRunnerByType,
+    TaskStatus,
+    updateTaskStatus
+} from "@/factorio-bot/task";
 import {sortEntitiesByDistanceTo} from "@/factorio-bot/util";
 import {Entities, StarterMinerFurnace} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
@@ -36,36 +44,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
 
     // each bot should first craft what it needs
-    const craftTasksByPlayerId: {[playerId: string]: Task[]} = {}
-    let toCraft = data.minerSmelterCount
-    for(const bot of bots) {
-        const playerId = bot.playerId.toString()
-        if (!craftTasksByPlayerId[playerId]) {
-            craftTasksByPlayerId[playerId] = []
-        }
-        const botMinerSmelter = Math.min(toCraft, Math.ceil(data.minerSmelterCount / bots.length))
-        if (bot.mainInventory(minerName) < botMinerSmelter) {
-            const subtask = await createCraftTask(store, minerName, botMinerSmelter, false)
-            store.commit('addSubTask', {id: task.id, task: subtask})
-            craftTasksByPlayerId[playerId].push(subtask)
-        }
-        if (bot.mainInventory(furnaceName) < botMinerSmelter) {
-            const subtask = await createCraftTask(store, furnaceName, botMinerSmelter, false)
-            store.commit('addSubTask', {id: task.id, task: subtask})
-            craftTasksByPlayerId[playerId].push(subtask)
-        }
-        toCraft -= botMinerSmelter
-    }
-    if (Object.keys(craftTasksByPlayerId).length > 0) {
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
-        await Promise.all(Object.keys(craftTasksByPlayerId).map(async (playerId) => {
-            const subtaskBots: FactorioBot[] = [bots.find(bot => bot.playerId.toString() === playerId) as FactorioBot]
-            for (const subtask of craftTasksByPlayerId[playerId]) {
-                await executeTask(store, subtaskBots, subtask)
-            }
-        }))
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
-    }
+    const queue = await buildBotQueueToCraft(store, task, bots, {
+        [minerName]: data.minerSmelterCount,
+        [furnaceName]: data.minerSmelterCount,
+    })
     const excludePositions = Object.keys(store.state.players).map(key => store.state.players[key].position)
     const oreFieldTopLeft = await firstBot.findNearestRect(
         data.oreName,
@@ -82,13 +64,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     anchor.y = Math.floor(anchor.y);
     const minerFurnaces: StarterMinerFurnace[] = []
     let toPlace = data.minerSmelterCount
-    const placeTasksByPlayerId: {[playerId: string]: Task[]} = {}
+
     // each bot should place what it is responsible for
     for(const bot of bots) {
         const playerId = bot.playerId.toString()
-        if (!placeTasksByPlayerId[playerId]) {
-            placeTasksByPlayerId[playerId] = []
-        }
         const botMinerSmelter = Math.min(toPlace, Math.ceil(data.minerSmelterCount / bots.length))
         for(let i=0; i<botMinerSmelter; i++) {
             const x = data.minerSmelterCount - toPlace
@@ -96,18 +75,11 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
             const furnacePosition = {x: minerPosition.x, y: minerPosition.y + 2};
             const subtask = await createPlaceStarterMinerFurnaceTask(store, minerName, furnaceName, minerPosition, furnacePosition, data.plateName, data.oreName)
             store.commit('addSubTask', {id: task.id, task: subtask})
-            placeTasksByPlayerId[playerId].push(subtask)
+            queue[playerId].push(subtask)
             toPlace -= 1
         }
     }
-    if (Object.keys(placeTasksByPlayerId).length > 0) {
-        await Promise.all(Object.keys(placeTasksByPlayerId).map(async (playerId) => {
-            const subtaskBots: FactorioBot[] = [bots.find(bot => bot.playerId.toString() === playerId) as FactorioBot]
-            for (const subtask of placeTasksByPlayerId[playerId]) {
-                await executeTask(store, subtaskBots, subtask)
-            }
-        }))
-    }
+    await processBotQueue(store, queue, bots)
     return minerFurnaces
 }
 

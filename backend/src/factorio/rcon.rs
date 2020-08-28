@@ -1,19 +1,22 @@
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::util::{
     blueprint_build_area, calculate_distance, hashmap_to_lua, move_position, position_in_rect,
-    position_to_lua, rect_to_lua, str_to_lua, value_to_lua, vec_to_lua,
+    position_to_lua, rect_to_lua, str_to_lua, value_to_lua, vec_to_lua, vector_add,
+    vector_multiply, vector_normalize, vector_rotate_clockwise, vector_substract,
 };
 use crate::num_traits::FromPrimitive;
 use crate::types::{
     Direction, FactorioEntity, FactorioForce, FactorioTile, InventoryResponse, Position, Rect,
     RequestEntity,
 };
+use async_std::sync::Mutex;
 use config::Config;
 use rcon::Connection;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ops::Add;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use unicode_segmentation::UnicodeSegmentation;
 
 const RCON_INTERFACE: &str = "botbridge";
@@ -363,6 +366,53 @@ impl FactorioRcon {
         Ok(Some(serde_json::from_str(json.as_str())?))
     }
 
+    async fn sleep_for_action_result(
+        &self,
+        actions: &Mutex<HashMap<u32, String>>,
+        action_id: u32,
+    ) -> anyhow::Result<()> {
+        let wait_start = Instant::now();
+        loop {
+            async_std::task::sleep(Duration::from_millis(50)).await;
+            let mut actions = actions.lock().await;
+            if let Some(result) = actions.get(&action_id) {
+                if &result[..] == "ok" {
+                    actions.remove(&action_id);
+                    return Ok(());
+                } else {
+                    return Err(anyhow!("{}", result));
+                }
+            }
+            if wait_start.elapsed() > Duration::from_secs(60) {
+                return Err(anyhow!("no action result received after 60 seconds"));
+            }
+        }
+    }
+
+    async fn sleep_for_path_request_result(
+        &self,
+        path_requests: &Mutex<HashMap<u32, String>>,
+        request_id: u32,
+    ) -> anyhow::Result<Vec<Position>> {
+        let wait_start = Instant::now();
+        loop {
+            async_std::task::sleep(Duration::from_millis(50)).await;
+            let mut path_requests = path_requests.lock().await;
+            if let Some(result) = path_requests.get(&request_id) {
+                // info!("action result: <bright-blue>{}</>", result);
+                let mut result = result.clone();
+                path_requests.remove(&request_id);
+                if result == "{}" {
+                    result = String::from("[]");
+                }
+                return Ok(serde_json::from_str(result.as_str())?);
+            }
+            if wait_start.elapsed() > Duration::from_secs(60) {
+                return Err(anyhow!("no path_request result received after 60 seconds"));
+            }
+        }
+    }
+
     pub async fn move_player(
         &self,
         world: &Arc<FactorioWorld>,
@@ -379,13 +429,8 @@ impl FactorioRcon {
 
         self.action_start_walk_waypoints(action_id, player_id, waypoints)
             .await?;
-        loop {
-            let (result_id, _) = world.as_ref().rx_actions.recv().unwrap();
-            if action_id == result_id {
-                // info!("action result: <bright-blue>{}</>", result);
-                return Ok(());
-            }
-        }
+        self.sleep_for_action_result(&world.actions, action_id)
+            .await
     }
 
     pub async fn player_mine(
@@ -415,13 +460,8 @@ impl FactorioRcon {
         }
         self.action_start_mining(action_id, player_id, name, position, count)
             .await?;
-        loop {
-            let (result_id, _) = world.as_ref().rx_actions.recv().unwrap();
-            if action_id == result_id {
-                break;
-            }
-        }
-        Ok(())
+        self.sleep_for_action_result(&world.actions, action_id)
+            .await
     }
 
     pub async fn player_craft(
@@ -437,13 +477,8 @@ impl FactorioRcon {
         drop(next_action_id);
         self.action_start_crafting(action_id, player_id, recipe, count)
             .await?;
-        loop {
-            let (result_id, _) = world.as_ref().rx_actions.recv().unwrap();
-            if action_id == result_id {
-                break;
-            }
-        }
-        Ok(())
+        self.sleep_for_action_result(&world.actions, action_id)
+            .await
     }
 
     pub async fn inventory_contents_at(
@@ -872,13 +907,40 @@ impl FactorioRcon {
         let id = self
             .async_request_player_path(player_id, goal, radius)
             .await?;
-        loop {
-            let (result_id, mut result) = world.as_ref().rx_path_requests.recv().unwrap();
-            if id == result_id {
-                if result == "{}" {
-                    result = String::from("[]");
+        match self
+            .sleep_for_path_request_result(&world.path_requests, id)
+            .await
+        {
+            Ok(path) => Ok(path),
+            Err(err) => {
+                warn!(
+                    "failed to find player_path() for #{} to {}/{}: {}",
+                    player_id,
+                    goal.x(),
+                    goal.y(),
+                    err.to_string()
+                );
+                let player = world.players.get_one(&player_id).unwrap();
+                let mut direction = vector_normalize(&vector_substract(&player.position, &goal));
+                drop(player);
+                for _ in 0..4 {
+                    // direction = goal - player.position
+                    // newGoal = goal + direciton.normalize() * radius
+                    let new_goal =
+                        vector_add(&goal, &vector_multiply(&direction, radius.unwrap_or(10.0)));
+
+                    let id = self
+                        .async_request_player_path(player_id, &new_goal, radius)
+                        .await?;
+                    if let Ok(result) = self
+                        .sleep_for_path_request_result(&world.path_requests, id)
+                        .await
+                    {
+                        return Ok(result);
+                    }
+                    direction = vector_rotate_clockwise(&direction);
                 }
-                return Ok(serde_json::from_str(result.as_str())?);
+                Err(err)
             }
         }
     }

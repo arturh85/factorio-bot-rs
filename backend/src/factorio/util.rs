@@ -166,3 +166,33 @@ pub fn blueprint_build_area(
     };
     build_area
 }
+
+pub fn vector_length(vector: &Position) -> f64 {
+    (vector.x() * vector.x() + vector.y() * vector.y()).sqrt()
+}
+
+pub fn vector_normalize(vector: &Position) -> Position {
+    let len = vector_length(vector);
+    Position::new(vector.x() / len, vector.y() / len)
+}
+
+pub fn vector_substract(a: &Position, b: &Position) -> Position {
+    Position::new(a.x() - b.x(), a.y() - b.y())
+}
+
+pub fn vector_add(a: &Position, b: &Position) -> Position {
+    Position::new(a.x() + b.x(), a.y() + b.y())
+}
+
+pub fn vector_multiply(a: &Position, len: f64) -> Position {
+    Position::new(a.x() * len, a.y() * len)
+}
+
+/*
+https://limnu.com/sketch-easy-90-degree-rotate-vectors/#:~:text=Normally%20rotating%20vectors%20involves%20matrix,swap%20X%20and%20Y%20values.
+Normally rotating vectors involves matrix math, but there’s a really simple trick for rotating a 2D vector by 90° clockwise:
+just multiply the X part of the vector by -1, and then swap X and Y values.
+ */
+pub fn vector_rotate_clockwise(vector: &Position) -> Position {
+    Position::new(vector.y(), vector.x() * -1.0)
+}

@@ -108,7 +108,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         await sleep(2000)
     }
 }
-
+console.log('loopy taskRunnerByType', taskRunnerByType)
 taskRunnerByType[TASK_TYPE] = executeThisTask
 
 export async function createLoopStarterMinersTask(store: Store<State>, fuelName: string, name: string, count: number): Promise<Task> {
