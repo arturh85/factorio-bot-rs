@@ -39,8 +39,11 @@ const taskIconByStatus: {[status: string]: string} = {
     [TaskStatus.FAILED]: '💥',
 }
 
-export const taskRunnerByType: {[type: string]: (store: Store<State>, bots: FactorioBot[], task: Task) => Promise<unknown>} = {};
-console.log('create taskRunnerByType', taskRunnerByType)
+const taskRunnerByType: {[type: string]: (store: Store<State>, bots: FactorioBot[], task: Task) => Promise<unknown>} = {};
+
+export function registerTaskRunner(type: string, taskRunner: (store: Store<State>, bots: FactorioBot[], task: Task) => Promise<unknown>) {
+    taskRunnerByType[type] = taskRunner
+}
 
 export async function executeTask<T>(store: Store<State>, bots: FactorioBot[], task: Task): Promise<T> {
     if (task.status === TaskStatus.FINISHED) {
@@ -113,43 +116,4 @@ export async function availableBots(store: Store<State>): Promise<FactorioBot[]>
         }
         await sleep(100)
     }
-}
-
-
-export type BotQueue = {[playerId: string]: Task[]}
-
-export function buildBotQueue(bots: FactorioBot[]): BotQueue {
-    return bots.reduce((queue: BotQueue, bot: FactorioBot) => {
-        queue[bot.playerId.toString()] = []
-        return queue
-    }, {})
-}
-
-
-export async function buildBotQueueToCraft(store: Store<State>, task: Task, bots: FactorioBot[], inventory: FactorioInventory): Promise<BotQueue> {
-    const craftQueue = buildBotQueue(bots)
-    const toCraft = {...inventory}
-    for(const bot of bots) {
-        const playerId = bot.playerId.toString()
-        for (const key of Object.keys(inventory)) {
-            const botItemCount = Math.min(toCraft[key], Math.ceil(inventory[key] / bots.length))
-            if (bot.mainInventory(key) < botItemCount) {
-                const subtask = await createCraftTask(store, key, botItemCount, false)
-                store.commit('addSubTask', {id: task.id, task: subtask})
-                craftQueue[playerId].push(subtask)
-            }
-
-            toCraft[key] -= botItemCount
-        }
-    }
-    return craftQueue
-}
-
-export async function processBotQueue(store: Store<State>, queue: BotQueue, bots: FactorioBot[]): Promise<any[]> {
-    return await Promise.all(Object.keys(queue).map(async (playerId) => {
-        const subtaskBots: FactorioBot[] = [bots.find(bot => bot.playerId.toString() === playerId) as FactorioBot]
-        for (const subtask of queue[playerId]) {
-            await executeTask(store, subtaskBots, subtask)
-        }
-    }))
 }

@@ -1,12 +1,12 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {createBuildStarterBase} from "@/factorio-bot/tasks/build-starter-base-task";
 import {Entities, InventoryType, RequestEntity, Technologies} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 import {FactorioApi} from "@/factorio-bot/restApi";
-import {missingIngredients, sleep} from "@/factorio-bot/util";
+import {missingIngredients} from "@/factorio-bot/util";
 import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
 import {createLoopResearchTask} from "@/factorio-bot/tasks/loop-research-task";
 import {createBuildStarterLabTask} from "@/factorio-bot/tasks/build-starter-lab-task";
@@ -188,7 +188,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     await executeTask(store, bots, subtask)
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createResearchTask(store: Store<State>, name: string): Promise<Task> {
     const data: TaskData = {

@@ -1,12 +1,13 @@
 import {FactorioBot, MAX_ITEM_INVENTORY} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {FactorioApi} from "@/factorio-bot/restApi";
-import {Entities, InventoryType, RequestEntity, World} from "@/factorio-bot/types";
+import {Entities, InventoryType} from "@/factorio-bot/types";
 import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
 import {
-    fuelableRequestEntitiesFromWorld, fuelRequestEntitiesFromWorld,
+    fuelableRequestEntitiesFromWorld,
+    fuelRequestEntitiesFromWorld,
     sleep,
     sortEntitiesByDistanceTo,
     targetRequestEntitiesFromWorld
@@ -108,8 +109,8 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         await sleep(2000)
     }
 }
-console.log('loopy taskRunnerByType', taskRunnerByType)
-taskRunnerByType[TASK_TYPE] = executeThisTask
+
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createLoopStarterMinersTask(store: Store<State>, fuelName: string, name: string, count: number): Promise<Task> {
     const data: TaskData = {

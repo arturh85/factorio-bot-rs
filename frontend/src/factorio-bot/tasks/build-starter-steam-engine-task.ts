@@ -1,25 +1,9 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {
-    availableBots,
-    createTask,
-    executeTask,
-    Task,
-    taskRunnerByType,
-    TaskStatus,
-    updateTaskStatus
-} from "@/factorio-bot/task";
-import {countEntitiesFromBlueprint, entityRect, sortBotsByInventory} from "@/factorio-bot/util";
-import {
-    Direction,
-    Entities,
-    FactorioEntity,
-    InventoryType,
-    Position,
-    Rect,
-    StarterMinerFurnace
-} from "@/factorio-bot/types";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {countEntitiesFromBlueprint} from "@/factorio-bot/util";
+import {Direction, Entities, FactorioEntity, InventoryType} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 import {blueprintTileableStarterSteamEngineBoiler} from "@/factorio-bot/blueprints";
 import {FactorioApi} from "@/factorio-bot/restApi";
@@ -86,7 +70,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     return blueprintEntities
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createBuildStarterSteamEngineTask(store: Store<State>, boilerCount: number): Promise<Task> {
     const data: TaskData = {

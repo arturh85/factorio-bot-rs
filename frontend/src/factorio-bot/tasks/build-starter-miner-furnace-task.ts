@@ -1,20 +1,12 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {
-    buildBotQueue, buildBotQueueToCraft,
-    createTask,
-    executeTask, processBotQueue,
-    Task,
-    taskRunnerByType,
-    TaskStatus,
-    updateTaskStatus
-} from "@/factorio-bot/task";
-import {sortEntitiesByDistanceTo} from "@/factorio-bot/util";
+import {createTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {Entities, StarterMinerFurnace} from "@/factorio-bot/types";
-import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
-import {FactorioApi} from "@/factorio-bot/restApi";
+import {buildBotQueueToCraft, processBotQueue} from "@/factorio-bot/bot-queue";
 import {createPlaceStarterMinerFurnaceTask} from "@/factorio-bot/tasks/place-starter-miner-furnace";
+import {FactorioApi} from "@/factorio-bot/restApi";
+import {sortEntitiesByDistanceTo} from "@/factorio-bot/util";
 
 const TASK_TYPE = 'build-starter-miner-furnace'
 const minerName = Entities.burnerMiningDrill;
@@ -83,7 +75,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     return minerFurnaces
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createBuildStarterMinerFurnaceTask(store: Store<State>, oreName: string, plateName: string, minerSmelterCount: number): Promise<Task> {
     const data: TaskData = {

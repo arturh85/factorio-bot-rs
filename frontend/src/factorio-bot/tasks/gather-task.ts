@@ -1,7 +1,7 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {Entities, EntityTypes} from "@/factorio-bot/types";
 import {sortBotsByInventory} from "@/factorio-bot/util";
 import {createLoopStarterMinersTask} from "@/factorio-bot/tasks/loop-starter-miners-task";
@@ -120,7 +120,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     store.commit('updateTask', updateTaskStatus(task, TaskStatus.FINISHED));
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createGatherTask(store: Store<State>, name: string, count: number): Promise<Task> {
     const data: TaskData = {

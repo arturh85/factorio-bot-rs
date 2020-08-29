@@ -2,24 +2,19 @@ import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
 import {
-    buildBotQueue, buildBotQueueToCraft,
-    createTask,
-    executeTask, processBotQueue,
+    createTask, executeTask,
+    registerTaskRunner,
     Task,
-    taskRunnerByType,
     TaskStatus,
     updateTaskStatus
 } from "@/factorio-bot/task";
-import {entityRect, placeEntitiesForCoalMinerLoop, sortBotsByInventory} from "@/factorio-bot/util";
-import {Entities, InventoryType, Position, Rect, StarterCoalLoop, StarterMinerFurnace} from "@/factorio-bot/types";
-import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
-import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
-import {createPlaceStarterMinerFurnaceTask} from "@/factorio-bot/tasks/place-starter-miner-furnace";
+import {Entities, FactorioEntity, InventoryType, StarterCoalLoop} from "@/factorio-bot/types";
 import {createPlaceTask} from "@/factorio-bot/tasks/place-task";
+import {buildBotQueue, buildBotQueueToCraft, processBotQueue} from "@/factorio-bot/bot-queue";
+import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
 
 const TASK_TYPE = 'build-starter-miner-coal'
 const minerName = Entities.burnerMiningDrill;
-const fuelName = Entities.coal;
 
 type TaskData = {
     loopCount: number,
@@ -84,7 +79,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         } else {
             return []
         }
-    }).map(entity => {
+    }).map((entity: FactorioEntity) => {
         const coalLoop: StarterCoalLoop = {
             minerPosition: entity.position,
             minerType: minerName
@@ -92,24 +87,25 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         store.commit("addStarterCoalLoop", coalLoop)
         return coalLoop
     })
-    // if (bot.mainInventory(Entities.coal) < 1) {
-    //     const subtask = await createGatherTask(store, Entities.coal, 1)
-    //     store.commit('addSubTask', {id: task.id, task: subtask})
-    //     store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
-    //     await executeTask(store, bots, subtask)
-    //     store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
-    // }
-    // await bot.insertToInventory(
-    //     minerName,
-    //     newCoalMiners[0].position,
-    //     InventoryType.chest_or_fuel,
-    //     Entities.coal,
-    //     1
-    // );
+    // start coal loap with 1 coal
+    if (firstBot.mainInventory(Entities.coal) < 1) {
+        const subtask = await createGatherTask(store, Entities.coal, 1)
+        store.commit('addSubTask', {id: task.id, task: subtask})
+        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
+        await executeTask(store, bots, subtask)
+        store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
+    }
+    await firstBot.insertToInventory(
+        minerName,
+        coalLoops[0].minerPosition,
+        InventoryType.chest_or_fuel,
+        Entities.coal,
+        1
+    );
     return coalLoops
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createBuildStarterMinerCoalTask(store: Store<State>, loopCount: number): Promise<Task> {
     if (loopCount % 2 !== 0) {

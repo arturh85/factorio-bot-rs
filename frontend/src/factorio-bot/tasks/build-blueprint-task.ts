@@ -1,20 +1,12 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
-import {countEntitiesFromBlueprint, entityRect, sortBotsByInventory} from "@/factorio-bot/util";
-import {
-    Direction,
-    Entities,
-    FactorioEntity,
-    InventoryType,
-    Position,
-    Rect,
-    StarterMinerFurnace
-} from "@/factorio-bot/types";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {countEntitiesFromBlueprint} from "@/factorio-bot/util";
+import {Direction, FactorioEntity} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 import {FactorioApi} from "@/factorio-bot/restApi";
-import {blueprintTileableStarterScience, blueprintTileableStarterSteamEngineBoiler} from "@/factorio-bot/blueprints";
+import {blueprintTileableStarterScience} from "@/factorio-bot/blueprints";
 
 const TASK_TYPE = 'build-blueprint'
 
@@ -99,7 +91,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     // return labs
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createBuildStarterLabTask(store: Store<State>, labCount: number, ignoreBlueprintEntities: boolean): Promise<Task> {
     const data: TaskData = {

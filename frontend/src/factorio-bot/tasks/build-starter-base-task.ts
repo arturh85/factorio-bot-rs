@@ -5,12 +5,12 @@ import {
     availableBots,
     createTask,
     executeTask,
+    registerTaskRunner,
     Task,
-    taskRunnerByType,
     TaskStatus,
     updateTaskStatus
 } from "@/factorio-bot/task";
-import {Direction, Entities} from "@/factorio-bot/types";
+import {Entities} from "@/factorio-bot/types";
 import {createBuildStarterMinerFurnaceTask} from "@/factorio-bot/tasks/build-starter-miner-furnace-task";
 import {createBuildStarterMinerCoalTask} from "@/factorio-bot/tasks/build-starter-miner-coal-task";
 import {createBuildStarterMinerChestTask} from "@/factorio-bot/tasks/build-starter-miner-chest-task";
@@ -18,7 +18,6 @@ import {createBuildStarterOffshorePumpTask} from "@/factorio-bot/tasks/build-sta
 import {createBuildStarterSteamEngineTask} from "@/factorio-bot/tasks/build-starter-steam-engine-task";
 import {createBuildStarterLabTask} from "@/factorio-bot/tasks/build-starter-lab-task";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
-import {movePositionInDirection} from "@/factorio-bot/util";
 
 const TASK_TYPE = 'build-starter-base'
 
@@ -93,7 +92,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createBuildStarterBase(store: Store<State>, starterTargetIron: number,
                                              starterTargetCopper: number,

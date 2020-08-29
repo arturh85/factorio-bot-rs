@@ -1,17 +1,8 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
-import {entityRect, sortBotsByInventory} from "@/factorio-bot/util";
-import {
-    Entities,
-    FactorioEntity,
-    InventoryType,
-    Position,
-    Rect,
-    StarterMinerChest,
-    StarterMinerFurnace
-} from "@/factorio-bot/types";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {Entities, InventoryType, StarterMinerChest} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 
 const TASK_TYPE = 'build-starter-miner-chest'
@@ -91,7 +82,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     return minerChests
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createBuildStarterMinerChestTask(store: Store<State>, oreName: string, minerChestCount: number): Promise<Task> {
     const data: TaskData = {

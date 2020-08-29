@@ -1,7 +1,7 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {sortBotsByInventory} from "@/factorio-bot/util";
 import {Direction, Entities, FactorioEntity} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
@@ -43,7 +43,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     return offshorePump
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createBuildStarterOffshorePumpTask(store: Store<State>): Promise<Task> {
     const data: TaskData = {}

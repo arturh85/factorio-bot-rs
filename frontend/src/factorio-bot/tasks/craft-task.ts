@@ -1,7 +1,7 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, Task, taskRunnerByType, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {missingIngredients} from "@/factorio-bot/util";
 import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
 
@@ -44,7 +44,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createCraftTask(store: Store<State>, name: string, count: number, onlyGatherIngredients: boolean): Promise<Task> {
     const data: TaskData = {

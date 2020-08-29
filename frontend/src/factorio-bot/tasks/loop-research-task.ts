@@ -1,23 +1,16 @@
 import {FactorioBot, MAX_ITEM_INVENTORY} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {
-    availableBots,
-    createTask,
-    executeTask,
-    Task,
-    taskRunnerByType,
-    TaskStatus,
-    updateTaskStatus
-} from "@/factorio-bot/task";
+import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
 import {FactorioApi} from "@/factorio-bot/restApi";
-import {Entities, InventoryType, RequestEntity, World} from "@/factorio-bot/types";
+import {Entities, InventoryType} from "@/factorio-bot/types";
 import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
 import {
-    fuelableRequestEntitiesFromWorld, fuelRequestEntitiesFromWorld,
+    fuelableRequestEntitiesFromWorld,
+    fuelRequestEntitiesFromWorld,
     sleep,
-    sortEntitiesByDistanceTo, targetAllRequestEntitiesFromWorld,
-    targetRequestEntitiesFromWorld
+    sortEntitiesByDistanceTo,
+    targetAllRequestEntitiesFromWorld
 } from "@/factorio-bot/util";
 
 const TASK_TYPE = 'loop-research'
@@ -132,7 +125,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
 }
 
-taskRunnerByType[TASK_TYPE] = executeThisTask
+registerTaskRunner(TASK_TYPE, executeThisTask)
 
 export async function createLoopResearchTask(store: Store<State>, fuelName: string, name: string): Promise<Task> {
     const data: TaskData = {
