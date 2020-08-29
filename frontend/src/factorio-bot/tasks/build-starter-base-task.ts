@@ -48,7 +48,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
     // 1.: 2x iron miner/furnace
     if (!store.state.world.starterMinerFurnaces) {
-        await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.ironOre, Entities.ironPlate, Math.max(2, bots.length)))
+        await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.ironOre, Entities.ironPlate, Math.max(1, bots.length)))
+        if (bots.length === 1) {
+            await addAndExecuteSubtask(await createBuildStarterMinerFurnaceTask(store, Entities.ironOre, Entities.ironPlate, 1))
+        }
     }
     // 2.: 2x coal miner loop
     if (!store.state.world.starterCoalLoops) {

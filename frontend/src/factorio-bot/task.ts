@@ -42,6 +42,9 @@ const taskIconByStatus: {[status: string]: string} = {
 const taskRunnerByType: {[type: string]: (store: Store<State>, bots: FactorioBot[], task: Task) => Promise<unknown>} = {};
 
 export function registerTaskRunner(type: string, taskRunner: (store: Store<State>, bots: FactorioBot[], task: Task) => Promise<unknown>) {
+    if (taskRunnerByType[type]) {
+        throw new Error(`already registered ${type}`)
+    }
     taskRunnerByType[type] = taskRunner
 }
 

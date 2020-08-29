@@ -36,8 +36,10 @@ export async function buildBotQueueToCraft(store: Store<State>, task: Task, bots
 export async function processBotQueue(store: Store<State>, queue: BotQueue, bots: FactorioBot[]): Promise<any[]> {
     return await Promise.all(Object.keys(queue).map(async (playerId) => {
         const subtaskBots: FactorioBot[] = [bots.find(bot => bot.playerId.toString() === playerId) as FactorioBot]
+        const results = [];
         for (const subtask of queue[playerId]) {
-            await executeTask(store, subtaskBots, subtask)
+            results.push(await executeTask(store, subtaskBots, subtask))
         }
+        return results
     }))
 }

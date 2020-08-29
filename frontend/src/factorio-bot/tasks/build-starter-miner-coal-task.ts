@@ -25,7 +25,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
     const firstBot = bots[0]
     const craftQueue = await buildBotQueueToCraft(store, task, bots, {
-        minerName: data.loopCount
+        [minerName]: data.loopCount
     })
     await processBotQueue(store, craftQueue, bots)
 
@@ -75,7 +75,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     const results = await processBotQueue(store, placeQueue, bots)
     const coalLoops = results.flatMap(result => {
         if (result && Array.isArray(result)) {
-            return result
+            return result.filter(a => a)
         } else {
             return []
         }
@@ -87,6 +87,9 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         store.commit("addStarterCoalLoop", coalLoop)
         return coalLoop
     })
+    if (coalLoops.length === 0) {
+        throw new Error("wtf");
+    }
     // start coal loap with 1 coal
     if (firstBot.mainInventory(Entities.coal) < 1) {
         const subtask = await createGatherTask(store, Entities.coal, 1)

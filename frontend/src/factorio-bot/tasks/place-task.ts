@@ -2,7 +2,7 @@ import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, registerTaskRunner, Task} from "@/factorio-bot/task";
-import {Direction, Position} from "@/factorio-bot/types";
+import {Direction, FactorioEntity, Position} from "@/factorio-bot/types";
 
 const TASK_TYPE = 'place'
 
@@ -12,9 +12,9 @@ type TaskData = {
     direction: Direction
 }
 
-async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: Task): Promise<void> {
+async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: Task): Promise<FactorioEntity> {
     const data: TaskData = task.data as TaskData
-    await bots[0].placeEntity(data.name, data.position, data.direction)
+    return await bots[0].placeEntity(data.name, data.position, data.direction)
 }
 
 registerTaskRunner(TASK_TYPE, executeThisTask)

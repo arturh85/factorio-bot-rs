@@ -4,7 +4,7 @@ import {State} from "@/store";
 import {createTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {Direction, Entities, InventoryType, Position, StarterMinerFurnace} from "@/factorio-bot/types";
 
-const TASK_TYPE = 'place'
+const TASK_TYPE = 'place-starter-miner-furnace'
 
 type TaskData = {
     minerName: string,
