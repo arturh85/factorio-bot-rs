@@ -1,8 +1,9 @@
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::util::{
-    blueprint_build_area, calculate_distance, hashmap_to_lua, move_position, position_in_rect,
-    position_to_lua, rect_to_lua, str_to_lua, value_to_lua, vec_to_lua, vector_add,
-    vector_multiply, vector_normalize, vector_rotate_clockwise, vector_substract,
+    blueprint_build_area, build_entity_path, calculate_distance, hashmap_to_lua, move_position,
+    position_in_rect, position_to_lua, rect_to_lua, span_rect, str_to_lua, value_to_lua,
+    vec_to_lua, vector_add, vector_multiply, vector_normalize, vector_rotate_clockwise,
+    vector_substract,
 };
 use crate::num_traits::FromPrimitive;
 use crate::types::{
@@ -1003,6 +1004,36 @@ impl FactorioRcon {
             return Err(anyhow!("{:?}", result.unwrap()));
         }
         Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn plan_path(
+        &self,
+        world: &Arc<FactorioWorld>,
+        entity_name: &str,
+        entity_type: &str,
+        from_position: &Position,
+        to_position: &Position,
+        to_direction: Direction,
+    ) -> anyhow::Result<Vec<FactorioEntity>> {
+        let build_rect = span_rect(from_position, to_position, 20.0);
+        let entities = self
+            .find_entities_filtered(Some(build_rect.clone()), None, None, None, None)
+            .await?;
+        let tiles = self
+            .find_tiles_filtered(Some(build_rect), None, None, Some("water".into()))
+            .await?;
+
+        build_entity_path(
+            &world.entity_prototypes,
+            entity_name,
+            entity_type,
+            from_position,
+            to_position,
+            to_direction,
+            entities,
+            tiles,
+        )
     }
 
     pub async fn action_start_crafting(

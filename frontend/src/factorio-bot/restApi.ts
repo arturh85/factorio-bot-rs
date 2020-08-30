@@ -131,6 +131,18 @@ export class FactorioApi {
         await response.json();
     }
 
+    static async planPath(
+        entityName: string,
+        entityType: string,
+        fromPosition: Position,
+        toPosition: Position,
+        toDirection: Direction
+    ): Promise<FactorioEntity[]> {
+        const url = `${baseUrl}/api/planPath?entityName=${entityName}&entityType=${entityType}&fromPosition=${positionParam(fromPosition)}&toPosition=${positionParam(toPosition)}&toDirection=${toDirection}`;
+        const response = await fetch(url);
+        return await response.json();
+    }
+
     static async findEntities(
         centerPosition: Position,
         radius: number,

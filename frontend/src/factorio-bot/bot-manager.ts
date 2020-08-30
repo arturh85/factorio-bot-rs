@@ -2,7 +2,7 @@ import {State} from "@/store";
 import {Store} from "vuex";
 
 import type {World,} from "@/factorio-bot/types";
-import {Entities, Technologies} from "@/factorio-bot/types";
+import {Direction, Entities, EntityTypes, Position, Technologies} from "@/factorio-bot/types";
 import {emptyWorld} from "@/factorio-bot/util";
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {FactorioBot} from "@/factorio-bot/bot";
@@ -183,6 +183,17 @@ export class FactorioBotManager {
         this.$store.commit('updatePlayers', await FactorioApi.allPlayers())
     }
 
+    async buildBeltPath( fromPosition: Position,
+                         toPosition: Position,
+                         toDirection: Direction): Promise<void> {
+        const entities = await FactorioApi.planPath(Entities.transportBelt, EntityTypes.transportBelt, fromPosition, toPosition, toDirection);
+        const bot = this.bots[0]
+        await bot.cheatItem(Entities.transportBelt, entities.length);
+        for (const entity of entities) {
+            await bot.placeEntity(entity.name, entity.position, entity.direction)
+        }
+    }
+
     async saveWorldAndServer(): Promise<void> {
         await this.saveWorldInMap()
         await FactorioApi.saveServer()
@@ -200,6 +211,12 @@ export class FactorioBotManager {
         await bot.cheatItem(Entities.pipeToGround, 50);
         await bot.cheatItem(Entities.transportBelt, 50);
         await bot.cheatItem(Entities.ironChest, 10);
+        await bot.cheatItem(Entities.ironPlate, 200);
+        await bot.cheatItem(Entities.copperPlate, 200);
+        await bot.cheatItem(Entities.coal, 200);
+        await bot.cheatItem(Entities.stone, 200);
+        await bot.cheatItem(Entities.electricMiningDrill, 30);
+        await bot.cheatItem(Entities.transportBelt, 200);
     }
 
     async saveWorldInMap(): Promise<void> {

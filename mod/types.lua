@@ -169,7 +169,7 @@ function serialize_entity_prototype(entity)
 end
 
 function serialize_entity(entity)
-    local record = table_properties(entity, {"name", "type", "position"}, {type = "entityType"})
+    local record = table_properties(entity, {"name", "direction", "type", "position"}, {type = "entityType"})
     if entity.type == "resource" then
         record.amount = entity.amount
     elseif entity.type == "entity-ghost" then

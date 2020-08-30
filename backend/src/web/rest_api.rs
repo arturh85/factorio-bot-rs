@@ -1,20 +1,20 @@
-use crate::types::{
-    FactorioEntity, FactorioEntityPrototype, FactorioForce, FactorioItemPrototype, FactorioPlayer,
-    FactorioRecipe, FactorioTile, InventoryResponse, PlaceEntitiesResult, PlaceEntityResult,
-    Position, RequestEntity,
-};
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::rcon::FactorioRcon;
+use crate::num_traits::FromPrimitive;
+use crate::types::{
+    Direction, FactorioEntity, FactorioEntityPrototype, FactorioForce, FactorioItemPrototype,
+    FactorioPlayer, FactorioRecipe, FactorioTile, InventoryResponse, PlaceEntitiesResult,
+    PlaceEntityResult, Position, RequestEntity,
+};
 use actix_web::http::StatusCode;
 use actix_web::web::{Json, Path as PathInfo};
 use actix_web::{web, HttpResponse};
 use factorio_blueprint::BlueprintCodec;
 use serde::export::Formatter;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fmt::Display;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -67,6 +67,33 @@ pub async fn find_entities(
             info.radius,
             info.name.clone(),
             info.entity_type.clone(),
+        )
+        .await?,
+    ))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanPathQueryParams {
+    entity_name: String,
+    entity_type: String,
+    from_position: String,
+    to_position: String,
+    to_direction: u8,
+}
+
+pub async fn plan_path(
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+    info: actix_web::web::Query<PlanPathQueryParams>,
+) -> Result<Json<Vec<FactorioEntity>>, MyError> {
+    Ok(Json(
+        rcon.plan_path(
+            &world,
+            &info.entity_name.clone(),
+            &info.entity_type.clone(),
+            &info.from_position.parse()?,
+            &info.to_position.parse()?,
+            Direction::from_u8(info.to_direction).unwrap(),
         )
         .await?,
     ))

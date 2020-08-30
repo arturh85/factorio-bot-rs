@@ -18,6 +18,7 @@ import {createBuildStarterOffshorePumpTask} from "@/factorio-bot/tasks/build-sta
 import {createBuildStarterSteamEngineTask} from "@/factorio-bot/tasks/build-starter-steam-engine-task";
 import {createBuildStarterLabTask} from "@/factorio-bot/tasks/build-starter-lab-task";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
+import {buildBotQueueToCraft, processBotQueue} from "@/factorio-bot/bot-queue";
 
 const TASK_TYPE = 'build-starter-base'
 
@@ -76,12 +77,15 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
     // 8.: place offshore pump
     if (!store.state.world.starterOffshorePump) {
-        await addAndExecuteSubtask(await createCraftTask(store, Entities.smallElectricPole, 2, false))
-        await addAndExecuteSubtask(await createCraftTask(store, Entities.offshorePump, 1, false))
-        await addAndExecuteSubtask(await createCraftTask(store, Entities.pipe, 2, false))
-        await addAndExecuteSubtask(await createCraftTask(store, Entities.steamEngine, 2, false))
-        await addAndExecuteSubtask(await createCraftTask(store, Entities.boiler, 1, false))
-        await addAndExecuteSubtask(await createCraftTask(store, Entities.lab, 2, false))
+        const queue = await buildBotQueueToCraft(store, task, bots, {
+            [Entities.smallElectricPole]: 2,
+            [Entities.offshorePump]: 1,
+            [Entities.pipe]: 2,
+            [Entities.steamEngine]: 2,
+            [Entities.boiler]: 1,
+            [Entities.lab]: 2,
+        })
+        await processBotQueue(store, queue, bots)
         await addAndExecuteSubtask(await createCraftTask(store, Entities.automationSciencePack, 10, true))
         await addAndExecuteSubtask(await createBuildStarterOffshorePumpTask(store))
     }

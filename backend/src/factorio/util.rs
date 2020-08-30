@@ -1,4 +1,6 @@
-use crate::types::{Direction, FactorioEntityPrototype, Position, Rect};
+use crate::types::{
+    Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Position, Rect,
+};
 use evmap::ReadHandle;
 use factorio_blueprint::BlueprintCodec;
 use factorio_blueprint::Container::{Blueprint, BlueprintBook};
@@ -89,6 +91,25 @@ pub fn write_value_to(value: &Value, path: &PathBuf) -> anyhow::Result<()> {
     let bytes = serde_json::to_string(value).unwrap();
     outfile.write_all(bytes.as_ref())?;
     Ok(())
+}
+
+pub fn pad_rect(
+    rect: &Rect,
+    margin_left: f64,
+    margin_top: f64,
+    margin_right: f64,
+    margin_bottom: f64,
+) -> Rect {
+    Rect {
+        left_top: Position::new(
+            rect.left_top.x() - margin_left,
+            rect.left_top.y() - margin_top,
+        ),
+        right_bottom: Position::new(
+            rect.right_bottom.x() + margin_right,
+            rect.right_bottom.y() + margin_bottom,
+        ),
+    }
 }
 
 pub fn expand_rect_floor_ceil(rect: &Rect) -> Rect {
@@ -195,4 +216,134 @@ just multiply the X part of the vector by -1, and then swap X and Y values.
  */
 pub fn vector_rotate_clockwise(vector: &Position) -> Position {
     Position::new(vector.y(), vector.x() * -1.0)
+}
+
+pub fn span_rect(a: &Position, b: &Position, margin: f64) -> Rect {
+    Rect::new(
+        &Position::new(
+            if a.x() < b.x() { a.x() } else { b.x() } - margin,
+            if a.y() < b.y() { a.y() } else { b.y() } - margin,
+        ),
+        &Position::new(
+            if a.x() > b.x() { a.x() } else { b.x() } + margin,
+            if a.y() > b.y() { a.y() } else { b.y() } + margin,
+        ),
+    )
+}
+
+use pathfinding::prelude::{absdiff, astar};
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Pos(i32, i32);
+impl Pos {
+    fn distance(&self, other: &Pos) -> u32 {
+        (absdiff(self.0, other.0) + absdiff(self.1, other.1)) as u32
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_entity_path(
+    entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
+    entity_name: &str,
+    entity_type: &str,
+    from_position: &Position,
+    to_position: &Position,
+    to_direction: Direction,
+    block_entities: Vec<FactorioEntity>,
+    block_tiles: Vec<FactorioTile>,
+) -> anyhow::Result<Vec<FactorioEntity>> {
+    let from_position = Pos(
+        from_position.x().floor() as i32,
+        from_position.y().floor() as i32,
+    );
+    let to_position = Pos(
+        to_position.x().floor() as i32,
+        to_position.y().floor() as i32,
+    );
+
+    let path = astar(
+        &from_position,
+        |p| {
+            let mut options: Vec<(Pos, i32)> = vec![];
+            for direction in Direction::orthogonal() {
+                let target = move_position(&Position::new(p.0 as f64, p.1 as f64), direction, 1.0);
+                let entity: Option<&FactorioEntity> = block_entities.iter().find(|entity| {
+                    match entity_prototypes.get_one(&entity.name) {
+                        Some(entity_prototype) => position_in_rect(
+                            &pad_rect(
+                                &add_to_rect(
+                                    &expand_rect_floor_ceil(&entity_prototype.collision_box),
+                                    &entity.position,
+                                ),
+                                1.,
+                                1.,
+                                0.,
+                                0.,
+                            ),
+                            &target,
+                        ),
+                        None => position_equal(&entity.position, &target),
+                    }
+                });
+                let tile: Option<&FactorioTile> = block_tiles
+                    .iter()
+                    .find(|tile| position_equal(&tile.position, &target));
+                if tile.is_none() && entity.is_none() {
+                    options.push((Pos(target.x().floor() as i32, target.y().floor() as i32), 1));
+                }
+                // TODO: add options for underground belts / pipes
+            }
+            options
+        },
+        |p| (p.distance(&to_position) / 3) as i32,
+        |p| *p == to_position,
+    );
+    match path {
+        Some((path, _cost)) => {
+            let mut result: Vec<FactorioEntity> = vec![];
+
+            for i in 0..path.len() {
+                let pos = &path[i];
+                let next: Option<&Pos> = if i < path.len() - 1 {
+                    Some(&path[i + 1])
+                } else {
+                    None
+                };
+                let direction = if let Some(next) = next {
+                    if next.0 < pos.0 {
+                        Direction::West
+                    } else if next.0 > pos.0 {
+                        Direction::East
+                    } else if next.1 < pos.1 {
+                        Direction::North
+                    } else {
+                        Direction::South
+                    }
+                } else {
+                    to_direction
+                };
+                result.push(FactorioEntity {
+                    name: entity_name.into(),
+                    entity_type: entity_type.into(),
+                    position: Position::new(pos.0 as f64, pos.1 as f64),
+                    direction: direction.to_u8().unwrap(),
+                    recipe: None,
+                    ghost_name: None,
+                    ghost_type: None,
+                    amount: None,
+                });
+            }
+            Ok(result)
+        }
+        None => Err(anyhow!("no path found")),
+    }
+}
+
+pub fn floor_position(position: &Position) -> Position {
+    Position::new(position.x().floor(), position.y().floor())
+}
+
+pub fn position_equal(a: &Position, b: &Position) -> bool {
+    (a.x().floor() - b.x().floor()).abs() < f64::EPSILON
+        && (a.y().floor() - b.y().floor()).abs() < f64::EPSILON
 }

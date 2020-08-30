@@ -48,6 +48,7 @@ export enum Entities {
 }
 export enum EntityTypes {
  tree = 'tree',
+ transportBelt = 'transport-belt',
 }
 export enum Technologies {
  automation = "automation",
@@ -89,6 +90,7 @@ export type World = {
  starterOffshorePump: Position | null
  starterSteamEngineBlueprints: FactorioEntity[][] | null
  starterScienceBlueprints: FactorioEntity[][] | null
+ minerLineByOreName: {[oreName: string]: FactorioEntity[][]} | null
 }
 export type FactorioBlueprintResult = {
  blueprint: FactorioBlueprint
@@ -132,7 +134,7 @@ export type FactorioChunk = { objects: ChunkObject []; resources: ChunkResource 
 export type ChunkObject = { name: string; position: Position; direction: string; boundingBox: Rect; outputInventory: { [key: string]: number } | null; fuelInventory: { [key: string]: number } | null };
 export type ChunkResource = { name: string; position: Position };
 export type FactorioGraphic = { entityName: string; imagePath: string; width: number; height: number };
-export type FactorioEntity = { name: string; entityType: string; position: Position; amount: number | null; recipe: string | null; ghostName: string | null; ghostType: string | null };
+export type FactorioEntity = { name: string; entityType: string; position: Position; direction: number; amount: number | null; recipe: string | null; ghostName: string | null; ghostType: string | null };
 export type FactorioEntityPrototype = { name: string; entityType: string; collisionMask: string [] | null; collisionBox: Rect; mineResult: { [key: string]: number } | null };
 export type FactorioItemPrototype = { name: string; itemType: string; stackSize: number; fuelValue: number; placeResult: string; group: string; subgroup: string };
 export type FactorioResult = { success: boolean; output: string [] };

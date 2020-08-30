@@ -18,6 +18,7 @@ export const emptyWorld: World = {
     starterOffshorePump: null,
     starterScienceBlueprints: null,
     starterSteamEngineBlueprints: null,
+    minerLineByOreName: null
 };
 
 export function countEntitiesFromBlueprint(blueprint: FactorioBlueprint): FactorioInventory {

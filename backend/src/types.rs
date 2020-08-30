@@ -1,3 +1,4 @@
+use crate::num_traits::FromPrimitive;
 use noisy_float::prelude::*;
 use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
@@ -81,7 +82,7 @@ pub struct Position {
     pub y: Box<R64>,
 }
 
-#[derive(Primitive)]
+#[derive(Primitive, Clone, Copy)]
 pub enum Direction {
     North = 0,
     NorthEast = 1,
@@ -91,6 +92,18 @@ pub enum Direction {
     SouthWest = 5,
     West = 6,
     NorthWest = 7,
+}
+
+impl Direction {
+    pub fn all() -> Vec<Direction> {
+        (0..8).map(|n| Direction::from_u8(n).unwrap()).collect()
+    }
+    pub fn orthogonal() -> Vec<Direction> {
+        (0..8)
+            .filter(|n| n % 2 == 0)
+            .map(|n| Direction::from_u8(n).unwrap())
+            .collect()
+    }
 }
 
 impl Position {
@@ -252,6 +265,7 @@ pub struct FactorioEntity {
     pub name: String,
     pub entity_type: String,
     pub position: Position,
+    pub direction: u8,
     pub amount: Option<u32>,        // only type = resource
     pub recipe: Option<String>,     // only CraftingMachines
     pub ghost_name: Option<String>, // only type = entity-ghost
