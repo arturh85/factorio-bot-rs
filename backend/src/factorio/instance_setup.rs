@@ -1,4 +1,5 @@
 use crate::factorio::output_reader::read_output;
+use crate::factorio::process_control::await_lock;
 use crate::factorio::rcon::FactorioRcon;
 use crate::factorio::util::{read_to_value, write_value_to};
 use archiver_rs::{Archive, Compressed};
@@ -282,6 +283,7 @@ pub async fn setup_factorio_instance(
                 args.push("--map-settings");
                 args.push("workspace/server/map-settings.json");
             }
+            await_lock(instance_path.join(PathBuf::from(".lock")));
             logger.loading(format!(
                 "Creating Level at <bright-blue>{:?}</>...",
                 &saves_level_path
@@ -384,6 +386,7 @@ pub async fn update_map_gen_settings(
     let rcon_port: String = settings.get("rcon_port")?;
     let rcon_pass: String = settings.get("rcon_pass")?;
 
+    await_lock(instance_path.join(PathBuf::from(".lock")));
     let mut logger = Logger::new();
     logger.loading(
         "Updating <bright-blue>map-settings.json</> and <bright-blue>map-gen-settings.json</>",

@@ -603,8 +603,13 @@ function on_tick(event)
 
 --					print("waypoint "..w.idx.." of "..#w.waypoints..", pos = "..coord(pos)..", dest = "..coord(dest).. ", dx/dy="..dx.."/"..dy..", dir="..direction)
 					if w.idx_tick ~= nil and event.tick - w.idx_tick > 60 then
-						print("Player is stuck while moving, teleporting to next waypoint")
-						player.teleport(w.waypoints[w.idx])
+						if w.idx > #w.waypoints - 1 then -- if last waypoint just abort
+							print("Player is stuck while moving to last waypoint, just stop moving")
+							w.waypoints[w.idx] = nil
+						else
+							print("Player is stuck while moving, teleporting to next waypoint")
+							player.teleport(w.waypoints[w.idx])
+						end
 					end
 
 					if direction ~= "" then
@@ -1516,7 +1521,7 @@ function rcon_cheat_all_technologies()
 	force.research_all_technologies()
 end
 
-function rcon_place_blueprint(player_id, blueprint, pos_x, pos_y, direction, force_build, only_ghosts)
+function rcon_place_blueprint(player_id, blueprint, pos_x, pos_y, direction, force_build, only_ghosts, inventory_player_ids)
 	local player = get_player(player_id)
 	if player == nil then
 		return
@@ -1548,12 +1553,23 @@ function rcon_place_blueprint(player_id, blueprint, pos_x, pos_y, direction, for
 
 	local result = {}
 	local main_inventory = player.get_main_inventory()
-	local inventory = main_inventory.get_contents()
 	local nothing = true
 	for _, ghost in pairs(ghosts) do
 		nothing = false
 		local item = ghost.ghost_name
-		if only_ghosts == false and inventory[item] ~= nil and inventory[item] > 0 then
+		local item_source_player_id
+		local inventory = main_inventory.get_contents()
+		if inventory[item] ~= nil and inventory[item] > 0 then
+			item_source_player_id = player_id
+		else
+			for _, inventory_player_id in pairs(inventory_player_ids) do
+				local inventory_player = get_player(inventory_player_id).get_main_inventory().get_contents()
+				if inventory_player[item] ~= nil and inventory_player[item] > 0 then
+					item_source_player_id = inventory_player_id
+				end
+			end
+		end
+		if only_ghosts == false and item_source_player_id ~= nil then
 			local success, entity = ghost.revive()
 			if entity ~= nil then
 				main_inventory.remove({name=item, count=1})
@@ -1571,8 +1587,7 @@ function rcon_place_blueprint(player_id, blueprint, pos_x, pos_y, direction, for
 					player.teleport({x = bb.right_bottom.x + 1, y = bb.right_bottom.y + 1})
 					local success, entity = ghost.revive()
 					if entity ~= nil then
-						main_inventory.remove({name=item, count=1})
-						inventory = main_inventory.get_contents()
+						get_player(item_source_player_id).get_main_inventory().remove({name=item, count=1})
 						table.insert(result, serialize_entity(entity))
 					else
 						table.insert(result, serialize_entity(ghost))

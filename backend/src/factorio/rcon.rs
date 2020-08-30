@@ -199,6 +199,7 @@ impl FactorioRcon {
         direction: u8,
         force_build: bool,
         only_ghosts: bool,
+        inventory_player_ids: Vec<u32>,
         world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<Vec<FactorioEntity>> {
         let player = world.players.get_one(&player_id);
@@ -214,6 +215,7 @@ impl FactorioRcon {
             self.move_player(world, player_id, position, Some(build_distance))
                 .await?;
         }
+        // TODO: move inventory players close too
 
         let build_area = blueprint_build_area(&world.entity_prototypes, &blueprint);
         let width_2 = build_area.width() / 2.0;
@@ -238,7 +240,10 @@ impl FactorioRcon {
                     .await?;
             }
         }
-
+        let inventory_player_ids: Vec<String> = inventory_player_ids
+            .iter()
+            .map(|player_id| player_id.to_string())
+            .collect();
         let lines = self
             .remote_call(
                 "place_blueprint",
@@ -250,6 +255,7 @@ impl FactorioRcon {
                     &direction.to_string(),
                     &force_build.to_string(),
                     &only_ghosts.to_string(),
+                    &vec_to_lua(inventory_player_ids),
                 ],
             )
             .await?;

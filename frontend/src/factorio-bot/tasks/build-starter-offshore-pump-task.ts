@@ -5,6 +5,7 @@ import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTas
 import {sortBotsByInventory} from "@/factorio-bot/util";
 import {Direction, Entities, FactorioEntity} from "@/factorio-bot/types";
 import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
+import {buildBotQueueToCraft, processBotQueue} from "@/factorio-bot/bot-queue";
 
 const TASK_TYPE = 'build-starter-offshore-pump'
 
@@ -16,20 +17,13 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
     bots.sort(sortBotsByInventory([Entities.offshorePump]))
     const bot = bots[0]
-    if (bot.mainInventory(Entities.offshorePump) < 1) {
-        const subtask = await createCraftTask(store, Entities.offshorePump, 1, false)
-        store.commit('addSubTask', {id: task.id, task: subtask})
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
-        await executeTask(store, bots, subtask)
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
-    }
-    if (bot.mainInventory(Entities.pipe) < 1) {
-        const subtask = await createCraftTask(store, Entities.pipe, 1, false)
-        store.commit('addSubTask', {id: task.id, task: subtask})
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.WAITING));
-        await executeTask(store, bots, subtask)
-        store.commit('updateTask', updateTaskStatus(task, TaskStatus.STARTED));
-    }
+
+    const queue = await buildBotQueueToCraft(store, task, [bot], {
+        [Entities.offshorePump]: 1,
+        [Entities.pipe]: 1
+    })
+    await processBotQueue(store, queue, [bot])
+
     const offshorePump = await bot.placeOffshorePump();
     store.commit("setStarterOffshorePump", offshorePump.position)
     await bot.placeEntity(

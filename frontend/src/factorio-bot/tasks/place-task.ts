@@ -3,6 +3,7 @@ import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {Direction, FactorioEntity, Position} from "@/factorio-bot/types";
+import {positionLabel} from "@/factorio-bot/util";
 
 const TASK_TYPE = 'place'
 
@@ -25,5 +26,5 @@ export async function createPlaceTask(store: Store<State>, name: string, positio
         position,
         direction
     }
-    return createTask(TASK_TYPE, `Place ${name} @ [${Math.floor(position.x)}, ${Math.floor(position.y)} (${direction})`, data)
+    return createTask(TASK_TYPE, `Place ${name} @ ${positionLabel(position)} (${direction})`, data)
 }

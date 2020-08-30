@@ -304,7 +304,7 @@ export class FactorioBot {
 
     async placeEntity(
         itemName: string,
-        _placePosition: Position,
+        placePosition: Position,
         placeDirection: number
     ): Promise<FactorioEntity> {
         this.$store.commit('playerWorkStarted', this.playerId)
@@ -312,7 +312,7 @@ export class FactorioBot {
             const result = await FactorioApi.placeEntity(
                 this.playerId,
                 itemName,
-                _placePosition,
+                placePosition,
                 placeDirection
             );
             if (result.player && result.player.playerId == this.playerId) {
@@ -442,7 +442,8 @@ export class FactorioBot {
         blueprint: string,
         position: Position,
         direction: number,
-        forceBuild = false
+        forceBuild = false,
+        inventoryPlayerIds: number[]
     ): Promise<FactorioEntity[]> {
         this.$store.commit('playerWorkStarted', this.playerId)
         try {
@@ -451,7 +452,9 @@ export class FactorioBot {
                 blueprint,
                 position,
                 direction,
-                forceBuild
+                forceBuild,
+                false,
+                inventoryPlayerIds
             );
             if (result.player && result.player.playerId == this.playerId) {
                 this.$store.commit('updatePlayer', result.player);

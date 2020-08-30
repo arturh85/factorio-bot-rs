@@ -3,9 +3,11 @@ use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::output_reader::read_output;
 use crate::factorio::rcon::FactorioRcon;
 use crate::factorio::ws::FactorioWebSocketServer;
+use actix::clock::Duration;
 use actix::Addr;
 use async_std::sync::channel;
 use config::Config;
+use paris::Logger;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -13,7 +15,7 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
-use std::thread::JoinHandle;
+use std::thread::{sleep, JoinHandle};
 use std::time::Instant;
 
 #[allow(clippy::too_many_arguments)]
@@ -74,6 +76,31 @@ pub async fn start_factorio(
     Ok((world, rcon))
 }
 
+pub fn await_lock(lock_path: PathBuf) {
+    if lock_path.exists() {
+        match std::fs::remove_file(&lock_path) {
+            Ok(_) => {}
+            Err(_) => {
+                let mut logger = Logger::new();
+                logger.loading("Waiting for .lock to disappear");
+                for _ in 0..10 {
+                    sleep(Duration::from_millis(500));
+                    if !lock_path.exists() {
+                        break;
+                    }
+                }
+                if !lock_path.exists() {
+                    logger.success("Successfully awaited .lock");
+                } else {
+                    logger.done();
+                    error!("Factorio instance already running!");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
 pub async fn start_factorio_server(
     settings: &Config,
     websocket_server: Option<Addr<FactorioWebSocketServer>>,
@@ -104,6 +131,8 @@ pub async fn start_factorio_server(
         "bin/x64/factorio"
     };
     let factorio_binary_path = instance_path.join(PathBuf::from(binary));
+    await_lock(instance_path.join(PathBuf::from(".lock")));
+
     if !factorio_binary_path.exists() {
         error!(
             "factorio binary missing at <bright-blue>{:?}</>",
@@ -211,6 +240,7 @@ pub async fn start_factorio_client(
         );
         std::process::exit(1);
     }
+    await_lock(instance_path.join(PathBuf::from(".lock")));
     let args = &[
         "--mp-connect",
         server_host.unwrap_or("localhost"),

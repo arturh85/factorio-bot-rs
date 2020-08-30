@@ -44,6 +44,7 @@ impl From<anyhow::Error> for MyError {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FindEntitiesQueryParams {
     area: Option<String>,
     position: Option<String>,
@@ -72,6 +73,7 @@ pub async fn find_entities(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FindTilesQueryParams {
     area: Option<String>,
     position: Option<String>,
@@ -97,6 +99,7 @@ pub async fn find_tiles(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InventoryContentsAtQueryParams {
     query: String,
 }
@@ -120,6 +123,7 @@ pub async fn inventory_contents_at(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MovePlayerQueryParams {
     goal: String,
     radius: Option<f64>,
@@ -157,6 +161,7 @@ pub async fn player_info(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlaceEntityQueryParams {
     item: String,
     position: String,
@@ -192,6 +197,7 @@ pub async fn place_entity(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CheatItemQueryParams {
     name: String,
     count: u32,
@@ -215,6 +221,7 @@ pub async fn cheat_item(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CheatTechnologyQueryParams {
     tech: String,
 }
@@ -237,6 +244,7 @@ pub async fn cheat_all_technologies(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InsertToInventoryQueryParams {
     entity_name: String,
     entity_position: String,
@@ -272,6 +280,7 @@ pub async fn insert_to_inventory(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RemoveFromInventoryQueryParams {
     entity_name: String,
     entity_position: String,
@@ -354,6 +363,7 @@ pub async fn server_save(rcon: web::Data<Arc<FactorioRcon>>) -> Result<Json<Valu
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AddResearchQueryParams {
     tech: String,
 }
@@ -367,6 +377,7 @@ pub async fn add_research(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StoreMapDataQueryParams {
     key: String,
 }
@@ -393,12 +404,14 @@ pub async fn retrieve_map_data(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlaceBlueprintQueryParams {
     blueprint: String,
     position: String,
     direction: Option<u8>,
     force_build: Option<bool>,
     only_ghosts: Option<bool>,
+    inventory_player_ids: Option<String>,
 }
 // #[get("/<player_id>/placeBlueprint?<position>&<direction>&<force_build>&<blueprint>&<only_ghosts>")]
 // #[allow(clippy::too_many_arguments)]
@@ -409,6 +422,13 @@ pub async fn place_blueprint(
     info: actix_web::web::Query<PlaceBlueprintQueryParams>,
 ) -> Result<Json<PlaceEntitiesResult>, MyError> {
     let player_id = *path;
+    let inventory_player_ids: Vec<u32> = match info.inventory_player_ids.as_ref() {
+        Some(inventory_player_ids) => inventory_player_ids
+            .split(',')
+            .map(|id| id.parse().unwrap())
+            .collect(),
+        None => vec![],
+    };
     let entities = rcon
         .place_blueprint(
             player_id,
@@ -417,6 +437,7 @@ pub async fn place_blueprint(
             info.direction.unwrap_or(0),
             info.force_build.unwrap_or(false),
             info.only_ghosts.unwrap_or(false),
+            inventory_player_ids,
             &world,
         )
         .await?;
@@ -432,6 +453,7 @@ pub async fn place_blueprint(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReviveGhostQueryParams {
     name: String,
     position: String,
@@ -460,6 +482,7 @@ pub async fn revive_ghost(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CheatBlueprintQueryParams {
     blueprint: String,
     position: String,
@@ -495,6 +518,7 @@ pub async fn cheat_blueprint(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParseBlueprintQueryParams {
     blueprint: String,
 }
@@ -532,6 +556,7 @@ pub async fn player_force(
 // #[get("/<player_id>/mine?<name>&<position>&<count>")]
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MineQueryParams {
     name: String,
     position: String,
@@ -563,6 +588,7 @@ pub async fn mine(
 // #[get("/<player_id>/craft?<recipe>&<count>")]
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CraftQueryParams {
     recipe: String,
     count: u32,

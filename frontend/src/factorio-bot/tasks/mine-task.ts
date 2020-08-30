@@ -3,6 +3,7 @@ import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {Position} from "@/factorio-bot/types";
+import {positionLabel} from "@/factorio-bot/util";
 
 const TASK_TYPE = 'mine'
 
@@ -25,5 +26,5 @@ export async function createMineTask(store: Store<State>, name: string, position
         position,
         count
     }
-    return createTask(TASK_TYPE, `Mine ${name} x ${count} @ [${Math.floor(position.x)}, ${Math.floor(position.y)}`, data)
+    return createTask(TASK_TYPE, `Mine ${name} x ${count} @ ${positionLabel(position)}`, data)
 }

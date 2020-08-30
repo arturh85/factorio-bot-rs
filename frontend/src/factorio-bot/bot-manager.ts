@@ -1,11 +1,10 @@
 import {State} from "@/store";
 import {Store} from "vuex";
 
-import type {FactorioEntity, World,} from "@/factorio-bot/types";
-import {Direction, Entities, InventoryType, Technologies} from "@/factorio-bot/types";
+import type {World,} from "@/factorio-bot/types";
+import {Entities, Technologies} from "@/factorio-bot/types";
 import {emptyWorld} from "@/factorio-bot/util";
 import {FactorioApi} from "@/factorio-bot/restApi";
-import {blueprintTileableStarterSteamEngineBoiler} from "@/factorio-bot/blueprints";
 import {FactorioBot} from "@/factorio-bot/bot";
 import {availableBots, executeTask, Task, TaskStatus} from "@/factorio-bot/task";
 import {createResearchTask} from "@/factorio-bot/tasks/research-task";
@@ -15,12 +14,9 @@ import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
 import {createBuildStarterBase} from "@/factorio-bot/tasks/build-starter-base-task";
 import {createBuildStarterMinerChestTask} from "@/factorio-bot/tasks/build-starter-miner-chest-task";
+import {createStartRocketTask} from "@/factorio-bot/tasks/start-rocket-task";
 
 const STORAGE_KEY = "world";
-
-// technologies we want to research first
-const PRIORITY_RESEARCH = ["automation"];
-
 
 export class FactorioBotManager {
     $store: Store<State>;
@@ -88,7 +84,8 @@ export class FactorioBotManager {
         for (const task of availableTasks) {
             try {
                 await executeTask(this.$store, await availableBots(this.$store), task)
-            } catch(err) {}
+            } catch (err) {
+            }
             doneSomething = true
         }
         // }
@@ -117,8 +114,8 @@ export class FactorioBotManager {
     }
 
     async testPlaceOffshorePump(): Promise<void> {
-        this.bots[0].cheatItem(Entities.offshorePump, 1)
-        this.bots[0].placeOffshorePump()
+        await this.bots[0].cheatItem(Entities.offshorePump, 1)
+        await this.bots[0].placeOffshorePump()
     }
 
     async testBuildCoalLoop(n: number): Promise<void> {
@@ -163,6 +160,13 @@ export class FactorioBotManager {
         await this.processTasks();
     }
 
+
+    async startRocket(): Promise<void> {
+        const task = await createStartRocketTask(this.$store)
+        this.$store.commit('pushTask', task)
+        await this.processTasks();
+    }
+
     async researchSteelProcessing(): Promise<void> {
         const task = await createResearchTask(this.$store, Technologies.steelProcessing)
         this.$store.commit('pushTask', task)
@@ -178,6 +182,7 @@ export class FactorioBotManager {
     async updatePlayers(): Promise<void> {
         this.$store.commit('updatePlayers', await FactorioApi.allPlayers())
     }
+
     async saveWorldAndServer(): Promise<void> {
         await this.saveWorldInMap()
         await FactorioApi.saveServer()

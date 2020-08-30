@@ -14,12 +14,12 @@ import {Direction} from "@/factorio-bot/types";
 import {baseUrl} from "@/environment";
 import {positionParam, rectParam} from "@/factorio-bot/util";
 
-const fetch_retry = async (url: string, n: number, options: any = null): Promise<any> => {
+const fetchRetry = async (url: string, n: number, options: any = null): Promise<any> => {
     try {
         return await fetch(url, options)
     } catch(err) {
         if (n === 1) throw err;
-        return await fetch_retry(url, n - 1, options);
+        return await fetchRetry(url, n - 1, options);
     }
 };
 
@@ -34,7 +34,7 @@ export class FactorioApi {
     ): Promise<FactorioPlayer> {
         const position = `${entityPosition.x},${entityPosition.y}`;
         const response = await fetch(
-            `${baseUrl}/api/${playerId}/insertToInventory?entity_name=${entityName}&entity_position=${position}&inventory_type=${inventoryType}&item_name=${itemName}&item_count=${Math.floor(
+            `${baseUrl}/api/${playerId}/insertToInventory?entityName=${entityName}&entityPosition=${position}&inventoryType=${inventoryType}&itemName=${itemName}&itemCount=${Math.floor(
                 itemCount
             )}`
         );
@@ -52,7 +52,7 @@ export class FactorioApi {
     ): Promise<FactorioPlayer> {
         const position = `${entityPosition.x},${entityPosition.y}`;
         const response = await fetch(
-            `${baseUrl}/api/${playerId}/removeFromInventory?entity_name=${entityName}&entity_position=${position}&inventory_type=${inventoryType}&item_name=${itemName}&item_count=${itemCount}`
+            `${baseUrl}/api/${playerId}/removeFromInventory?entityName=${entityName}&entityPosition=${position}&inventoryType=${inventoryType}&itemName=${itemName}&itemCount=${itemCount}`
         );
         return await response.json();
     }
@@ -60,10 +60,10 @@ export class FactorioApi {
     static async placeEntity(
         playerId: number,
         itemName: string,
-        _placePosition: Position,
+        placePosition: Position,
         placeDirection: number
     ): Promise<{ player: FactorioPlayer; entity: FactorioEntity }> {
-        const position = `${_placePosition.x},${_placePosition.y}`;
+        const position = `${placePosition.x},${placePosition.y}`;
         const response = await fetch(
             `${baseUrl}/api/${playerId}/placeEntity?item=${itemName}&position=${position}&direction=${placeDirection}`
         );
@@ -73,16 +73,22 @@ export class FactorioApi {
     static async placeBlueprint(
         playerId: number,
         blueprint: string,
-        _placePosition: Position,
+        placePosition: Position,
         placeDirection = 0,
         forceBuild = false,
-        onlyGhosts = false
+        onlyGhosts = false,
+        inventoryPlayerIds: number[] = []
     ): Promise<{ player: FactorioPlayer; entities: FactorioEntity[] }> {
-        const position = `${_placePosition.x},${_placePosition.y}`;
+        const position = `${placePosition.x},${placePosition.y}`;
+        let url = `${baseUrl}/api/${playerId}/placeBlueprint?blueprint=${encodeURIComponent(
+            blueprint
+        )}&position=${position}&direction=${placeDirection}&forceBuild=${forceBuild}&onlyGhosts=${onlyGhosts}`
+
+        if (inventoryPlayerIds.length > 0) {
+            url += `&inventoryPlayerIds=${inventoryPlayerIds.join(',')}`
+        }
         const response = await fetch(
-            `${baseUrl}/api/${playerId}/placeBlueprint?blueprint=${encodeURIComponent(
-                blueprint
-            )}&position=${position}&direction=${placeDirection}&force_build=${forceBuild}&only_ghosts=${onlyGhosts}`
+            url
         );
         return await response.json();
     }
@@ -108,7 +114,7 @@ export class FactorioApi {
         const response = await fetch(
             `${baseUrl}/api/${playerId}/cheatBlueprint?blueprint=${encodeURIComponent(
                 blueprint
-            )}&position=${positionParam(placePosition)}&direction=${placeDirection}&force_build=${forceBuild}`
+            )}&position=${positionParam(placePosition)}&direction=${placeDirection}&forceBuild=${forceBuild}`
         );
         return await response.json();
     }
@@ -136,7 +142,7 @@ export class FactorioApi {
             url += `&name=${encodeURIComponent(name)}`
         }
         if (entityType) {
-            url += `&entity_type=${encodeURIComponent(entityType)}`
+            url += `&entityType=${encodeURIComponent(entityType)}`
         }
         const response = await fetch(url);
         return await response.json();
@@ -152,7 +158,7 @@ export class FactorioApi {
             url += `&name=${encodeURIComponent(name)}`
         }
         if (entityType) {
-            url += `&entity_type=${encodeURIComponent(entityType)}`
+            url += `&entityType=${encodeURIComponent(entityType)}`
         }
         const response = await fetch(url);
         return await response.json();
@@ -190,32 +196,30 @@ export class FactorioApi {
     ): Promise<FactorioEntity[]> {
         const position = positionParam(centerPosition);
         const response = await fetch(
-            `${baseUrl}/api/findEntities?position=${position}&radius=${radius}&entity_type=${entityType}`
+            `${baseUrl}/api/findEntities?position=${position}&radius=${radius}&entityType=${entityType}`
         );
         return await response.json();
     }
 
     static async mine(
         playerId: number,
-        _position: Position,
+        position: Position,
         name: string,
         count: number
     ): Promise<FactorioPlayer> {
-        const position = positionParam(_position);
         const response = await fetch(
-            `${baseUrl}/api/${playerId}/mine?name=${name}&position=${position}&count=${count}`
+            `${baseUrl}/api/${playerId}/mine?name=${name}&position=${positionParam(position)}&count=${count}`
         );
         return await response.json();
     }
 
     static async move(
         playerId: number,
-        _position: Position,
+        position: Position,
         radius: number
     ): Promise<FactorioPlayer> {
-        const position = positionParam(_position);
         const response = await fetch(
-            `${baseUrl}/api/${playerId}/move?goal=${position}&radius=${radius}`
+            `${baseUrl}/api/${playerId}/move?goal=${positionParam(position)}&radius=${radius}`
         );
         return await response.json();
     }
@@ -249,17 +253,17 @@ export class FactorioApi {
     }
 
     static async allRecipes(): Promise<FactorioRecipeByName> {
-        const response = await fetch_retry(`${baseUrl}/api/recipes`, 3);
+        const response = await fetchRetry(`${baseUrl}/api/recipes`, 3);
         return await response.json();
     }
 
     static async allPlayers(): Promise<FactorioPlayer[]> {
-        const response = await fetch_retry(`${baseUrl}/api/players`, 3);
+        const response = await fetchRetry(`${baseUrl}/api/players`, 3);
         return await response.json();
     }
 
     static async playerForce(): Promise<FactorioForce> {
-        const response = await fetch_retry(`${baseUrl}/api/playerForce`, 3);
+        const response = await fetchRetry(`${baseUrl}/api/playerForce`, 3);
         return await response.json();
     }
 
