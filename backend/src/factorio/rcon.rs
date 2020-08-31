@@ -230,7 +230,10 @@ impl FactorioRcon {
             .await?;
 
         for entity in build_area_entities {
-            if entity.name != "character" && position_in_rect(&build_area, &entity.position) {
+            if entity.name != "character"
+                && entity.entity_type != "resource"
+                && position_in_rect(&build_area, &entity.position)
+            {
                 warn!(
                     "mining entity in build area: {} @ {}/{}",
                     entity.name,
@@ -390,8 +393,8 @@ impl FactorioRcon {
                     return Err(anyhow!("{}", result));
                 }
             }
-            if wait_start.elapsed() > Duration::from_secs(60) {
-                return Err(anyhow!("no action result received after 60 seconds"));
+            if wait_start.elapsed() > Duration::from_secs(360) {
+                return Err(anyhow!("no action result received after 360 seconds"));
             }
         }
     }
@@ -1012,6 +1015,9 @@ impl FactorioRcon {
         world: &Arc<FactorioWorld>,
         entity_name: &str,
         entity_type: &str,
+        underground_entity_name: &str,
+        underground_entity_type: &str,
+        underground_max: u8,
         from_position: &Position,
         to_position: &Position,
         to_direction: Direction,
@@ -1028,6 +1034,9 @@ impl FactorioRcon {
             &world.entity_prototypes,
             entity_name,
             entity_type,
+            underground_entity_name,
+            underground_entity_type,
+            underground_max,
             from_position,
             to_position,
             to_direction,

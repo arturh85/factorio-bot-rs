@@ -4,7 +4,8 @@ import {State} from "@/store";
 import {createTask, executeTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {Direction, FactorioEntity} from "@/factorio-bot/types";
 import {blueprintTileableStarterSteamEngineBoiler} from "@/factorio-bot/blueprints";
-import {createBuildBlueprint} from "@/factorio-bot/tasks/build-blueprint-task";
+import {createBuildBlueprintTask} from "@/factorio-bot/tasks/build-blueprint-task";
+import {FactorioApi} from "@/factorio-bot/restApi";
 
 const TASK_TYPE = 'build-starter-steam-engine'
 
@@ -21,8 +22,9 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     const offset = (store.state.world.starterSteamEngineBlueprints || []).length
     const subtasks: Task[] = []
     for (let steamIndex = 0; steamIndex < data.boilerCount; steamIndex++) {
-        const subtask = await createBuildBlueprint(store, 'Starter Steam Engine', blueprintTileableStarterSteamEngineBoiler, {
-                x: offshorePumpPosition.x + 2 + (steamIndex + offset) * 4,
+        const blueprint = await FactorioApi.parseBlueprint(blueprintTileableStarterSteamEngineBoiler, 'Starter Steam Engine')
+        const subtask = await createBuildBlueprintTask(store, blueprint, {
+                x: offshorePumpPosition.x + 2 + (steamIndex + offset) * blueprint.width,
                 y: offshorePumpPosition.y - 7,
             },
             Direction.north, false)

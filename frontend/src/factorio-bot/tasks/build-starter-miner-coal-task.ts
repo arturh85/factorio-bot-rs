@@ -28,9 +28,11 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
         [minerName]: data.loopCount
     })
     await processBotQueue(store, craftQueue, bots)
-
     const excludePositions = Object.keys(store.state.players).map(key => store.state.players[key].position)
+    const ironMiners = (store.state.world.starterMinerFurnaces || []).filter(f => f.oreName === Entities.ironOre);
+    const relativeTo = ironMiners.length > 0 ? ironMiners[0].minerPosition : {x: 0, y: 0}
     const coalFieldTopLeft = await firstBot.findNearestRect(
+        relativeTo,
         Entities.coal,
         2 * 2,
         2 * 2,

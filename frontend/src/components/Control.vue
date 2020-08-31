@@ -54,6 +54,18 @@
           <v-list-item v-on:click="bots.testBuildCoalLoop(2)">
             <v-list-item-title>Build Coal Loop x2</v-list-item-title>
           </v-list-item>
+          <v-list-item v-on:click="bots.testBuildMinerLine(Entities.ironOre)">
+            <v-list-item-title>Build MinerLine iron-ore</v-list-item-title>
+          </v-list-item>
+          <v-list-item v-on:click="bots.testBuildMinerLine(Entities.copperOre)">
+            <v-list-item-title>Build MinerLine copper-ore</v-list-item-title>
+          </v-list-item>
+          <v-list-item v-on:click="bots.testBuildMinerLine(Entities.coal)">
+            <v-list-item-title>Build MinerLine coal</v-list-item-title>
+          </v-list-item>
+          <v-list-item v-on:click="bots.testBuildMinerLine(Entities.stone)">
+            <v-list-item-title>Build MinerLine stone</v-list-item-title>
+          </v-list-item>
 
           <v-list-item v-bind:key="name" v-for="(count, name) in {
         [Entities.coal]: 30,

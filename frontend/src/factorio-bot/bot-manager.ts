@@ -15,6 +15,7 @@ import {createGatherTask} from "@/factorio-bot/tasks/gather-task";
 import {createBuildStarterBase} from "@/factorio-bot/tasks/build-starter-base-task";
 import {createBuildStarterMinerChestTask} from "@/factorio-bot/tasks/build-starter-miner-chest-task";
 import {createStartRocketTask} from "@/factorio-bot/tasks/start-rocket-task";
+import {createBuildMinerLineTask} from "@/factorio-bot/tasks/build-miner-line-task";
 
 const STORAGE_KEY = "world";
 
@@ -113,10 +114,10 @@ export class FactorioBotManager {
         await this.processTasks();
     }
 
-    async testPlaceOffshorePump(): Promise<void> {
-        await this.bots[0].cheatItem(Entities.offshorePump, 1)
-        await this.bots[0].placeOffshorePump()
-    }
+    // async testPlaceOffshorePump(): Promise<void> {
+    //     await this.bots[0].cheatItem(Entities.offshorePump, 1)
+    //     await this.bots[0].placeOffshorePump()
+    // }
 
     async testBuildCoalLoop(n: number): Promise<void> {
         const task = await createBuildStarterMinerCoalTask(this.$store, n)
@@ -132,6 +133,12 @@ export class FactorioBotManager {
 
     async testGatherTask(name: string, count: number): Promise<void> {
         const task = await createGatherTask(this.$store, name, count)
+        this.$store.commit('pushTask', task)
+        await this.processTasks();
+    }
+
+    async testBuildMinerLine(oreName: string): Promise<void> {
+        const task = await createBuildMinerLineTask(this.$store, oreName)
         this.$store.commit('pushTask', task)
         await this.processTasks();
     }
@@ -186,9 +193,27 @@ export class FactorioBotManager {
     async buildBeltPath( fromPosition: Position,
                          toPosition: Position,
                          toDirection: Direction): Promise<void> {
-        const entities = await FactorioApi.planPath(Entities.transportBelt, EntityTypes.transportBelt, fromPosition, toPosition, toDirection);
+        await FactorioApi.cheatTechnology(Technologies.automation);
+        await FactorioApi.cheatTechnology(Technologies.logistics);
+        const entities = await FactorioApi.planPath(Entities.transportBelt, EntityTypes.transportBelt, Entities.undergroundBelt, EntityTypes.undergroundBelt, 5, fromPosition, toPosition, toDirection);
         const bot = this.bots[0]
-        await bot.cheatItem(Entities.transportBelt, entities.length);
+        const cnt = entities.length + 5;
+        await bot.cheatItem(Entities.transportBelt, cnt);
+        await bot.cheatItem(Entities.undergroundBelt, cnt);
+        for (const entity of entities) {
+            await bot.placeEntity(entity.name, entity.position, entity.direction)
+        }
+    }
+
+    async buildPipePath( fromPosition: Position,
+                         toPosition: Position,
+                         toDirection: Direction): Promise<void> {
+        await FactorioApi.cheatTechnology(Technologies.automation);
+        await FactorioApi.cheatTechnology(Technologies.logistics);
+        const entities = await FactorioApi.planPath(Entities.pipe, EntityTypes.pipe, Entities.pipeToGround, EntityTypes.pipeToGround, 5, fromPosition, toPosition, toDirection);
+        const bot = this.bots[0]
+        await bot.cheatItem(Entities.pipe, entities.length + 5);
+        await bot.cheatItem(Entities.pipeToGround, entities.length + 5);
         for (const entity of entities) {
             await bot.placeEntity(entity.name, entity.position, entity.direction)
         }
@@ -200,23 +225,24 @@ export class FactorioBotManager {
     }
 
     async testCheatStuff(): Promise<void> {
-        const bot = this.bots[0];
-        await bot.cheatItem(Entities.burnerMiningDrill, 50);
-        await bot.cheatItem(Entities.stoneFurnace, 50);
-        await bot.cheatItem(Entities.offshorePump, 5);
-        await bot.cheatItem(Entities.steamEngine, 5);
-        await bot.cheatItem(Entities.boiler, 2);
-        await bot.cheatItem(Entities.smallElectricPole, 10);
-        await bot.cheatItem(Entities.pipe, 50);
-        await bot.cheatItem(Entities.pipeToGround, 50);
-        await bot.cheatItem(Entities.transportBelt, 50);
-        await bot.cheatItem(Entities.ironChest, 10);
-        await bot.cheatItem(Entities.ironPlate, 200);
-        await bot.cheatItem(Entities.copperPlate, 200);
-        await bot.cheatItem(Entities.coal, 200);
-        await bot.cheatItem(Entities.stone, 200);
-        await bot.cheatItem(Entities.electricMiningDrill, 30);
-        await bot.cheatItem(Entities.transportBelt, 200);
+        for(const bot of this.bots) {
+            await bot.cheatItem(Entities.burnerMiningDrill, 50);
+            await bot.cheatItem(Entities.stoneFurnace, 50);
+            await bot.cheatItem(Entities.offshorePump, 5);
+            await bot.cheatItem(Entities.steamEngine, 5);
+            await bot.cheatItem(Entities.boiler, 2);
+            await bot.cheatItem(Entities.smallElectricPole, 10);
+            await bot.cheatItem(Entities.pipe, 50);
+            await bot.cheatItem(Entities.pipeToGround, 50);
+            await bot.cheatItem(Entities.transportBelt, 50);
+            await bot.cheatItem(Entities.ironChest, 10);
+            await bot.cheatItem(Entities.ironPlate, 200);
+            await bot.cheatItem(Entities.copperPlate, 200);
+            await bot.cheatItem(Entities.coal, 200);
+            await bot.cheatItem(Entities.stone, 200);
+            await bot.cheatItem(Entities.electricMiningDrill, 30);
+            await bot.cheatItem(Entities.transportBelt, 200);
+        }
     }
 
     async saveWorldInMap(): Promise<void> {

@@ -103,6 +103,13 @@ export default new Vuex.Store({
         addStarterMinerFurnace(state: State, minerFurnace: StarterMinerFurnace) {
             state.world = {...state.world, starterMinerFurnaces: [...(state.world.starterMinerFurnaces || []), minerFurnace]}
         },
+        addMinerLine(state: State, params: {oreName: string, entities: FactorioEntity[]}) {
+            const minerLineByOreName = {...(state.world.minerLineByOreName || {})}
+            const list = minerLineByOreName[params.oreName] || []
+            list.push(params.entities);
+            minerLineByOreName[params.oreName] = list
+            state.world = {...state.world, minerLineByOreName}
+        },
         addStarterCoalLoop(state: State, coalLoop: StarterCoalLoop) {
             state.world = {...state.world, starterCoalLoops: [...(state.world.starterCoalLoops || []), coalLoop]}
         },

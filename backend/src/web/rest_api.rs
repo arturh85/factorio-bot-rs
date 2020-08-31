@@ -1,10 +1,11 @@
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::rcon::FactorioRcon;
+use crate::factorio::util::blueprint_build_area;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
-    Direction, FactorioEntity, FactorioEntityPrototype, FactorioForce, FactorioItemPrototype,
-    FactorioPlayer, FactorioRecipe, FactorioTile, InventoryResponse, PlaceEntitiesResult,
-    PlaceEntityResult, Position, RequestEntity,
+    Direction, FactorioBlueprintInfo, FactorioEntity, FactorioEntityPrototype, FactorioForce,
+    FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile, InventoryResponse,
+    PlaceEntitiesResult, PlaceEntityResult, Position, RequestEntity,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Json, Path as PathInfo};
@@ -76,6 +77,9 @@ pub async fn find_entities(
 pub struct PlanPathQueryParams {
     entity_name: String,
     entity_type: String,
+    underground_entity_name: String,
+    underground_entity_type: String,
+    underground_max: u8,
     from_position: String,
     to_position: String,
     to_direction: u8,
@@ -91,6 +95,9 @@ pub async fn plan_path(
             &world,
             &info.entity_name.clone(),
             &info.entity_type.clone(),
+            &info.underground_entity_name.clone(),
+            &info.underground_entity_type.clone(),
+            info.underground_max,
             &info.from_position.parse()?,
             &info.to_position.parse()?,
             Direction::from_u8(info.to_direction).unwrap(),
@@ -547,16 +554,27 @@ pub async fn cheat_blueprint(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParseBlueprintQueryParams {
+    label: String,
     blueprint: String,
 }
 
 // #[get("/parseBlueprint?<blueprint>")]
 pub async fn parse_blueprint(
+    world: web::Data<Arc<FactorioWorld>>,
     info: actix_web::web::Query<ParseBlueprintQueryParams>,
-) -> Result<Json<Value>, MyError> {
+) -> Result<Json<FactorioBlueprintInfo>, MyError> {
     let decoded =
         BlueprintCodec::decode_string(&info.blueprint).expect("failed to parse blueprint");
-    Ok(Json(serde_json::to_value(decoded).unwrap()))
+    let rect = blueprint_build_area(&world.entity_prototypes, &info.blueprint);
+    let response = FactorioBlueprintInfo {
+        rect: rect.clone(),
+        label: info.label.clone(),
+        blueprint: info.blueprint.clone(),
+        width: rect.width() as u16,
+        height: rect.height() as u16,
+        data: serde_json::to_value(decoded).unwrap(),
+    };
+    Ok(Json(response))
 }
 
 // #[get("/recipes")]

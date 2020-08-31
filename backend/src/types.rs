@@ -1,6 +1,7 @@
 use crate::num_traits::FromPrimitive;
 use noisy_float::prelude::*;
 use num_traits::ToPrimitive;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 use typescript_definitions::TypeScriptify;
@@ -19,6 +20,17 @@ pub struct FactorioRecipe {
     pub order: String,
     pub group: String,
     pub subgroup: String,
+}
+
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FactorioBlueprintInfo {
+    pub label: String,
+    pub blueprint: String,
+    pub width: u16,
+    pub height: u16,
+    pub rect: Rect,
+    pub data: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
@@ -82,7 +94,7 @@ pub struct Position {
     pub y: Box<R64>,
 }
 
-#[derive(Primitive, Clone, Copy)]
+#[derive(Primitive, Clone, Copy, Debug, PartialEq)]
 pub enum Direction {
     North = 0,
     NorthEast = 1,
@@ -103,6 +115,9 @@ impl Direction {
             .filter(|n| n % 2 == 0)
             .map(|n| Direction::from_u8(n).unwrap())
             .collect()
+    }
+    pub fn opposite(&self) -> Direction {
+        Direction::from_u8((Direction::to_u8(self).unwrap() + 4) % 8).unwrap()
     }
 }
 

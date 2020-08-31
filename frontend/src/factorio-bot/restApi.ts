@@ -1,4 +1,5 @@
 import type {
+    FactorioBlueprintInfo,
     FactorioBlueprintResult,
     FactorioEntity, FactorioEntityPrototypeByName,
     FactorioForce, FactorioItemPrototypeByName,
@@ -119,9 +120,9 @@ export class FactorioApi {
         return await response.json();
     }
 
-    static async parseBlueprint(blueprint: string): Promise<FactorioBlueprintResult> {
+    static async parseBlueprint(blueprint: string, label: string): Promise<FactorioBlueprintInfo> {
         const response = await fetch(
-            `${baseUrl}/api/parseBlueprint?blueprint=${encodeURIComponent(blueprint)}`
+            `${baseUrl}/api/parseBlueprint?blueprint=${encodeURIComponent(blueprint)}&label=${encodeURIComponent(label)}`
         );
         return await response.json();
     }
@@ -134,11 +135,14 @@ export class FactorioApi {
     static async planPath(
         entityName: string,
         entityType: string,
+        undergroundEntityName: string,
+        undergroundEntityType: string,
+        undergroundMax: number,
         fromPosition: Position,
         toPosition: Position,
         toDirection: Direction
     ): Promise<FactorioEntity[]> {
-        const url = `${baseUrl}/api/planPath?entityName=${entityName}&entityType=${entityType}&fromPosition=${positionParam(fromPosition)}&toPosition=${positionParam(toPosition)}&toDirection=${toDirection}`;
+        const url = `${baseUrl}/api/planPath?entityName=${entityName}&entityType=${entityType}&undergroundEntityName=${undergroundEntityName}&undergroundEntityType=${undergroundEntityType}&undergroundMax=${undergroundMax}&fromPosition=${positionParam(fromPosition)}&toPosition=${positionParam(toPosition)}&toDirection=${toDirection}`;
         const response = await fetch(url);
         return await response.json();
     }

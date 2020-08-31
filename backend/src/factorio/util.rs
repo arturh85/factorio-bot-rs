@@ -1,15 +1,18 @@
-use crate::types::{
-    Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Position, Rect,
-};
-use evmap::ReadHandle;
-use factorio_blueprint::BlueprintCodec;
-use factorio_blueprint::Container::{Blueprint, BlueprintBook};
-use num_traits::ToPrimitive;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+
+use evmap::ReadHandle;
+use factorio_blueprint::BlueprintCodec;
+use factorio_blueprint::Container::{Blueprint, BlueprintBook};
+use num_traits::ToPrimitive;
+use pathfinding::prelude::{absdiff, astar};
+use serde_json::Value;
+
+use crate::types::{
+    Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Position, Rect,
+};
 
 pub fn hashmap_to_lua(map: HashMap<String, String>) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -112,7 +115,7 @@ pub fn pad_rect(
     }
 }
 
-pub fn expand_rect_floor_ceil(rect: &Rect) -> Rect {
+pub fn expand_rect_floor_ceil_div_2(rect: &Rect) -> Rect {
     Rect {
         left_top: Position::new(
             (rect.left_top.x() * 2.0).floor() / 2.0,
@@ -121,6 +124,16 @@ pub fn expand_rect_floor_ceil(rect: &Rect) -> Rect {
         right_bottom: Position::new(
             (rect.right_bottom.x() * 2.0).ceil() / 2.0,
             (rect.right_bottom.y() * 2.0).ceil() / 2.0,
+        ),
+    }
+}
+
+pub fn expand_rect_floor(rect: &Rect) -> Rect {
+    Rect {
+        left_top: Position::new((rect.left_top.x()).floor(), (rect.left_top.y()).floor()),
+        right_bottom: Position::new(
+            (rect.right_bottom.x()).floor(),
+            (rect.right_bottom.y()).floor(),
         ),
     }
 }
@@ -178,7 +191,7 @@ pub fn blueprint_build_area(
                         entity.position.x.to_f64().unwrap(),
                         entity.position.y.to_f64().unwrap(),
                     );
-                    let collision_box = expand_rect_floor_ceil(&prototype.collision_box);
+                    let collision_box = expand_rect_floor_ceil_div_2(&prototype.collision_box);
                     let collision_rect = add_to_rect(&collision_box, &entity_position);
                     expand_rect(&mut build_area, &collision_rect)
                 }
@@ -231,13 +244,18 @@ pub fn span_rect(a: &Position, b: &Position, margin: f64) -> Rect {
     )
 }
 
-use pathfinding::prelude::{absdiff, astar};
-
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Pos(i32, i32);
+pub struct Pos(i32, i32);
+
 impl Pos {
     fn distance(&self, other: &Pos) -> u32 {
         (absdiff(self.0, other.0) + absdiff(self.1, other.1)) as u32
+    }
+}
+
+impl From<&Position> for Pos {
+    fn from(position: &Position) -> Pos {
+        Pos(position.x().floor() as i32, position.y().floor() as i32)
     }
 }
 
@@ -246,58 +264,127 @@ pub fn build_entity_path(
     entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
     entity_name: &str,
     entity_type: &str,
+    underground_entity_name: &str,
+    underground_entity_type: &str,
+    underground_max: u8,
     from_position: &Position,
     to_position: &Position,
     to_direction: Direction,
     block_entities: Vec<FactorioEntity>,
     block_tiles: Vec<FactorioTile>,
 ) -> anyhow::Result<Vec<FactorioEntity>> {
-    let from_position = Pos(
-        from_position.x().floor() as i32,
-        from_position.y().floor() as i32,
-    );
-    let to_position = Pos(
-        to_position.x().floor() as i32,
-        to_position.y().floor() as i32,
-    );
+    let from_position: Pos = from_position.into();
+    let to_position: Pos = to_position.into();
 
+    let mut blocked: HashMap<Pos, String> = HashMap::new();
+    for tile in block_tiles {
+        if tile.player_collidable {
+            blocked.insert((&tile.position).into(), tile.name.clone());
+        }
+    }
+    for entity in block_entities {
+        match entity_prototypes.get_one(&entity.name) {
+            Some(entity_prototype) => {
+                let mut rect = expand_rect_floor_ceil_div_2(&add_to_rect(
+                    &entity_prototype.collision_box,
+                    &entity.position,
+                ));
+                let w = rect.width();
+                // let h = rect.height();
+                // info!("rect {} / {}, {}", w, h, w.fract());
+                // info!(
+                //     "collision box {:?} @ {:?}",
+                //     &entity_prototype.collision_box, &entity.position
+                // );
+                if w > 1.0 {
+                    rect = pad_rect(&expand_rect_floor(&rect), 0., 0., 1., 1.);
+                } else {
+                    rect = expand_rect_floor(&rect);
+                }
+                // info!(
+                //     "entity {} {}x{} rect: {:?}",
+                //     &entity.name,
+                //     rect.width(),
+                //     rect.height(),
+                //     &rect,
+                // );
+
+                for position in rect_fields(&rect) {
+                    // info!(
+                    //     "rect position {} {} => {:?}",
+                    //     position.x(),
+                    //     position.y(),
+                    //     Pos::from(&position)
+                    // );
+                    blocked.insert((&position).into(), entity.name.clone());
+                }
+            }
+            None => {
+                // info!(
+                //     "point position {} {} => {:?}",
+                //     entity.position.x(),
+                //     entity.position.y(),
+                //     Pos::from(&entity.position)
+                // );
+                blocked.insert((&entity.position).into(), entity.name.clone());
+            }
+        }
+    }
+    if blocked.contains_key(&from_position) {
+        return Err(anyhow!(
+            "fromPosition is blocked by {}",
+            blocked.get(&from_position).unwrap()
+        ));
+    }
+    if blocked.contains_key(&to_position) {
+        return Err(anyhow!(
+            "toPosition is blocked by {}",
+            blocked.get(&to_position).unwrap()
+        ));
+    }
+    info!("start pathfinding");
+    let mut last: Option<Pos> = None;
     let path = astar(
         &from_position,
-        |p| {
+        move |p| {
             let mut options: Vec<(Pos, i32)> = vec![];
             for direction in Direction::orthogonal() {
-                let target = move_position(&Position::new(p.0 as f64, p.1 as f64), direction, 1.0);
-                let entity: Option<&FactorioEntity> = block_entities.iter().find(|entity| {
-                    match entity_prototypes.get_one(&entity.name) {
-                        Some(entity_prototype) => position_in_rect(
-                            &pad_rect(
-                                &add_to_rect(
-                                    &expand_rect_floor_ceil(&entity_prototype.collision_box),
-                                    &entity.position,
-                                ),
-                                1.,
-                                1.,
-                                0.,
-                                0.,
-                            ),
-                            &target,
-                        ),
-                        None => position_equal(&entity.position, &target),
+                for length in 1..(underground_max + 1) {
+                    let target: Pos = (&move_position(
+                        &Position::new(p.0 as f64, p.1 as f64),
+                        direction,
+                        length as f64,
+                    ))
+                        .into();
+                    if blocked.get(&target).is_none() {
+                        options.push((target, if length == 1 { 1 } else { length as i32 * 3 }));
                     }
-                });
-                let tile: Option<&FactorioTile> = block_tiles
-                    .iter()
-                    .find(|tile| position_equal(&tile.position, &target));
-                if tile.is_none() && entity.is_none() {
-                    options.push((Pos(target.x().floor() as i32, target.y().floor() as i32), 1));
+                    if let Some(last) = last.as_ref() {
+                        let last_direction = relative_direction(p, last);
+                        let dist = p.distance(last);
+                        info!(
+                            "dist: {} last: {:?}, new: {:?} -- {:?}, {:?}",
+                            dist, last_direction, direction, last, p
+                        );
+                        // if dist == 1 && direction == last_direction.opposite() {
+                        //     break;
+                        // } else if dist > 1 && direction != last_direction {
+                        //     break;
+                        // }
+                        if direction != last_direction {
+                            break;
+                        }
+                    }
                 }
-                // TODO: add options for underground belts / pipes
             }
+            last = Some(p.clone());
             options
         },
         |p| (p.distance(&to_position) / 3) as i32,
         |p| *p == to_position,
     );
+    info!("finished pathfinding");
+    let mirror_direction = underground_entity_type == "pipe-to-ground";
     match path {
         Some((path, _cost)) => {
             let mut result: Vec<FactorioEntity> = vec![];
@@ -309,6 +396,7 @@ pub fn build_entity_path(
                 } else {
                     None
                 };
+                let prev: Option<&Pos> = if i > 0 { Some(&path[i - 1]) } else { None };
                 let direction = if let Some(next) = next {
                     if next.0 < pos.0 {
                         Direction::West
@@ -322,16 +410,46 @@ pub fn build_entity_path(
                 } else {
                     to_direction
                 };
-                result.push(FactorioEntity {
-                    name: entity_name.into(),
-                    entity_type: entity_type.into(),
-                    position: Position::new(pos.0 as f64, pos.1 as f64),
-                    direction: direction.to_u8().unwrap(),
-                    recipe: None,
-                    ghost_name: None,
-                    ghost_type: None,
-                    amount: None,
-                });
+
+                let distance = if let Some(prev) = prev {
+                    pos.distance(prev)
+                } else {
+                    1
+                };
+
+                if distance == 1 {
+                    result.push(FactorioEntity {
+                        name: entity_name.into(),
+                        entity_type: entity_type.into(),
+                        position: Position::new(pos.0 as f64, pos.1 as f64),
+                        direction: if mirror_direction {
+                            direction.opposite().to_u8().unwrap()
+                        } else {
+                            direction.to_u8().unwrap()
+                        },
+                        recipe: None,
+                        ghost_name: None,
+                        ghost_type: None,
+                        amount: None,
+                    });
+                } else {
+                    result[i - 1].name = underground_entity_name.into();
+                    result[i - 1].entity_type = underground_entity_type.into();
+                    result.push(FactorioEntity {
+                        name: underground_entity_name.into(),
+                        entity_type: underground_entity_type.into(),
+                        position: Position::new(pos.0 as f64, pos.1 as f64),
+                        direction: if mirror_direction {
+                            direction.to_u8().unwrap()
+                        } else {
+                            direction.opposite().to_u8().unwrap()
+                        },
+                        recipe: None,
+                        ghost_name: None,
+                        ghost_type: None,
+                        amount: None,
+                    });
+                }
             }
             Ok(result)
         }
@@ -346,4 +464,44 @@ pub fn floor_position(position: &Position) -> Position {
 pub fn position_equal(a: &Position, b: &Position) -> bool {
     (a.x().floor() - b.x().floor()).abs() < f64::EPSILON
         && (a.y().floor() - b.y().floor()).abs() < f64::EPSILON
+}
+
+pub fn rect_fields(rect: &Rect) -> Vec<Position> {
+    let mut res = vec![];
+    for y in rect.left_top.y().floor() as i32..rect.right_bottom.y().floor() as i32 {
+        for x in rect.left_top.x().floor() as i32..rect.right_bottom.x().floor() as i32 {
+            res.push(Position::new(x as f64, y as f64));
+        }
+    }
+    res
+}
+
+// if "from" is west of "to" then returns Direction::West
+#[allow(clippy::comparison_chain)]
+pub fn relative_direction(from: &Pos, to: &Pos) -> Direction {
+    if from.0 < to.0 {
+        // EAST
+        if from.1 > to.1 {
+            Direction::SouthEast
+        } else if from.1 < to.1 {
+            Direction::NorthEast
+        } else {
+            Direction::East
+        }
+    } else if from.0 > to.0 {
+        // WEST
+        if from.1 > to.1 {
+            Direction::SouthWest
+        } else if from.1 < to.1 {
+            Direction::NorthWest
+        } else {
+            Direction::West
+        }
+    } else if from.1 > to.1 {
+        Direction::South
+    } else if from.1 < to.1 {
+        Direction::North
+    } else {
+        panic!("positions are equal")
+    }
 }

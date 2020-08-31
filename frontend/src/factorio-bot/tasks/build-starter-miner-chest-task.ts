@@ -44,6 +44,7 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
     const excludePositions = Object.keys(store.state.players).map(key => store.state.players[key].position)
     const oreFieldTopLeft = await bot.findNearestRect(
+        {x: 0, y: 0},
         data.oreName,
         2 * data.minerChestCount,
         2,

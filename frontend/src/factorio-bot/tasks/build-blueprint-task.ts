@@ -3,15 +3,19 @@ import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {countEntitiesFromBlueprint, positionLabel} from "@/factorio-bot/util";
-import {Direction, FactorioEntity, Position} from "@/factorio-bot/types";
-import {FactorioApi} from "@/factorio-bot/restApi";
+import {
+    Direction,
+    FactorioBlueprintInfo,
+    FactorioBlueprintResult,
+    FactorioEntity,
+    Position
+} from "@/factorio-bot/types";
 import {buildBotQueueToCraft, processBotQueue} from "@/factorio-bot/bot-queue";
 
 const TASK_TYPE = 'build-blueprint'
 
 type TaskData = {
-    blueprintLabel: string,
-    blueprintString: string,
+    blueprint: FactorioBlueprintInfo,
     position: Position,
     direction: Direction,
     immediate: boolean,
@@ -21,14 +25,16 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     const data: TaskData = task.data as TaskData
     const firstBot = bots[0]
     if (!data.immediate) {
-        const result = await FactorioApi.parseBlueprint(data.blueprintString)
-        const entities = countEntitiesFromBlueprint(result.blueprint)
+        const container = data.blueprint.data as FactorioBlueprintResult
+        const entities = countEntitiesFromBlueprint(container.blueprint)
+        console.log('entities', entities)
         // each bot should first craft what it needs
         const queue = await buildBotQueueToCraft(store, task, bots, entities)
         await processBotQueue(store, queue, bots)
     }
+    console.log('PLACING');
     return await firstBot.placeBlueprint(
-        data.blueprintString,
+        data.blueprint.blueprint,
         data.position,
         data.direction,
         false,
@@ -38,16 +44,15 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
 registerTaskRunner(TASK_TYPE, executeThisTask)
 
-export async function createBuildBlueprint(store: Store<State>, blueprintLabel: string, blueprintString: string,
-                                           position: Position,
-                                           direction: Direction,
-                                           immediate: boolean): Promise<Task> {
+export async function createBuildBlueprintTask(store: Store<State>, blueprint: FactorioBlueprintInfo,
+                                               position: Position,
+                                               direction: Direction,
+                                               immediate: boolean): Promise<Task> {
     const data: TaskData = {
-        blueprintLabel,
-        blueprintString,
+        blueprint,
         position,
         direction,
         immediate,
     }
-    return createTask(TASK_TYPE, `Build Blueprint Lab '${blueprintLabel}' @ ${positionLabel(position)} (${direction})`, data)
+    return createTask(TASK_TYPE, `Build Blueprint '${blueprint.label}' @ ${positionLabel(position)} (${direction})`, data)
 }

@@ -1,13 +1,11 @@
 import {FactorioBot} from "@/factorio-bot/bot";
 import {Store} from "vuex";
 import {State} from "@/store";
-import {createTask, executeTask, registerTaskRunner, Task, TaskStatus, updateTaskStatus} from "@/factorio-bot/task";
-import {countEntitiesFromBlueprint} from "@/factorio-bot/util";
+import {createTask, executeTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {Direction, FactorioEntity} from "@/factorio-bot/types";
-import {createCraftTask} from "@/factorio-bot/tasks/craft-task";
 import {FactorioApi} from "@/factorio-bot/restApi";
-import {blueprintTileableStarterScience, blueprintTileableStarterSteamEngineBoiler} from "@/factorio-bot/blueprints";
-import {createBuildBlueprint} from "@/factorio-bot/tasks/build-blueprint-task";
+import {blueprintTileableStarterScience} from "@/factorio-bot/blueprints";
+import {createBuildBlueprintTask} from "@/factorio-bot/tasks/build-blueprint-task";
 
 const TASK_TYPE = 'build-starter-lab'
 
@@ -24,9 +22,11 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     }
     const offset = (store.state.world.starterScienceBlueprints || []).length
     const subtasks: Task[] = []
+    const blueprint = await FactorioApi.parseBlueprint(blueprintTileableStarterScience, 'Starter Science Lab');
+
     for (let scienceIndex = 0; scienceIndex < data.labCount; scienceIndex++) {
-        const subtask = await createBuildBlueprint(store, 'Starter Science Lab', blueprintTileableStarterScience, {
-                x: offshorePumpPosition.x + 2 + (scienceIndex + offset) * 6,
+        const subtask = await createBuildBlueprintTask(store, blueprint, {
+                x: offshorePumpPosition.x + 2 + (scienceIndex + offset) * blueprint.width,
                 y: offshorePumpPosition.y - 18,
             },
             Direction.north, data.ignoreBlueprintEntities)
