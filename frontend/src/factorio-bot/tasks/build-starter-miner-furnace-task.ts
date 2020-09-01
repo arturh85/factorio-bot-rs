@@ -61,12 +61,18 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     // each bot should place what it is responsible for
     for(const bot of bots) {
         const playerId = bot.playerId.toString()
-        const botMinerSmelter = Math.min(toPlace, Math.ceil(data.minerSmelterCount / bots.length))
+        const botMinerSmelter = Math.min(
+            toPlace,
+            Math.ceil(data.minerSmelterCount / bots.length)
+        )
         for(let i=0; i<botMinerSmelter; i++) {
             const x = data.minerSmelterCount - toPlace
             const minerPosition = {x: anchor.x + x * 2, y: anchor.y};
             const furnacePosition = {x: minerPosition.x, y: minerPosition.y + 2};
-            const subtask = await createPlaceStarterMinerFurnaceTask(store, minerName, furnaceName, minerPosition, furnacePosition, data.plateName, data.oreName)
+            const subtask = await createPlaceStarterMinerFurnaceTask(
+                store, minerName, furnaceName, minerPosition,
+                furnacePosition, data.plateName, data.oreName
+            )
             store.commit('addSubTask', {id: task.id, task: subtask})
             queue[playerId].push(subtask)
             toPlace -= 1
@@ -78,7 +84,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
 registerTaskRunner(TASK_TYPE, executeThisTask)
 
-export async function createBuildStarterMinerFurnaceTask(store: Store<State>, oreName: string, plateName: string, minerSmelterCount: number): Promise<Task> {
+export async function createBuildStarterMinerFurnaceTask(
+    store: Store<State>, oreName: string,
+    plateName: string, minerSmelterCount: number
+): Promise<Task> {
     const data: TaskData = {
         minerSmelterCount,
         oreName,

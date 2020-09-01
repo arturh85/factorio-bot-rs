@@ -127,6 +127,13 @@ export class FactorioApi {
         return await response.json();
     }
 
+    static async findOffshorePumpPlacementOptions(searchCenter: Position, pumpDirection: Direction): Promise<Position[]> {
+        const response = await fetch(
+            `${baseUrl}/api/findOffshorePumpPlacementOptions?searchCenter=${positionParam(searchCenter)}&pumpDirection=${pumpDirection}`
+        );
+        return await response.json();
+    }
+
     static async saveServer(): Promise<void> {
         const response = await fetch(`${baseUrl}/api/serverSave`);
         await response.json();

@@ -2,7 +2,8 @@
 use actix::Actor;
 use clap::{App, Arg};
 use factorio_bot_backend::factorio::process_control::start_factorio;
-use factorio_bot_backend::factorio::rcon::FactorioRcon;
+use factorio_bot_backend::factorio::rcon::{FactorioRcon, RconSettings};
+use factorio_bot_backend::factorio::roll_best_seed::{roll_seed, RollSeedLimit};
 use factorio_bot_backend::factorio::ws::FactorioWebSocketServer;
 use factorio_bot_backend::web::server::start_webserver;
 
@@ -25,6 +26,40 @@ async fn main() -> anyhow::Result<()> {
                         .help("connect to server instead of starting a server"),
                 )
                 .about("send given rcon command"),
+        )
+        .subcommand(
+            App::new("roll-seed")
+                .arg(
+                    Arg::with_name("map")
+                        .long("map")
+                        .value_name("map")
+                        .required(true)
+                        .help("use given map exchange string"),
+                )
+                .arg(
+                    Arg::with_name("seconds")
+                        .short("s")
+                        .long("seconds")
+                        .value_name("seconds")
+                        .default_value("360")
+                        .help("limits how long to roll seeds"),
+                )
+                .arg(
+                    Arg::with_name("parallel")
+                        .short("p")
+                        .long("parallel")
+                        .value_name("parallel")
+                        .default_value("4")
+                        .help("how many rolling servers to run in parallel"),
+                )
+                .arg(
+                    Arg::with_name("rolls")
+                        .short("r")
+                        .long("rolls")
+                        .value_name("rolls")
+                        .help("how many seeds to roll"),
+                )
+                .about("roll good seed for given map-exchange-string based on heuristics"),
         )
         .subcommand(
             App::new("start")
@@ -103,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
             seed,
             Some(websocket_server.clone()),
             write_logs,
+            false,
         )
         .await
         .expect("failed to start factorio");
@@ -113,10 +149,24 @@ async fn main() -> anyhow::Result<()> {
     } else if let Some(matches) = matches.subcommand_matches("rcon") {
         let command = matches.value_of("command").unwrap();
         let server_host = matches.value_of("server");
-        let rcon = FactorioRcon::new(&settings, server_host, false)
-            .await
-            .unwrap();
+        let rcon_settings = RconSettings::new(&settings, server_host);
+        let rcon = FactorioRcon::new(&rcon_settings, false).await.unwrap();
         rcon.send(command).await.unwrap();
+    } else if let Some(matches) = matches.subcommand_matches("roll-seed") {
+        match roll_seed(
+            settings,
+            matches.value_of("map").expect("map required!").into(),
+            match matches.value_of("rolls") {
+                Some(s) => RollSeedLimit::Rolls(s.parse()?),
+                None => RollSeedLimit::Seconds(matches.value_of("seconds").unwrap().parse()?),
+            },
+            matches.value_of("parallel").unwrap().parse()?,
+        )
+        .await?
+        {
+            Some((seed, score)) => println!("Best Seed: {} with Score {}", seed, score),
+            None => eprintln!("no seed found"),
+        }
     } else {
         eprintln!("Missing required Sub Command!");
         std::process::exit(1);

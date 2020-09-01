@@ -3,9 +3,9 @@ use crate::factorio::rcon::FactorioRcon;
 use crate::factorio::util::blueprint_build_area;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
-    Direction, FactorioBlueprintInfo, FactorioEntity, FactorioEntityPrototype, FactorioForce,
-    FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile, InventoryResponse,
-    PlaceEntitiesResult, PlaceEntityResult, Position, RequestEntity,
+    AreaFilter, Direction, FactorioBlueprintInfo, FactorioEntity, FactorioEntityPrototype,
+    FactorioForce, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
+    InventoryResponse, PlaceEntitiesResult, PlaceEntityResult, Position, RequestEntity,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Json, Path as PathInfo};
@@ -59,19 +59,24 @@ pub async fn find_entities(
     rcon: web::Data<Arc<FactorioRcon>>,
     info: actix_web::web::Query<FindEntitiesQueryParams>,
 ) -> Result<Json<Vec<FactorioEntity>>, MyError> {
+    let area_filter = match &info.area {
+        Some(area) => AreaFilter::Rect(area.parse()?),
+        None => {
+            if let Some(position) = &info.position {
+                AreaFilter::PositionRadius((position.parse()?, info.radius))
+            } else {
+                return Err(MyError::from(anyhow!(
+                    "area or position + optional radius needed"
+                )));
+            }
+        }
+    };
     Ok(Json(
-        rcon.find_entities_filtered(
-            info.area.clone().map(|area| area.parse().unwrap()),
-            info.position
-                .clone()
-                .map(|position| position.parse().unwrap()),
-            info.radius,
-            info.name.clone(),
-            info.entity_type.clone(),
-        )
-        .await?,
+        rcon.find_entities_filtered(&area_filter, info.name.clone(), info.entity_type.clone())
+            .await?,
     ))
 }
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanPathQueryParams {
@@ -119,16 +124,21 @@ pub async fn find_tiles(
     rcon: web::Data<Arc<FactorioRcon>>,
     info: actix_web::web::Query<FindTilesQueryParams>,
 ) -> Result<Json<Vec<FactorioTile>>, MyError> {
+    let area_filter = match &info.area {
+        Some(area) => AreaFilter::Rect(area.parse()?),
+        None => {
+            if let Some(position) = &info.position {
+                AreaFilter::PositionRadius((position.parse()?, info.radius))
+            } else {
+                return Err(MyError::from(anyhow!(
+                    "area or position + optional radius needed"
+                )));
+            }
+        }
+    };
     Ok(Json(
-        rcon.find_tiles_filtered(
-            info.area.clone().map(|area| area.parse().unwrap()),
-            info.position
-                .clone()
-                .map(|position| position.parse().unwrap()),
-            info.radius,
-            info.name.clone(),
-        )
-        .await?,
+        rcon.find_tiles_filtered(&area_filter, info.name.clone())
+            .await?,
     ))
 }
 
@@ -653,4 +663,28 @@ pub async fn craft(
         Some(player) => Ok(Json(player.clone())),
         None => Err(MyError::from(anyhow!("player not found"))),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindOffshorePumpPlacementOptionsQueryParams {
+    search_center: String,
+    pump_direction: u8,
+}
+pub async fn find_offshore_pump_placement_options(
+    info: actix_web::web::Query<FindOffshorePumpPlacementOptionsQueryParams>,
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<Vec<Position>>, MyError> {
+    Ok(Json(
+        rcon.find_offshore_pump_placement_options(
+            &world,
+            info.search_center.parse()?,
+            Direction::from_u8(info.pump_direction).expect("invalid direction"),
+        )
+        .await?
+        .iter()
+        .map(|pos| pos.into())
+        .collect(),
+    ))
 }

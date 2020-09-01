@@ -4,7 +4,7 @@ import {State} from "@/store";
 import {createTask, executeTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {Direction, FactorioEntity} from "@/factorio-bot/types";
 import {FactorioApi} from "@/factorio-bot/restApi";
-import {blueprintTileableStarterScience} from "@/factorio-bot/blueprints";
+import {blueprintTileableStarterScience} from "@/blueprints/strings";
 import {createBuildBlueprintTask} from "@/factorio-bot/tasks/build-blueprint-task";
 
 const TASK_TYPE = 'build-starter-lab'

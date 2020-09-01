@@ -54,6 +54,15 @@
           <v-list-item v-on:click="bots.testBuildCoalLoop(2)">
             <v-list-item-title>Build Coal Loop x2</v-list-item-title>
           </v-list-item>
+          <v-list-item v-on:click="bots.testBuildFurnaceLine(Entities.ironOre, Entities.ironPlate)">
+            <v-list-item-title>Build FurnaceLine iron-plate</v-list-item-title>
+          </v-list-item>
+          <v-list-item v-on:click="bots.testBuildFurnaceLine(Entities.copperOre, Entities.copperPlate)">
+            <v-list-item-title>Build FurnaceLine copper-plate</v-list-item-title>
+          </v-list-item>
+          <v-list-item v-on:click="bots.testBuildFurnaceLine(Entities.stone, Entities.stoneBrick)">
+            <v-list-item-title>Build FurnaceLine stone-brick</v-list-item-title>
+          </v-list-item>
           <v-list-item v-on:click="bots.testBuildMinerLine(Entities.ironOre)">
             <v-list-item-title>Build MinerLine iron-ore</v-list-item-title>
           </v-list-item>

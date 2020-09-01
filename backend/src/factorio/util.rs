@@ -84,6 +84,19 @@ pub fn move_position(pos: &Position, direction: Direction, offset: f64) -> Posit
     }
 }
 
+pub fn move_pos(pos: &Pos, direction: Direction, offset: i32) -> Pos {
+    match direction {
+        Direction::North => Pos(pos.0, pos.1 - offset),
+        Direction::NorthWest => Pos(pos.0 - offset, pos.1 - offset),
+        Direction::NorthEast => Pos(pos.0 + offset, pos.1 - offset),
+        Direction::South => Pos(pos.0, pos.1 + offset),
+        Direction::SouthWest => Pos(pos.0 - offset, pos.1 + offset),
+        Direction::SouthEast => Pos(pos.0 + offset, pos.1 + offset),
+        Direction::West => Pos(pos.0 - offset, pos.1),
+        Direction::East => Pos(pos.0 + offset, pos.1),
+    }
+}
+
 pub fn read_to_value(path: &PathBuf) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)?;
     Ok(serde_json::from_str(content.as_str())?)
@@ -259,27 +272,22 @@ impl From<&Position> for Pos {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn build_entity_path(
-    entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
-    entity_name: &str,
-    entity_type: &str,
-    underground_entity_name: &str,
-    underground_entity_type: &str,
-    underground_max: u8,
-    from_position: &Position,
-    to_position: &Position,
-    to_direction: Direction,
-    block_entities: Vec<FactorioEntity>,
-    block_tiles: Vec<FactorioTile>,
-) -> anyhow::Result<Vec<FactorioEntity>> {
-    let from_position: Pos = from_position.into();
-    let to_position: Pos = to_position.into();
+impl From<&Pos> for Position {
+    fn from(pos: &Pos) -> Position {
+        Position::new(pos.0 as f64, pos.1 as f64)
+    }
+}
 
-    let mut blocked: HashMap<Pos, String> = HashMap::new();
+#[allow(clippy::ptr_arg)]
+pub fn map_blocked_tiles(
+    entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
+    block_entities: &Vec<&FactorioEntity>,
+    block_tiles: &Vec<&FactorioTile>,
+) -> HashMap<Pos, ()> {
+    let mut blocked: HashMap<Pos, ()> = HashMap::new();
     for tile in block_tiles {
         if tile.player_collidable {
-            blocked.insert((&tile.position).into(), tile.name.clone());
+            blocked.insert((&tile.position).into(), ());
         }
     }
     for entity in block_entities {
@@ -316,7 +324,7 @@ pub fn build_entity_path(
                     //     position.y(),
                     //     Pos::from(&position)
                     // );
-                    blocked.insert((&position).into(), entity.name.clone());
+                    blocked.insert((&position).into(), ());
                 }
             }
             None => {
@@ -326,23 +334,41 @@ pub fn build_entity_path(
                 //     entity.position.y(),
                 //     Pos::from(&entity.position)
                 // );
-                blocked.insert((&entity.position).into(), entity.name.clone());
+                blocked.insert((&entity.position).into(), ());
             }
         }
     }
+    blocked
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_entity_path(
+    entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
+    entity_name: &str,
+    entity_type: &str,
+    underground_entity_name: &str,
+    underground_entity_type: &str,
+    underground_max: u8,
+    from_position: &Position,
+    to_position: &Position,
+    to_direction: Direction,
+    block_entities: Vec<FactorioEntity>,
+    block_tiles: Vec<FactorioTile>,
+) -> anyhow::Result<Vec<FactorioEntity>> {
+    let from_position: Pos = from_position.into();
+    let to_position: Pos = to_position.into();
+    let blocked = map_blocked_tiles(
+        entity_prototypes,
+        &block_entities.iter().collect(),
+        &block_tiles.iter().collect(),
+    );
     if blocked.contains_key(&from_position) {
-        return Err(anyhow!(
-            "fromPosition is blocked by {}",
-            blocked.get(&from_position).unwrap()
-        ));
+        return Err(anyhow!("fromPosition is blocked",));
     }
     if blocked.contains_key(&to_position) {
-        return Err(anyhow!(
-            "toPosition is blocked by {}",
-            blocked.get(&to_position).unwrap()
-        ));
+        return Err(anyhow!("toPosition is blocked",));
     }
-    info!("start pathfinding");
+    // info!("start pathfinding");
     let mut last: Option<Pos> = None;
     let path = astar(
         &from_position,
@@ -383,7 +409,7 @@ pub fn build_entity_path(
         |p| (p.distance(&to_position) / 3) as i32,
         |p| *p == to_position,
     );
-    info!("finished pathfinding");
+    // info!("finished pathfinding");
     let mirror_direction = underground_entity_type == "pipe-to-ground";
     match path {
         Some((path, _cost)) => {

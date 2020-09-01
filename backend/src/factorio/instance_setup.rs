@@ -1,10 +1,9 @@
 use crate::factorio::output_reader::read_output;
 use crate::factorio::process_control::await_lock;
-use crate::factorio::rcon::FactorioRcon;
+use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::util::{read_to_value, write_value_to};
 use archiver_rs::{Archive, Compressed};
 use async_std::fs::create_dir;
-use config::Config;
 use indicatif::HumanDuration;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use paris::Logger;
@@ -17,16 +16,20 @@ use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::time::Instant;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn setup_factorio_instance(
-    settings: &Config,
+    workspace_path_str: &str,
+    rcon_settings: &RconSettings,
+    factorio_port: Option<u16>,
     instance_name: &str,
-    recreate: bool,
+    is_server: bool,
+    recreate_save: bool,
+    recreate_map_exchange: bool,
     map_exchange_string: Option<&str>,
     seed: Option<&str>,
+    silent: bool,
 ) -> anyhow::Result<()> {
-    let is_server = instance_name == "server";
-    let workspace_path: String = settings.get("workspace_path")?;
-    let workspace_path = Path::new(&workspace_path);
+    let workspace_path = Path::new(&workspace_path_str);
     if !workspace_path.exists() {
         error!(
             "Failed to find workspace at <bright-blue>{:?}</>",
@@ -34,6 +37,8 @@ pub async fn setup_factorio_instance(
         );
         std::process::exit(1);
     }
+    let workspace_data_path = workspace_path.join(PathBuf::from("data"));
+    let workspace_data_path = std::fs::canonicalize(workspace_data_path)?;
     let instance_path = workspace_path.join(PathBuf::from(instance_name));
     let instance_path = Path::new(&instance_path);
     if !instance_path.exists() {
@@ -66,7 +71,13 @@ pub async fn setup_factorio_instance(
                 instance_path.to_str().unwrap()
             );
             let mut archive = archiver_rs::open(&archive_path)?;
-            let files = archive.files().unwrap();
+            let mut files = archive.files().unwrap();
+            if workspace_data_path.exists() {
+                files = files
+                    .into_iter()
+                    .filter(|file| !file.contains("/data/"))
+                    .collect();
+            }
             let bar = ProgressBar::new(files.len() as u64);
             bar.set_draw_target(ProgressDrawTarget::stdout());
             bar.set_style(
@@ -95,6 +106,10 @@ pub async fn setup_factorio_instance(
                     archive.extract_single(&output_path, file).unwrap();
                 }
                 bar.inc(1);
+            }
+            if !workspace_data_path.exists() {
+                let instance_data_path = instance_path.join(PathBuf::from("data"));
+                fs::rename(&instance_data_path, &workspace_data_path)?;
             }
             bar.finish();
         } else {
@@ -149,6 +164,13 @@ pub async fn setup_factorio_instance(
             } else {
                 error!("Failed to find {:?}", &extracted_path);
             }
+
+            let instance_data_path = instance_path.join(PathBuf::from("data"));
+            if !workspace_data_path.exists() {
+                fs::rename(&instance_data_path, &workspace_data_path)?;
+            } else {
+                std::fs::remove_dir(&instance_data_path).expect("failed to delete data folder");
+            }
         }
         info!(
             "Extracting took <yellow>{}</>",
@@ -188,6 +210,21 @@ pub async fn setup_factorio_instance(
             std::os::windows::fs::symlink_dir(&data_botbridge_path, &mods_botbridge_path)?;
         }
     }
+    let instance_data_path = instance_path.join(PathBuf::from("data"));
+    if !instance_data_path.exists() {
+        info!(
+            "Creating Symlink for <bright-blue>{:?}</>",
+            &instance_data_path
+        );
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&workspace_data_path, &instance_data_path)?;
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(&workspace_data_path, &instance_data_path)?;
+        }
+    }
     // delete server/script-output/*
     // let script_output_put = instance_path.join(PathBuf::from("script-output"));
     // if script_output_put.exists() {
@@ -214,7 +251,7 @@ pub async fn setup_factorio_instance(
         }
 
         let saves_level_path = saves_path.join(PathBuf::from("level.zip"));
-        if recreate {
+        if recreate_save && recreate_map_exchange {
             if let Some(map_exchange_string) = map_exchange_string {
                 if !saves_level_path.exists() {
                     let binary = if cfg!(windows) {
@@ -248,11 +285,19 @@ pub async fn setup_factorio_instance(
                         std::process::exit(1);
                     }
                 }
-                update_map_gen_settings(settings, map_exchange_string).await?;
+                update_map_gen_settings(
+                    workspace_path_str,
+                    instance_name,
+                    factorio_port,
+                    rcon_settings,
+                    map_exchange_string,
+                    silent,
+                )
+                .await?;
             }
         }
 
-        if saves_level_path.exists() && recreate {
+        if saves_level_path.exists() && recreate_save {
             std::fs::remove_file(&saves_level_path).unwrap_or_else(|_| {
                 panic!("failed to delete {}", &saves_level_path.to_str().unwrap())
             });
@@ -283,11 +328,13 @@ pub async fn setup_factorio_instance(
                 args.push("--map-settings");
                 args.push("workspace/server/map-settings.json");
             }
-            await_lock(instance_path.join(PathBuf::from(".lock")));
-            logger.loading(format!(
-                "Creating Level at <bright-blue>{:?}</>...",
-                &saves_level_path
-            ));
+            await_lock(instance_path.join(PathBuf::from(".lock")), silent);
+            if !silent {
+                logger.loading(format!(
+                    "Creating Level at <bright-blue>{:?}</>...",
+                    &saves_level_path
+                ));
+            }
 
             let output = Command::new(&factorio_binary_path)
                 .args(args)
@@ -302,10 +349,12 @@ pub async fn setup_factorio_instance(
                 );
                 std::process::exit(1);
             }
-            logger.success(format!(
-                "Created Level at <bright-blue>{:?}</>",
-                &saves_level_path
-            ));
+            if !silent {
+                logger.success(format!(
+                    "Created Level at <bright-blue>{:?}</>",
+                    &saves_level_path
+                ));
+            }
         }
     } else {
         let player_data_path = instance_path.join(PathBuf::from("player-data.json"));
@@ -334,11 +383,13 @@ pub async fn setup_factorio_instance(
 }
 
 pub async fn update_map_gen_settings(
-    settings: &Config,
+    workspace_path: &str,
+    instance_name: &str,
+    factorio_port: Option<u16>,
+    rcon_settings: &RconSettings,
     map_exchange_string: &str,
+    silent: bool,
 ) -> anyhow::Result<()> {
-    let instance_name = "server";
-    let workspace_path: String = settings.get("workspace_path")?;
     let workspace_path = Path::new(&workspace_path);
     if !workspace_path.exists() {
         error!(
@@ -383,21 +434,22 @@ pub async fn update_map_gen_settings(
         );
         std::process::exit(1);
     }
-    let rcon_port: String = settings.get("rcon_port")?;
-    let rcon_pass: String = settings.get("rcon_pass")?;
-
-    await_lock(instance_path.join(PathBuf::from(".lock")));
+    await_lock(instance_path.join(PathBuf::from(".lock")), silent);
     let mut logger = Logger::new();
-    logger.loading(
-        "Updating <bright-blue>map-settings.json</> and <bright-blue>map-gen-settings.json</>",
-    );
+    if !silent {
+        logger.loading(
+            "Updating <bright-blue>map-settings.json</> and <bright-blue>map-gen-settings.json</>",
+        );
+    }
     let args = &[
         "--start-server",
         saves_level_path.to_str().unwrap(),
+        "--port",
+        &factorio_port.unwrap_or(34197).to_string(),
         "--rcon-port",
-        &rcon_port,
+        &rcon_settings.port.to_string(),
         "--rcon-password",
-        &rcon_pass,
+        &rcon_settings.pass,
         "--server-settings",
         &server_settings_path.to_str().unwrap(),
     ];
@@ -414,7 +466,7 @@ pub async fn update_map_gen_settings(
     let reader = BufReader::new(stdout);
     let log_path = workspace_path.join(PathBuf::from_str(&"server-log.txt").unwrap());
     read_output(reader, log_path, None, false, true).await?;
-    let rcon = FactorioRcon::new(&settings, None, true).await?;
+    let rcon = FactorioRcon::new(&rcon_settings, true).await?;
     let map_gen_settings_filename = "map-gen-settings.json";
     let map_settings_filename = "map-settings.json";
     rcon.silent_print("").await?;
@@ -434,8 +486,10 @@ pub async fn update_map_gen_settings(
     fs::remove_file(&source_map_gen_settings_path)
         .unwrap_or_else(|_| panic!("failed to delete {:?}", &source_map_gen_settings_path));
 
-    logger.success(
-        "Updated <bright-blue>map-settings.json</> and <bright-blue>map-gen-settings.json</>",
-    );
+    if !silent {
+        logger.success(
+            "Updated <bright-blue>map-settings.json</> and <bright-blue>map-gen-settings.json</>",
+        );
+    }
     Ok(())
 }

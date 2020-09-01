@@ -7,7 +7,7 @@ import {createBuildBlueprintTask} from "@/factorio-bot/tasks/build-blueprint-tas
 import {blueprintMinerLine, blueprintTileableStarterSteamEngineBoiler} from "@/blueprints/strings";
 import {FactorioApi} from "@/factorio-bot/restApi";
 
-const TASK_TYPE = 'build-miner-line'
+const TASK_TYPE = 'build-early-mall'
 
 type TaskData = {
     oreName: string,
@@ -30,9 +30,9 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
 registerTaskRunner(TASK_TYPE, executeThisTask)
 
-export async function createBuildMinerLineTask(store: Store<State>, oreName: string): Promise<Task> {
+export async function createBuildEarlyMallTask(store: Store<State>, oreName: string): Promise<Task> {
     const data: TaskData = {
         oreName,
     }
-    return createTask(TASK_TYPE, `Build Miner Line for ${oreName}`, data)
+    return createTask(TASK_TYPE, `Build Early Mall for ${oreName}`, data)
 }

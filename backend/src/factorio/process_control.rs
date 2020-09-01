@@ -1,7 +1,7 @@
 use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::output_reader::read_output;
-use crate::factorio::rcon::FactorioRcon;
+use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::ws::FactorioWebSocketServer;
 use actix::clock::Duration;
 use actix::Addr;
@@ -11,7 +11,7 @@ use paris::Logger;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
@@ -28,36 +28,81 @@ pub async fn start_factorio(
     seed: Option<&str>,
     websocket_server: Option<Addr<FactorioWebSocketServer>>,
     write_logs: bool,
+    silent: bool,
 ) -> anyhow::Result<(Option<Arc<FactorioWorld>>, FactorioRcon)> {
     let mut world: Option<Arc<FactorioWorld>> = None;
+
+    let workspace_path: String = settings.get("workspace_path")?;
     if server_host.is_none() {
-        setup_factorio_instance(&settings, "server", recreate, map_exchange_string, seed).await?;
+        let rcon_settings = RconSettings::new(&settings, server_host);
+        setup_factorio_instance(
+            &workspace_path,
+            &rcon_settings,
+            None,
+            "server",
+            true,
+            recreate,
+            recreate,
+            map_exchange_string,
+            seed,
+            silent,
+        )
+        .await?;
         let started = Instant::now();
-        world = Some(start_factorio_server(&settings, websocket_server, write_logs).await?);
-        let rcon = FactorioRcon::new(&settings, server_host, false).await?;
-        success!(
-            "Started <bright-blue>server</> in <yellow>{:?}</>",
-            started.elapsed()
-        );
+        let (_world, child) = start_factorio_server(
+            &workspace_path,
+            &rcon_settings,
+            None,
+            "server",
+            websocket_server,
+            write_logs,
+            silent,
+        )
+        .await?;
+        world = Some(_world);
+        report_child_death(child);
+        let rcon = FactorioRcon::new(&rcon_settings, silent).await?;
+        if !silent {
+            success!(
+                "Started <bright-blue>server</> in <yellow>{:?}</>",
+                started.elapsed()
+            );
+        }
         rcon.silent_print("").await?;
         rcon.whoami("server").await?;
     }
     let settings = settings.clone();
     // tokio::spawn(async move {
-    let rcon = FactorioRcon::new(&settings, server_host, false)
-        .await
-        .unwrap();
+    let rcon_settings = RconSettings::new(&settings, server_host);
+    let rcon = FactorioRcon::new(&rcon_settings, false).await.unwrap();
     for instance_number in 0..client_count {
         let instance_name = format!("client{}", instance_number + 1);
-        if let Err(err) =
-            setup_factorio_instance(&settings, &instance_name, false, None, None).await
+        if let Err(err) = setup_factorio_instance(
+            &workspace_path,
+            &rcon_settings,
+            None,
+            &instance_name,
+            false,
+            false,
+            false,
+            None,
+            None,
+            silent,
+        )
+        .await
         {
             error!("Failed to setup Factorio <red>{}</>: ", err);
             break;
         }
         let started = Instant::now();
-        if let Err(err) =
-            start_factorio_client(&settings, instance_name.clone(), server_host, write_logs).await
+        if let Err(err) = start_factorio_client(
+            &settings,
+            instance_name.clone(),
+            server_host,
+            write_logs,
+            silent,
+        )
+        .await
         {
             error!("Failed to start Factorio <red>{}</>", err);
             break;
@@ -76,21 +121,29 @@ pub async fn start_factorio(
     Ok((world, rcon))
 }
 
-pub fn await_lock(lock_path: PathBuf) {
+pub fn await_lock(lock_path: PathBuf, silent: bool) {
     if lock_path.exists() {
         match std::fs::remove_file(&lock_path) {
             Ok(_) => {}
             Err(_) => {
                 let mut logger = Logger::new();
-                logger.loading("Waiting for .lock to disappear");
-                for _ in 0..10 {
-                    sleep(Duration::from_millis(500));
-                    if !lock_path.exists() {
+                if !silent {
+                    logger.loading("Waiting for .lock to disappear");
+                }
+                let started = Instant::now();
+                for _ in 0..1000 {
+                    sleep(Duration::from_millis(1));
+                    if std::fs::remove_file(&lock_path).is_ok() {
                         break;
                     }
                 }
                 if !lock_path.exists() {
-                    logger.success("Successfully awaited .lock");
+                    if !silent {
+                        logger.success(format!(
+                            "Successfully awaited .lock in <yellow>{:?}</>",
+                            started.elapsed()
+                        ));
+                    }
                 } else {
                     logger.done();
                     error!("Factorio instance already running!");
@@ -102,12 +155,14 @@ pub fn await_lock(lock_path: PathBuf) {
 }
 
 pub async fn start_factorio_server(
-    settings: &Config,
+    workspace_path: &str,
+    rcon_settings: &RconSettings,
+    factorio_port: Option<u16>,
+    instance_name: &str,
     websocket_server: Option<Addr<FactorioWebSocketServer>>,
     write_logs: bool,
-) -> anyhow::Result<Arc<FactorioWorld>> {
-    let instance_name = "server";
-    let workspace_path: String = settings.get("workspace_path")?;
+    silent: bool,
+) -> anyhow::Result<(Arc<FactorioWorld>, Child)> {
     let workspace_path = Path::new(&workspace_path);
     if !workspace_path.exists() {
         error!(
@@ -131,7 +186,7 @@ pub async fn start_factorio_server(
         "bin/x64/factorio"
     };
     let factorio_binary_path = instance_path.join(PathBuf::from(binary));
-    await_lock(instance_path.join(PathBuf::from(".lock")));
+    await_lock(instance_path.join(PathBuf::from(".lock")), silent);
 
     if !factorio_binary_path.exists() {
         error!(
@@ -161,22 +216,24 @@ pub async fn start_factorio_server(
         );
         std::process::exit(1);
     }
-    let rcon_port: String = settings.get("rcon_port")?;
-    let rcon_pass: String = settings.get("rcon_pass")?;
     let args = &[
         "--start-server",
         saves_level_path.to_str().unwrap(),
+        "--port",
+        &factorio_port.unwrap_or(34197).to_string(),
         "--rcon-port",
-        &rcon_port,
+        &rcon_settings.port.to_string(),
         "--rcon-password",
-        &rcon_pass,
+        &rcon_settings.pass,
         "--server-settings",
         &server_settings_path.to_str().unwrap(),
     ];
-    info!(
-        "Starting <bright-blue>server</> at {:?} with {:?}",
-        &instance_path, &args
-    );
+    if !silent {
+        info!(
+            "Starting <bright-blue>server</> at {:?} with {:?}",
+            &instance_path, &args
+        );
+    }
     let mut child = Command::new(&factorio_binary_path)
         .args(args)
         // .stdout(Stdio::from(outputs))
@@ -189,6 +246,14 @@ pub async fn start_factorio_server(
     let stdout = child.stdout.take().unwrap();
     let reader = BufReader::new(stdout);
     let log_path = workspace_path.join(PathBuf::from_str(&"server-log.txt").unwrap());
+
+    let world = read_output(reader, log_path, websocket_server, write_logs, silent).await?;
+    // await for factorio to start before returning
+
+    Ok((world, child))
+}
+
+pub fn report_child_death(mut child: Child) {
     thread::spawn(move || {
         let exit_code = child.wait().expect("failed to wait for server");
         if let Some(code) = exit_code.code() {
@@ -197,10 +262,6 @@ pub async fn start_factorio_server(
             error!("<red>server stopped</> without exit code");
         }
     });
-    let world = read_output(reader, log_path, websocket_server, write_logs, false).await?;
-    // await for factorio to start before returning
-
-    Ok(world)
 }
 
 pub async fn start_factorio_client(
@@ -208,6 +269,7 @@ pub async fn start_factorio_client(
     instance_name: String,
     server_host: Option<&str>,
     write_logs: bool,
+    silent: bool,
 ) -> anyhow::Result<JoinHandle<ExitStatus>> {
     let workspace_path: String = settings.get("workspace_path")?;
     let workspace_path = Path::new(&workspace_path);
@@ -240,7 +302,7 @@ pub async fn start_factorio_client(
         );
         std::process::exit(1);
     }
-    await_lock(instance_path.join(PathBuf::from(".lock")));
+    await_lock(instance_path.join(PathBuf::from(".lock")), silent);
     let args = &[
         "--mp-connect",
         server_host.unwrap_or("localhost"),

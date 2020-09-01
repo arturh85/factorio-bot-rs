@@ -82,6 +82,11 @@ pub async fn start_webserver(
                     .route(web::get().to(crate::web::rest_api::plan_path)),
             )
             .service(
+                web::resource("/api/findOffshorePumpPlacementOptions").route(
+                    web::get().to(crate::web::rest_api::find_offshore_pump_placement_options),
+                ),
+            )
+            .service(
                 web::resource("/api/inventoryContentsAt")
                     .route(web::get().to(crate::web::rest_api::inventory_contents_at)),
             )

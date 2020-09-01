@@ -1,14 +1,14 @@
 use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::util::{
-    blueprint_build_area, build_entity_path, calculate_distance, hashmap_to_lua, move_position,
-    position_in_rect, position_to_lua, rect_to_lua, span_rect, str_to_lua, value_to_lua,
-    vec_to_lua, vector_add, vector_multiply, vector_normalize, vector_rotate_clockwise,
-    vector_substract,
+    blueprint_build_area, build_entity_path, calculate_distance, hashmap_to_lua, map_blocked_tiles,
+    move_pos, move_position, position_in_rect, position_to_lua, rect_to_lua, span_rect, str_to_lua,
+    value_to_lua, vec_to_lua, vector_add, vector_multiply, vector_normalize,
+    vector_rotate_clockwise, vector_substract, Pos,
 };
 use crate::num_traits::FromPrimitive;
 use crate::types::{
-    Direction, FactorioEntity, FactorioForce, FactorioTile, InventoryResponse, Position, Rect,
-    RequestEntity,
+    AreaFilter, Direction, FactorioEntity, FactorioForce, FactorioTile, InventoryResponse,
+    Position, Rect, RequestEntity,
 };
 use async_std::sync::Mutex;
 use config::Config;
@@ -65,16 +65,32 @@ impl bb8::ManageConnection for ConnectionManager {
     }
 }
 
-impl FactorioRcon {
-    pub async fn new(
-        settings: &Config,
-        server_host: Option<&str>,
-        silent: bool,
-    ) -> anyhow::Result<Self> {
-        let rcon_port: String = settings.get("rcon_port").unwrap();
+pub struct RconSettings {
+    pub port: u16,
+    pub pass: String,
+    pub host: Option<String>,
+}
+
+impl RconSettings {
+    pub fn new(settings: &Config, server_host: Option<&str>) -> RconSettings {
+        let rcon_port: u16 = settings.get("rcon_port").unwrap();
         let rcon_pass: String = settings.get("rcon_pass").unwrap();
-        let address = format!("{}:{}", server_host.unwrap_or("127.0.0.1"), rcon_port);
-        let manager = ConnectionManager::new(&address, &rcon_pass);
+        RconSettings {
+            port: rcon_port,
+            pass: rcon_pass,
+            host: server_host.map(|s| s.into()),
+        }
+    }
+}
+
+impl FactorioRcon {
+    pub async fn new(settings: &RconSettings, silent: bool) -> anyhow::Result<Self> {
+        let address = format!(
+            "{}:{}",
+            settings.host.clone().unwrap_or_else(|| "127.0.0.1".into()),
+            settings.port
+        );
+        let manager = ConnectionManager::new(&address, &settings.pass);
         Ok(FactorioRcon {
             pool: bb8::Pool::builder().max_size(15).build(manager).await?,
             silent,
@@ -226,7 +242,7 @@ impl FactorioRcon {
             right_bottom: Position::new(position.x() + width_2, position.y() + height_2),
         };
         let build_area_entities = self
-            .find_entities_filtered(Some(build_area.clone()), None, None, None, None)
+            .find_entities_filtered(&AreaFilter::Rect(build_area.clone()), None, None)
             .await?;
 
         for entity in build_area_entities {
@@ -584,7 +600,10 @@ impl FactorioRcon {
                             5.0,
                         );
                         if self
-                            .is_empty(None, Some(test_position.clone()), Some(2.0))
+                            .is_area_empty(&AreaFilter::PositionRadius((
+                                test_position.clone(),
+                                Some(2.0),
+                            )))
                             .await?
                         {
                             self.move_player(world, player_id, &test_position, Some(1.0))
@@ -724,21 +743,12 @@ impl FactorioRcon {
         Ok(())
     }
 
-    pub async fn is_empty(
-        &self,
-        area: Option<Rect>,
-        position: Option<Position>,
-        radius: Option<f64>,
-    ) -> anyhow::Result<bool> {
-        let entities = self
-            .find_entities_filtered(area.clone(), position.clone(), radius, None, None)
-            .await?;
-        if entities.len() > 0 {
+    pub async fn is_area_empty(&self, area_filter: &AreaFilter) -> anyhow::Result<bool> {
+        let entities = self.find_entities_filtered(area_filter, None, None).await?;
+        if !entities.is_empty() {
             return Ok(false);
         }
-        let tiles = self
-            .find_tiles_filtered(area, position, radius, None)
-            .await?;
+        let tiles = self.find_tiles_filtered(area_filter, None).await?;
         for tile in tiles {
             if tile.player_collidable {
                 return Ok(false);
@@ -764,29 +774,27 @@ impl FactorioRcon {
        limit :: uint (optional)
        invert :: boolean (optional): If the filters should be inverted. These filters are: name, type, ghost_name, ghost_type, direction, collision_mask, force.
     */
+
     pub async fn find_entities_filtered(
         &self,
-        area: Option<Rect>,
-        position: Option<Position>,
-        radius: Option<f64>,
+        area_filter: &AreaFilter,
         name: Option<String>,
         entity_type: Option<String>,
     ) -> anyhow::Result<Vec<FactorioEntity>> {
-        if area.is_none() && (position.is_none() || radius.is_none()) {
-            return Err(anyhow!("area or position+radius needed"));
-        }
         let mut args: HashMap<String, String> = HashMap::new();
-        if let Some(area) = area {
-            args.insert(String::from("area"), rect_to_lua(&area));
-        }
-        if let Some(position) = position {
-            args.insert(String::from("position"), position_to_lua(&position));
-        }
-        if let Some(radius) = radius {
-            if radius > 1000.0 {
-                return Err(anyhow!("max radius: 1000"));
+        match area_filter {
+            AreaFilter::Rect(area) => {
+                args.insert(String::from("area"), rect_to_lua(area));
             }
-            args.insert(String::from("radius"), radius.to_string());
+            AreaFilter::PositionRadius((position, radius)) => {
+                args.insert(String::from("position"), position_to_lua(&position));
+                if let Some(radius) = radius {
+                    if radius > &3000.0 {
+                        return Err(anyhow!("max radius: 3000"));
+                    }
+                    args.insert(String::from("radius"), radius.to_string());
+                }
+            }
         }
         if let Some(name) = name {
             args.insert(String::from("name"), str_to_lua(&name));
@@ -794,7 +802,6 @@ impl FactorioRcon {
         if let Some(entity_type) = entity_type {
             args.insert(String::from("type"), str_to_lua(&entity_type));
         }
-
         let result = self
             .remote_call(
                 "find_entities_filtered",
@@ -830,26 +837,23 @@ impl FactorioRcon {
     }
     pub async fn find_tiles_filtered(
         &self,
-        area: Option<Rect>,
-        position: Option<Position>,
-        radius: Option<f64>,
+        area_filter: &AreaFilter,
         name: Option<String>,
     ) -> anyhow::Result<Vec<FactorioTile>> {
-        if area.is_none() && (position.is_none() || radius.is_none()) {
-            return Err(anyhow!("area or position+radius needed"));
-        }
         let mut args: HashMap<String, String> = HashMap::new();
-        if let Some(area) = area {
-            args.insert(String::from("area"), rect_to_lua(&area));
-        }
-        if let Some(position) = position {
-            args.insert(String::from("position"), position_to_lua(&position));
-        }
-        if let Some(radius) = radius {
-            if radius > 1000.0 {
-                return Err(anyhow!("max radius: 1000"));
+        match area_filter {
+            AreaFilter::Rect(area) => {
+                args.insert(String::from("area"), rect_to_lua(&area));
             }
-            args.insert(String::from("radius"), radius.to_string());
+            AreaFilter::PositionRadius((position, radius)) => {
+                args.insert(String::from("position"), position_to_lua(&position));
+                if let Some(radius) = radius {
+                    if radius > &3000.0 {
+                        return Err(anyhow!("max radius: 3000"));
+                    }
+                    args.insert(String::from("radius"), radius.to_string());
+                }
+            }
         }
         if let Some(name) = name {
             args.insert(String::from("name"), str_to_lua(&name));
@@ -882,6 +886,32 @@ impl FactorioRcon {
             .remote_call(
                 "async_request_player_path",
                 vec![&player_id.to_string(), &position_to_lua(&goal), &radius],
+            )
+            .await?;
+        if result.is_none() {
+            return Err(anyhow!("Expected result from request_path"));
+        }
+        let result = result.unwrap().pop().unwrap();
+        match result.parse() {
+            Ok(result) => Ok(result),
+            Err(_) => Err(anyhow!("{}", result)),
+        }
+    }
+
+    async fn async_request_path(
+        &self,
+        start: &Position,
+        goal: &Position,
+        radius: Option<f64>,
+    ) -> anyhow::Result<u32> {
+        let radius = match radius {
+            Some(radius) => radius.to_string(),
+            None => String::from("nil"),
+        };
+        let result = self
+            .remote_call(
+                "async_request_path",
+                vec![&position_to_lua(&start), &position_to_lua(&goal), &radius],
             )
             .await?;
         if result.is_none() {
@@ -942,6 +972,49 @@ impl FactorioRcon {
                     let id = self
                         .async_request_player_path(player_id, &new_goal, radius)
                         .await?;
+                    if let Ok(result) = self
+                        .sleep_for_path_request_result(&world.path_requests, id)
+                        .await
+                    {
+                        return Ok(result);
+                    }
+                    direction = vector_rotate_clockwise(&direction);
+                }
+                Err(err)
+            }
+        }
+    }
+
+    pub async fn path(
+        &self,
+        world: &Arc<FactorioWorld>,
+        start: &Position,
+        goal: &Position,
+        radius: Option<f64>,
+    ) -> anyhow::Result<Vec<Position>> {
+        let id = self.async_request_path(start, goal, radius).await?;
+        match self
+            .sleep_for_path_request_result(&world.path_requests, id)
+            .await
+        {
+            Ok(path) => Ok(path),
+            Err(err) => {
+                warn!(
+                    "failed to find path() from {}/{} to {}/{}: {}",
+                    start.x(),
+                    start.y(),
+                    goal.x(),
+                    goal.y(),
+                    err.to_string()
+                );
+                let mut direction = vector_normalize(&vector_substract(&start, &goal));
+                for _ in 0..4 {
+                    // direction = goal - player.position
+                    // newGoal = goal + direciton.normalize() * radius
+                    let new_goal =
+                        vector_add(&goal, &vector_multiply(&direction, radius.unwrap_or(10.0)));
+
+                    let id = self.async_request_path(&start, &new_goal, radius).await?;
                     if let Ok(result) = self
                         .sleep_for_path_request_result(&world.path_requests, id)
                         .await
@@ -1024,10 +1097,10 @@ impl FactorioRcon {
     ) -> anyhow::Result<Vec<FactorioEntity>> {
         let build_rect = span_rect(from_position, to_position, 20.0);
         let entities = self
-            .find_entities_filtered(Some(build_rect.clone()), None, None, None, None)
+            .find_entities_filtered(&AreaFilter::Rect(build_rect.clone()), None, None)
             .await?;
         let tiles = self
-            .find_tiles_filtered(Some(build_rect), None, None, Some("water".into()))
+            .find_tiles_filtered(&AreaFilter::Rect(build_rect), Some("water".into()))
             .await?;
 
         build_entity_path(
@@ -1069,5 +1142,52 @@ impl FactorioRcon {
             return Err(anyhow!("{:?}", result.unwrap()));
         }
         Ok(())
+    }
+
+    pub async fn find_offshore_pump_placement_options(
+        &self,
+        world: &Arc<FactorioWorld>,
+        search_center: Position,
+        pump_direction: Direction,
+    ) -> anyhow::Result<Vec<Pos>> {
+        for radius in 3..10 {
+            let tiles = self
+                .find_tiles_filtered(
+                    &AreaFilter::PositionRadius((
+                        search_center.clone(),
+                        Some((radius * 100) as f64),
+                    )),
+                    Some("water".into()),
+                )
+                .await?;
+            if tiles.is_empty() {
+                continue;
+            }
+
+            let mapped =
+                map_blocked_tiles(&world.entity_prototypes, &vec![], &tiles.iter().collect());
+            return Ok(tiles
+                .iter()
+                .filter(|tile| {
+                    let pos = (&tile.position).into();
+                    if !mapped.contains_key(&move_pos(&pos, pump_direction, 1)) {
+                        return false;
+                    }
+                    if mapped.contains_key(&move_pos(&pos, pump_direction.clockwise(), 1)) {
+                        return false;
+                    }
+                    if mapped.contains_key(&move_pos(
+                        &pos,
+                        pump_direction.clockwise().opposite(),
+                        1,
+                    )) {
+                        return false;
+                    }
+                    true
+                })
+                .map(|tile| (&tile.position).into())
+                .collect());
+        }
+        Err(anyhow!("could not find water"))
     }
 }

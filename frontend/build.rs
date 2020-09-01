@@ -80,10 +80,14 @@ fn npm_build() {
                 command.args(&["ci"]).current_dir(FRONTEND_PATH);
                 run_command(command);
             }
+            let dist_path = format!("{}dist/", &FRONTEND_PATH);
+            let dist_path = Path::new(&dist_path);
             // npm run build
-            let mut command = Command::new(npm_binary_path);
-            command.args(&["run", "build"]).current_dir(FRONTEND_PATH);
-            run_command(command);
+            if !dist_path.exists() {
+                let mut command = Command::new(npm_binary_path);
+                command.args(&["run", "build"]).current_dir(FRONTEND_PATH);
+                run_command(command);
+            }
         }
         Err(err) => {
             eprintln!("npm binary not found!");

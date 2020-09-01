@@ -106,6 +106,12 @@ pub enum Direction {
     NorthWest = 7,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum AreaFilter {
+    Rect(Rect),
+    PositionRadius((Position, Option<f64>)),
+}
+
 impl Direction {
     pub fn all() -> Vec<Direction> {
         (0..8).map(|n| Direction::from_u8(n).unwrap()).collect()
@@ -118,6 +124,9 @@ impl Direction {
     }
     pub fn opposite(&self) -> Direction {
         Direction::from_u8((Direction::to_u8(self).unwrap() + 4) % 8).unwrap()
+    }
+    pub fn clockwise(&self) -> Direction {
+        Direction::from_u8((Direction::to_u8(self).unwrap() + 2) % 8).unwrap()
     }
 }
 

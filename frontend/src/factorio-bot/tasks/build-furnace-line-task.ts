@@ -4,19 +4,24 @@ import {State} from "@/store";
 import {createTask, executeTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {Direction, FactorioEntity} from "@/factorio-bot/types";
 import {createBuildBlueprintTask} from "@/factorio-bot/tasks/build-blueprint-task";
-import {blueprintMinerLine, blueprintTileableStarterSteamEngineBoiler} from "@/blueprints/strings";
+import {
+    blueprintFurnaceLine,
+    blueprintMinerLine,
+    blueprintTileableStarterSteamEngineBoiler
+} from "@/blueprints/strings";
 import {FactorioApi} from "@/factorio-bot/restApi";
 
-const TASK_TYPE = 'build-miner-line'
+const TASK_TYPE = 'build-furnace-line'
 
 type TaskData = {
     oreName: string,
+    plateName: string,
 }
 
 async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: Task): Promise<FactorioEntity[]> {
     const data: TaskData = task.data as TaskData
     const firstBot = bots[0]
-    const blueprint = await FactorioApi.parseBlueprint(blueprintMinerLine, 'Miner Line')
+    const blueprint = await FactorioApi.parseBlueprint(blueprintFurnaceLine, 'Furnace Line')
     const topLeft = await firstBot.findNearestRect({x: 0, y: 0}, data.oreName, blueprint.width, blueprint.height, []);
     if(!topLeft) {
         throw new Error("failed to find ore patch big enough")
@@ -30,9 +35,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
 
 registerTaskRunner(TASK_TYPE, executeThisTask)
 
-export async function createBuildMinerLineTask(store: Store<State>, oreName: string): Promise<Task> {
+export async function createBuildFurnaceLineTask(store: Store<State>, oreName: string, plateName: string): Promise<Task> {
     const data: TaskData = {
         oreName,
+        plateName,
     }
-    return createTask(TASK_TYPE, `Build Miner Line for ${oreName}`, data)
+    return createTask(TASK_TYPE, `Build Furnace Line for ${oreName} -> ${plateName}`, data)
 }

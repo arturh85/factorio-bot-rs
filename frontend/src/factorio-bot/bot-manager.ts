@@ -16,6 +16,7 @@ import {createBuildStarterBase} from "@/factorio-bot/tasks/build-starter-base-ta
 import {createBuildStarterMinerChestTask} from "@/factorio-bot/tasks/build-starter-miner-chest-task";
 import {createStartRocketTask} from "@/factorio-bot/tasks/start-rocket-task";
 import {createBuildMinerLineTask} from "@/factorio-bot/tasks/build-miner-line-task";
+import {createBuildFurnaceLineTask} from "@/factorio-bot/tasks/build-furnace-line-task";
 
 const STORAGE_KEY = "world";
 
@@ -139,6 +140,12 @@ export class FactorioBotManager {
 
     async testBuildMinerLine(oreName: string): Promise<void> {
         const task = await createBuildMinerLineTask(this.$store, oreName)
+        this.$store.commit('pushTask', task)
+        await this.processTasks();
+    }
+
+    async testBuildFurnaceLine(oreName: string, plateName: string): Promise<void> {
+        const task = await createBuildFurnaceLineTask(this.$store, oreName, plateName)
         this.$store.commit('pushTask', task)
         await this.processTasks();
     }

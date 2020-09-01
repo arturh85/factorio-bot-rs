@@ -1652,23 +1652,16 @@ end
 function rcon_parse_map_exchange_string(name, map_exchange_str)
 	game.write_file(name, game.table_to_json(game.parse_map_exchange_string(map_exchange_str)))
 end
-function rcon_async_request_player_path(player_id, goal, radius)
-	local player = get_player(player_id)
-	if player == nil then
-		return
-	end
-	local handle = player.surface.request_path({
-		bounding_box = player.character.prototype.collision_box,
-		collision_mask = player.character.prototype.collision_mask,
-		start = player.position,
+function rcon_async_request_path(start, goal, radius)
+	local handle = game.surfaces[1].request_path({
+		start = start,
 		goal = goal,
-		force = player.force,
+		force = game.forces[1],
 		radius = radius,
 		pathfind_flags = {
 			allow_destroy_friendly_entities = false,
 			prefer_straight_paths = true,
-		},
-		entity_to_ignore = player.character,
+		}
 	})
 	rcon.print(handle)
 end

@@ -3,7 +3,7 @@ import {Store} from "vuex";
 import {State} from "@/store";
 import {createTask, executeTask, registerTaskRunner, Task} from "@/factorio-bot/task";
 import {Direction, FactorioEntity} from "@/factorio-bot/types";
-import {blueprintTileableStarterSteamEngineBoiler} from "@/factorio-bot/blueprints";
+import {blueprintTileableStarterSteamEngineBoiler} from "@/blueprints/strings";
 import {createBuildBlueprintTask} from "@/factorio-bot/tasks/build-blueprint-task";
 import {FactorioApi} from "@/factorio-bot/restApi";
 
