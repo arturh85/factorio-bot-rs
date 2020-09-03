@@ -438,9 +438,9 @@ pub async fn store_map_data(
 // #[get("/retrieveMapData?<key>")]
 pub async fn retrieve_map_data(
     rcon: web::Data<Arc<FactorioRcon>>,
-    key: String,
+    info: actix_web::web::Query<StoreMapDataQueryParams>,
 ) -> Result<Json<Value>, MyError> {
-    let res = rcon.retrieve_map_data(&key).await?;
+    let res = rcon.retrieve_map_data(&info.key).await?;
     match res {
         Some(result) => Ok(Json(result)),
         None => Ok(Json(json!(null))),

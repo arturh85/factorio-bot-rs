@@ -27,12 +27,10 @@ async function executeThisTask(store: Store<State>, bots: FactorioBot[], task: T
     if (!data.immediate) {
         const container = data.blueprint.data as FactorioBlueprintResult
         const entities = countEntitiesFromBlueprint(container.blueprint)
-        console.log('entities', entities)
         // each bot should first craft what it needs
         const queue = await buildBotQueueToCraft(store, task, bots, entities)
         await processBotQueue(store, queue, bots)
     }
-    console.log('PLACING');
     return await firstBot.placeBlueprint(
         data.blueprint.blueprint,
         data.position,

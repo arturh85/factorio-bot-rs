@@ -1163,20 +1163,19 @@ impl FactorioRcon {
             if tiles.is_empty() {
                 continue;
             }
-
             let mapped =
                 map_blocked_tiles(&world.entity_prototypes, &vec![], &tiles.iter().collect());
             return Ok(tiles
                 .iter()
                 .filter(|tile| {
                     let pos = (&tile.position).into();
-                    if !mapped.contains_key(&move_pos(&pos, pump_direction, 1)) {
+                    if mapped.contains_key(&move_pos(&pos, pump_direction, 1)) {
                         return false;
                     }
-                    if mapped.contains_key(&move_pos(&pos, pump_direction.clockwise(), 1)) {
+                    if !mapped.contains_key(&move_pos(&pos, pump_direction.clockwise(), 1)) {
                         return false;
                     }
-                    if mapped.contains_key(&move_pos(
+                    if !mapped.contains_key(&move_pos(
                         &pos,
                         pump_direction.clockwise().opposite(),
                         1,

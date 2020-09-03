@@ -258,7 +258,7 @@ pub fn span_rect(a: &Position, b: &Position, margin: f64) -> Rect {
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Pos(i32, i32);
+pub struct Pos(pub i32, pub i32);
 
 impl Pos {
     fn distance(&self, other: &Pos) -> u32 {
