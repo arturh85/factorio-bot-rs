@@ -141,7 +141,7 @@ pub fn expand_rect_floor_ceil_div_2(rect: &Rect) -> Rect {
     }
 }
 
-pub fn expand_rect_floor(rect: &Rect) -> Rect {
+pub fn rect_floor(rect: &Rect) -> Rect {
     Rect {
         left_top: Position::new((rect.left_top.x()).floor(), (rect.left_top.y()).floor()),
         right_bottom: Position::new(
@@ -284,6 +284,7 @@ pub fn map_blocked_tiles(
     block_entities: &Vec<&FactorioEntity>,
     block_tiles: &Vec<&FactorioTile>,
 ) -> HashMap<Pos, ()> {
+    let silent = true;
     let mut blocked: HashMap<Pos, ()> = HashMap::new();
     for tile in block_tiles {
         if tile.player_collidable {
@@ -291,49 +292,48 @@ pub fn map_blocked_tiles(
         }
     }
     for entity in block_entities {
+        if entity.entity_type == "character" {
+            continue;
+        }
         match entity_prototypes.get_one(&entity.name) {
             Some(entity_prototype) => {
-                let mut rect = expand_rect_floor_ceil_div_2(&add_to_rect(
-                    &entity_prototype.collision_box,
-                    &entity.position,
-                ));
+                let collision_box = add_to_rect(&entity_prototype.collision_box, &entity.position);
+                let rect = rect_floor(&collision_box);
                 let w = rect.width();
-                // let h = rect.height();
-                // info!("rect {} / {}, {}", w, h, w.fract());
-                // info!(
-                //     "collision box {:?} @ {:?}",
-                //     &entity_prototype.collision_box, &entity.position
-                // );
-                if w > 1.0 {
-                    rect = pad_rect(&expand_rect_floor(&rect), 0., 0., 1., 1.);
-                } else {
-                    rect = expand_rect_floor(&rect);
+                let h = rect.height();
+                if !silent {
+                    info!(
+                        "'{}' @ {:?} rect {:?} -- w {} h {}",
+                        &entity.name, &entity.position, &rect, w, h
+                    );
+                    info!("cbox {:?}", &collision_box);
                 }
-                // info!(
-                //     "entity {} {}x{} rect: {:?}",
-                //     &entity.name,
-                //     rect.width(),
-                //     rect.height(),
-                //     &rect,
-                // );
-
+                // if w > 1.0 || h > 1.0 {
+                //     rect = pad_rect(&rect_floor(&rect), 0., 0., 1., 1.);
+                // } else {
+                //     rect = rect_floor(&rect);
+                // }
                 for position in rect_fields(&rect) {
-                    // info!(
-                    //     "rect position {} {} => {:?}",
-                    //     position.x(),
-                    //     position.y(),
-                    //     Pos::from(&position)
-                    // );
+                    if !silent {
+                        info!(
+                            "> position {} {} => {:?}",
+                            position.x(),
+                            position.y(),
+                            Pos::from(&position)
+                        );
+                    }
                     blocked.insert((&position).into(), ());
                 }
             }
             None => {
-                // info!(
-                //     "point position {} {} => {:?}",
-                //     entity.position.x(),
-                //     entity.position.y(),
-                //     Pos::from(&entity.position)
-                // );
+                if !silent {
+                    info!(
+                        "point position {} {} => {:?}",
+                        entity.position.x(),
+                        entity.position.y(),
+                        Pos::from(&entity.position)
+                    );
+                }
                 blocked.insert((&entity.position).into(), ());
             }
         }
@@ -369,45 +369,45 @@ pub fn build_entity_path(
         return Err(anyhow!("toPosition is blocked",));
     }
     // info!("start pathfinding");
-    let mut last: Option<Pos> = None;
     let path = astar(
-        &from_position,
-        move |p| {
-            let mut options: Vec<(Pos, i32)> = vec![];
+        &(from_position.clone(), from_position.clone(), from_position),
+        move |(last_last_pos, last_pos, current_pos)| {
+            let mut options: Vec<((Pos, Pos, Pos), i32)> = vec![];
+            let current_direction = relative_direction(last_pos, current_pos);
+            let last_dist = last_pos.distance(last_last_pos);
             for direction in Direction::orthogonal() {
+                // we cannot move in the opposite direction after we have moved
+                if current_pos != last_pos && direction == current_direction.opposite() {
+                    continue;
+                }
+                // after underground we need to go straight
+                if last_dist > 1 && direction != current_direction {
+                    continue;
+                }
                 for length in 1..(underground_max + 1) {
-                    let target: Pos = (&move_position(
-                        &Position::new(p.0 as f64, p.1 as f64),
-                        direction,
-                        length as f64,
-                    ))
-                        .into();
-                    if blocked.get(&target).is_none() {
-                        options.push((target, if length == 1 { 1 } else { length as i32 * 3 }));
+                    // after underground we cannot immediately underground again
+                    if last_dist > 1 && length > 1 {
+                        break;
                     }
-                    if let Some(last) = last.as_ref() {
-                        let last_direction = relative_direction(p, last);
-                        let dist = p.distance(last);
-                        info!(
-                            "dist: {} last: {:?}, new: {:?} -- {:?}, {:?}",
-                            dist, last_direction, direction, last, p
-                        );
-                        // if dist == 1 && direction == last_direction.opposite() {
-                        //     break;
-                        // } else if dist > 1 && direction != last_direction {
-                        //     break;
-                        // }
-                        if direction != last_direction {
+                    let target: Pos = move_pos(current_pos, direction, length as i32);
+                    if blocked.get(&target).is_none() {
+                        options.push((
+                            (last_pos.clone(), current_pos.clone(), target),
+                            if length == 1 { 1 } else { length as i32 * 3 },
+                        ));
+                    }
+                    if last_pos != current_pos {
+                        // before underground we need a straight connection
+                        if last_dist < 2 && direction != current_direction {
                             break;
                         }
                     }
                 }
             }
-            last = Some(p.clone());
             options
         },
-        |p| (p.distance(&to_position) / 3) as i32,
-        |p| *p == to_position,
+        |(_, _, pos)| (pos.distance(&to_position) / 3) as i32,
+        |(_, _, pos)| *pos == to_position,
     );
     // info!("finished pathfinding");
     let mirror_direction = underground_entity_type == "pipe-to-ground";
@@ -416,29 +416,21 @@ pub fn build_entity_path(
             let mut result: Vec<FactorioEntity> = vec![];
 
             for i in 0..path.len() {
-                let pos = &path[i];
-                let next: Option<&Pos> = if i < path.len() - 1 {
-                    Some(&path[i + 1])
+                let (_, last_pos, pos) = &path[i];
+                let next: Option<&Pos> = if i + 1 < path.len() {
+                    Some(&path[i + 1].2)
                 } else {
                     None
                 };
-                let prev: Option<&Pos> = if i > 0 { Some(&path[i - 1]) } else { None };
+
                 let direction = if let Some(next) = next {
-                    if next.0 < pos.0 {
-                        Direction::West
-                    } else if next.0 > pos.0 {
-                        Direction::East
-                    } else if next.1 < pos.1 {
-                        Direction::North
-                    } else {
-                        Direction::South
-                    }
+                    relative_direction(pos, next)
                 } else {
                     to_direction
                 };
 
-                let distance = if let Some(prev) = prev {
-                    pos.distance(prev)
+                let distance = if last_pos != pos {
+                    pos.distance(last_pos)
                 } else {
                     1
                 };
@@ -494,8 +486,8 @@ pub fn position_equal(a: &Position, b: &Position) -> bool {
 
 pub fn rect_fields(rect: &Rect) -> Vec<Position> {
     let mut res = vec![];
-    for y in rect.left_top.y().floor() as i32..rect.right_bottom.y().floor() as i32 {
-        for x in rect.left_top.x().floor() as i32..rect.right_bottom.x().floor() as i32 {
+    for y in rect.left_top.y().floor() as i32..=rect.right_bottom.y().floor() as i32 {
+        for x in rect.left_top.x().floor() as i32..=rect.right_bottom.x().floor() as i32 {
             res.push(Position::new(x as f64, y as f64));
         }
     }
@@ -506,28 +498,62 @@ pub fn rect_fields(rect: &Rect) -> Vec<Position> {
 #[allow(clippy::comparison_chain)]
 pub fn relative_direction(from: &Pos, to: &Pos) -> Direction {
     if from.0 < to.0 {
-        // EAST
         if from.1 > to.1 {
-            Direction::SouthEast
-        } else if from.1 < to.1 {
             Direction::NorthEast
+        } else if from.1 < to.1 {
+            Direction::SouthEast
         } else {
             Direction::East
         }
     } else if from.0 > to.0 {
-        // WEST
         if from.1 > to.1 {
-            Direction::SouthWest
-        } else if from.1 < to.1 {
             Direction::NorthWest
+        } else if from.1 < to.1 {
+            Direction::SouthWest
         } else {
             Direction::West
         }
     } else if from.1 > to.1 {
-        Direction::South
-    } else if from.1 < to.1 {
         Direction::North
+    } else if from.1 < to.1 {
+        Direction::South
     } else {
-        panic!("positions are equal")
+        // if both positions are equal just return north
+        Direction::North
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_relative_direction() {
+        let center = Pos(0, 0);
+        let left = Pos(-1, 0);
+        let right = Pos(1, 0);
+        let top = Pos(0, -1);
+        let bottom = Pos(0, 1);
+        assert_eq!(relative_direction(&center, &right), Direction::East);
+        assert_eq!(relative_direction(&center, &left), Direction::West);
+        assert_eq!(relative_direction(&center, &top), Direction::North);
+        assert_eq!(relative_direction(&center, &bottom), Direction::South);
+        let left_top = Pos(-1, -1);
+        assert_eq!(relative_direction(&center, &left_top), Direction::NorthWest);
+        let right_top = Pos(1, -1);
+        assert_eq!(
+            relative_direction(&center, &right_top),
+            Direction::NorthEast
+        );
+        let left_bottom = Pos(-1, 1);
+        assert_eq!(
+            relative_direction(&center, &left_bottom),
+            Direction::SouthWest
+        );
+        let right_bottom = Pos(1, 1);
+        assert_eq!(
+            relative_direction(&center, &right_bottom),
+            Direction::SouthEast
+        );
     }
 }

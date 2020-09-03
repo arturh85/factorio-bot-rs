@@ -38,7 +38,6 @@ pub async fn setup_factorio_instance(
         std::process::exit(1);
     }
     let workspace_data_path = workspace_path.join(PathBuf::from("data"));
-    let workspace_data_path = std::fs::canonicalize(workspace_data_path)?;
     let instance_path = workspace_path.join(PathBuf::from(instance_name));
     let instance_path = Path::new(&instance_path);
     if !instance_path.exists() {
@@ -169,7 +168,7 @@ pub async fn setup_factorio_instance(
             if !workspace_data_path.exists() {
                 fs::rename(&instance_data_path, &workspace_data_path)?;
             } else {
-                std::fs::remove_dir(&instance_data_path).expect("failed to delete data folder");
+                std::fs::remove_dir_all(&instance_data_path).expect("failed to delete data folder");
             }
         }
         info!(
@@ -211,7 +210,8 @@ pub async fn setup_factorio_instance(
         }
     }
     let instance_data_path = instance_path.join(PathBuf::from("data"));
-    if !instance_data_path.exists() {
+    if !instance_data_path.exists() && workspace_data_path.exists() {
+        let workspace_data_path = std::fs::canonicalize(workspace_data_path)?;
         info!(
             "Creating Symlink for <bright-blue>{:?}</>",
             &instance_data_path
@@ -322,11 +322,15 @@ pub async fn setup_factorio_instance(
                 args.push("--map-gen-seed");
                 args.push(seed);
             }
+            let map_gen_settings_path =
+                format!("{}/map-gen-settings.json", instance_path.to_str().unwrap());
+            let map_settings_path =
+                format!("{}/map-settings.json", instance_path.to_str().unwrap());
             if map_exchange_string.is_some() {
                 args.push("--map-gen-settings");
-                args.push("workspace/server/map-gen-settings.json");
+                args.push(&map_gen_settings_path);
                 args.push("--map-settings");
-                args.push("workspace/server/map-settings.json");
+                args.push(&map_settings_path);
             }
             await_lock(instance_path.join(PathBuf::from(".lock")), silent);
             if !silent {

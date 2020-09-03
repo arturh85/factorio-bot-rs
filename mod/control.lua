@@ -1652,6 +1652,28 @@ end
 function rcon_parse_map_exchange_string(name, map_exchange_str)
 	game.write_file(name, game.table_to_json(game.parse_map_exchange_string(map_exchange_str)))
 end
+
+function rcon_async_request_player_path(player_id, goal, radius)
+	local player = get_player(player_id)
+	if player == nil then
+		return
+	end
+	local handle = player.surface.request_path({
+		bounding_box = player.character.prototype.collision_box,
+		collision_mask = player.character.prototype.collision_mask,
+		start = player.position,
+		goal = goal,
+		force = player.force,
+		radius = radius,
+		pathfind_flags = {
+			allow_destroy_friendly_entities = false,
+			prefer_straight_paths = true,
+		},
+		entity_to_ignore = player.character,
+	})
+	rcon.print(handle)
+end
+
 function rcon_async_request_path(start, goal, radius)
 	local handle = game.surfaces[1].request_path({
 		start = start,
@@ -1752,8 +1774,8 @@ remote.add_interface("botbridge", {
 	remove_from_inventory=rcon_remove_from_inventory,
 	parse_map_exchange_string=rcon_parse_map_exchange_string,
 	revive_ghost=rcon_revive_ghost,
-
 	async_request_player_path=rcon_async_request_player_path,
+	async_request_path=rcon_async_request_path,
 	action_start_walk_waypoints=rcon_action_start_walk_waypoints,
 	action_start_mining=rcon_action_start_mining,
 	action_start_crafting=rcon_action_start_crafting

@@ -22,14 +22,13 @@ pub async fn roll_seed(
     limit: RollSeedLimit,
     parallel: u8,
 ) -> anyhow::Result<Option<(u32, f64)>> {
-    let started = Instant::now();
     let roll: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
     let best_seed_with_score: Arc<Mutex<Option<(u32, f64)>>> = Arc::new(Mutex::new(None));
     let workspace_path: Arc<String> = Arc::new(settings.get("workspace_path")?);
     let map_exchange_string = Arc::new(map_exchange_string);
 
     let mut join_handles: Vec<JoinHandle<()>> = vec![];
-    info!("preparing instances");
+    info!("preparing instances ...");
     for p in 0..parallel {
         let instance_name = format!("roll{}", p + 1);
         let rcon_settings = RconSettings {
@@ -44,16 +43,17 @@ pub async fn roll_seed(
             Some(factorio_port),
             &instance_name,
             true,
-            false,
-            false,
-            None,
+            true,
+            true,
+            Some(&map_exchange_string),
             None,
             true,
         )
         .await
         .expect("failed to initially setup instance");
     }
-    info!("spawning instances");
+    info!("finished preparing. spawning {} instances", parallel);
+    let started = Instant::now();
     for p in 0..parallel {
         let instance_name = format!("roll{}", p + 1);
         let rcon_settings = RconSettings {
@@ -69,7 +69,6 @@ pub async fn roll_seed(
 
         join_handles.push(std::thread::spawn(move || {
             actix::run(async move {
-                info!("spawned instance #{}", p+1);
                 while match limit {
                     RollSeedLimit::Rolls(max_rolls) => *roll.lock().await < max_rolls,
                     RollSeedLimit::Seconds(max_seconds) => {
@@ -90,53 +89,59 @@ pub async fn roll_seed(
                         &instance_name,
                         true,
                         true,
-                        roll == 1,
+                        false,
                         Some(&map_exchange_string),
                         Some(&seed.to_string()),
                         true,
                     )
-                        .await.expect("failed to setup instance");
-                    let (world, mut child) =
-                        start_factorio_server(&workspace_path, &rcon_settings, Some(factorio_port), &instance_name, None, false, true).await.expect("failed to start");
-                    let rcon = FactorioRcon::new(&rcon_settings, true).await.expect("failed to rcon");
+                    .await
+                    .expect("failed to setup instance");
+                    let (world, mut child) = start_factorio_server(
+                        &workspace_path,
+                        &rcon_settings,
+                        Some(factorio_port),
+                        &instance_name,
+                        None,
+                        false,
+                        true,
+                    )
+                    .await
+                    .expect("failed to start");
+                    let rcon = FactorioRcon::new(&rcon_settings, true)
+                        .await
+                        .expect("failed to rcon");
                     rcon.silent_print("").await.expect("failed to silent print");
                     // info!(
                     //     "generated {} in <yellow>{:?}</>",
                     //     seed,
                     //     roll_started.elapsed()
                     // );
-                    let score = score_seed(&rcon, &world, seed).await.expect("failed to score seed");
+                    let score = score_seed(&rcon, &world, seed)
+                        .await
+                        .expect("failed to score seed");
                     child.kill().expect("failed to kill child");
 
                     let mut best_seed_with_score = best_seed_with_score.lock().await;
                     if let Some((_, previous_score)) = *best_seed_with_score {
                         if score > previous_score {
-                            (*best_seed_with_score) =Some((seed, score));
+                            (*best_seed_with_score) = Some((seed, score));
                         }
                     } else {
-                        (*best_seed_with_score) =Some((seed, score));
+                        (*best_seed_with_score) = Some((seed, score));
                     }
-                    if score < -10000. {
-                        info!(
-                            "instance #{} rolled #{}: seed {} scored {} in <yellow>{:?}</>",
-                            p+1,
-                            roll,
-                            seed,
-                            score,
-                            roll_started.elapsed()
-                        );
-                    } else {
-                        info!(
-                            "instance #{} rolled #{}: seed <bold><blue>{}</> scored <bold><green>{}</> in <yellow>{:?}</>",
-                            p+1,
-                            roll,
-                            seed,
-                            score,
-                            roll_started.elapsed()
-                        );
-                    }
+                    info!(
+                        "instance #{} rolled #{}: seed {}{}</> scored {}{}</> in <yellow>{:?}</>",
+                        p + 1,
+                        roll,
+                        if score > -10000. { "<bold><blue>" } else { "" },
+                        seed,
+                        if score > -10000. { "<bold><green>" } else { "" },
+                        score,
+                        roll_started.elapsed()
+                    );
                 }
-            }).unwrap();
+            })
+            .unwrap();
         }));
     }
     for join_handle in join_handles {

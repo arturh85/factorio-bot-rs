@@ -9,18 +9,33 @@ Features:
 - start Factorio server and/or one or multiple clients (unrestricted) 
 - read factorio recipes/entity prototypes/item prototypes/graphics
 - read map contents by chunk for leaflet based Map View
-- REST Interface for
-  - walk player
-  - read player inventories
-  - read other inventories
-  - place entities
-  - find entities in radius / area
+- REST Interface with:
+  - retrieve all recipes/technologies/prototypes
+  - read bot inventories
+  - use bot to:
+    - walk somewhere
+    - mine something
+    - craft something
+    - place entities
+    - place blueprints (even partly)
+    - revive ghost entities
+  - find valid placement options for:
+    - offshore pumps
+    - miners with specific ore below
+    - blueprints (todo)
+  - A* based belt/pipe routing from point a to b with automatic underground usage
+  - parse blueprint strings into width/height + entity list
+  - transfer items between bots
+  - read entity inventories
+  - start research
+  - find entities/tiles in circle / rect
   - insert to inventory / remove from inventory
-  - mine entities
-  - craft recipes
-  - place blueprints (even partly)
-  - revive ghost entities
   - cheating variants of above methods for quick tests
+- WebSocket based Events when:
+  - bot changed position
+  - bot changed inventory
+  - research finished
+  - entity attacked by biters (only an idea)
 - Typescript based Bot Manager which can:
   - Build starter base with iron/copper/stone/coal burner-mining-drills and stone-furnaces
   - Start automation research & manually craft 10 `automation-science` to insert into `lab`
