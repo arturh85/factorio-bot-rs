@@ -31,7 +31,6 @@ pub async fn start_factorio(
     silent: bool,
 ) -> anyhow::Result<(Option<Arc<FactorioWorld>>, FactorioRcon)> {
     let mut world: Option<Arc<FactorioWorld>> = None;
-
     let workspace_path: String = settings.get("workspace_path")?;
     if server_host.is_none() {
         let rcon_settings = RconSettings::new(&settings, server_host);
@@ -48,6 +47,32 @@ pub async fn start_factorio(
             silent,
         )
         .await?;
+    }
+    let settings = settings.clone();
+    let rcon_settings = RconSettings::new(&settings, server_host);
+    let rcon = FactorioRcon::new(&rcon_settings, false).await.unwrap();
+    for instance_number in 0..client_count {
+        let instance_name = format!("client{}", instance_number + 1);
+        if let Err(err) = setup_factorio_instance(
+            &workspace_path,
+            &rcon_settings,
+            None,
+            &instance_name,
+            false,
+            false,
+            false,
+            None,
+            None,
+            silent,
+        )
+        .await
+        {
+            error!("Failed to setup Factorio <red>{}</>: ", err);
+            break;
+        }
+    }
+
+    if server_host.is_none() {
         let started = Instant::now();
         let (_world, child) = start_factorio_server(
             &workspace_path,
@@ -71,29 +96,8 @@ pub async fn start_factorio(
         rcon.silent_print("").await?;
         rcon.whoami("server").await?;
     }
-    let settings = settings.clone();
-    // tokio::spawn(async move {
-    let rcon_settings = RconSettings::new(&settings, server_host);
-    let rcon = FactorioRcon::new(&rcon_settings, false).await.unwrap();
     for instance_number in 0..client_count {
         let instance_name = format!("client{}", instance_number + 1);
-        if let Err(err) = setup_factorio_instance(
-            &workspace_path,
-            &rcon_settings,
-            None,
-            &instance_name,
-            false,
-            false,
-            false,
-            None,
-            None,
-            silent,
-        )
-        .await
-        {
-            error!("Failed to setup Factorio <red>{}</>: ", err);
-            break;
-        }
         let started = Instant::now();
         if let Err(err) = start_factorio_client(
             &settings,
@@ -117,7 +121,6 @@ pub async fn start_factorio(
         // disable achievements". If we don't do this, the first command will be lost
         rcon.silent_print("").await.unwrap();
     }
-    // });
     Ok((world, rcon))
 }
 

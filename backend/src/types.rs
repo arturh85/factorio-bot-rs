@@ -1,10 +1,13 @@
 use crate::num_traits::FromPrimitive;
 use noisy_float::prelude::*;
 use num_traits::ToPrimitive;
+use pathfinding::utils::absdiff;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use typescript_definitions::TypeScriptify;
+
+pub type FactorioInventory = HashMap<String, u32>;
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +67,22 @@ pub struct FactorioPlayer {
     pub resource_reach_distance: u32,
 }
 
+impl Default for FactorioPlayer {
+    fn default() -> Self {
+        FactorioPlayer {
+            player_id: 0,
+            position: Position::default(),
+            main_inventory: Box::new(BTreeMap::new()),
+            build_distance: 10,
+            reach_distance: 3,
+            drop_item_distance: 10,
+            item_pickup_distance: 10,
+            loot_pickup_distance: 10,
+            resource_reach_distance: 10,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestEntity {
@@ -92,6 +111,38 @@ pub struct ChunkPosition {
 pub struct Position {
     pub x: Box<R64>,
     pub y: Box<R64>,
+}
+
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "[{}, {}]",
+            (self.x() * 100.).round() / 100.,
+            (self.y() * 100.).round() / 100.
+        ))?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Pos(pub i32, pub i32);
+
+impl Pos {
+    pub fn distance(&self, other: &Pos) -> u32 {
+        (absdiff(self.0, other.0) + absdiff(self.1, other.1)) as u32
+    }
+}
+
+impl From<&Position> for Pos {
+    fn from(position: &Position) -> Pos {
+        Pos(position.x().floor() as i32, position.y().floor() as i32)
+    }
+}
+
+impl From<&Pos> for Position {
+    fn from(pos: &Pos) -> Position {
+        Position::new(pos.0 as f64, pos.1 as f64)
+    }
 }
 
 #[derive(Primitive, Clone, Copy, Debug, PartialEq)]
@@ -143,6 +194,12 @@ impl Position {
     }
     pub fn y(&self) -> f64 {
         (*self.y).to_f64().expect("failed to cast r64 to f64")
+    }
+}
+
+impl Default for Position {
+    fn default() -> Self {
+        Position::new(0., 0.)
     }
 }
 

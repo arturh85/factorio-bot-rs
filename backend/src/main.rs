@@ -1,6 +1,7 @@
 #![warn(clippy::all, clippy::pedantic)]
 use actix::Actor;
 use clap::{App, Arg};
+use factorio_bot_backend::factorio::plan::plan_graph;
 use factorio_bot_backend::factorio::process_control::start_factorio;
 use factorio_bot_backend::factorio::rcon::{FactorioRcon, RconSettings};
 use factorio_bot_backend::factorio::roll_best_seed::{roll_seed, RollSeedLimit};
@@ -60,6 +61,31 @@ async fn main() -> anyhow::Result<()> {
                         .help("how many seeds to roll"),
                 )
                 .about("roll good seed for given map-exchange-string based on heuristics"),
+        )
+        .subcommand(
+            App::new("plan")
+                .arg(
+                    Arg::with_name("map")
+                        .long("map")
+                        .value_name("map")
+                        .required(true)
+                        .help("use given map exchange string"),
+                )
+                .arg(
+                    Arg::with_name("seed")
+                        .long("seed")
+                        .value_name("seed")
+                        .required(false)
+                        .help("use given seed to recreate level"),
+                )
+                .arg(
+                    Arg::with_name("clients")
+                        .short("c")
+                        .long("clients")
+                        .default_value("1")
+                        .help("number of clients to plan for"),
+                )
+                .about("plan graph"),
         )
         .subcommand(
             App::new("start")
@@ -167,6 +193,14 @@ async fn main() -> anyhow::Result<()> {
             Some((seed, score)) => println!("Best Seed: {} with Score {}", seed, score),
             None => eprintln!("no seed found"),
         }
+    } else if let Some(matches) = matches.subcommand_matches("plan") {
+        let _graph = plan_graph(
+            settings,
+            matches.value_of("map"),
+            matches.value_of("seed"),
+            matches.value_of("clients").unwrap().parse()?,
+        )
+        .await?;
     } else {
         eprintln!("Missing required Sub Command!");
         std::process::exit(1);

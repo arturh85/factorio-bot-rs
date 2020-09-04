@@ -41,7 +41,9 @@ pub async fn setup_factorio_instance(
     let instance_path = workspace_path.join(PathBuf::from(instance_name));
     let instance_path = Path::new(&instance_path);
     if !instance_path.exists() {
-        info!("Creating <bright-blue>{:?}</>", &instance_path);
+        if !silent {
+            info!("Creating <bright-blue>{:?}</>", &instance_path);
+        }
         create_dir(instance_path).await?;
     }
     let readdir = instance_path.read_dir()?;
@@ -179,14 +181,18 @@ pub async fn setup_factorio_instance(
 
     let mods_path = instance_path.join(PathBuf::from("mods"));
     if !mods_path.exists() {
-        info!("Creating <bright-blue>{:?}</>", &mods_path);
+        if !silent {
+            info!("Creating <bright-blue>{:?}</>", &mods_path);
+        }
         create_dir(&mods_path).await?;
     }
     let mod_info_path = mods_path.join(PathBuf::from("mod-list.json"));
     if !mod_info_path.exists() {
         let template_file = include_bytes!("../data/mod-list.json");
         let mut outfile = fs::File::create(&mod_info_path)?;
-        info!("Creating <bright-blue>{:?}</>", &mod_info_path);
+        if !silent {
+            info!("Creating <bright-blue>{:?}</>", &mod_info_path);
+        }
         outfile.write_all(template_file)?;
     }
     let data_botbridge_path = PathBuf::from("mod");
@@ -196,10 +202,12 @@ pub async fn setup_factorio_instance(
     let data_botbridge_path = std::fs::canonicalize(data_botbridge_path)?;
     let mods_botbridge_path = mods_path.join(PathBuf::from("BotBridge"));
     if !mods_botbridge_path.exists() {
-        info!(
-            "Creating Symlink for <bright-blue>{:?}</>",
-            &mods_botbridge_path
-        );
+        if !silent {
+            info!(
+                "Creating Symlink for <bright-blue>{:?}</>",
+                &mods_botbridge_path
+            );
+        }
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&data_botbridge_path, &mods_botbridge_path)?;
@@ -212,10 +220,12 @@ pub async fn setup_factorio_instance(
     let instance_data_path = instance_path.join(PathBuf::from("data"));
     if !instance_data_path.exists() && workspace_data_path.exists() {
         let workspace_data_path = std::fs::canonicalize(workspace_data_path)?;
-        info!(
-            "Creating Symlink for <bright-blue>{:?}</>",
-            &instance_data_path
-        );
+        if !silent {
+            info!(
+                "Creating Symlink for <bright-blue>{:?}</>",
+                &instance_data_path
+            );
+        }
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&workspace_data_path, &instance_data_path)?;
@@ -239,19 +249,26 @@ pub async fn setup_factorio_instance(
         if !server_settings_path.exists() {
             let server_settings_data = include_bytes!("../data/server-settings.json");
             let mut outfile = fs::File::create(&server_settings_path)?;
-            info!("Creating <bright-blue>{:?}</>", &server_settings_path);
+            if !silent {
+                info!("Creating <bright-blue>{:?}</>", &server_settings_path);
+            }
             // io::copy(&mut template_file, &mut outfile)?;
             outfile.write_all(server_settings_data)?;
         }
 
         let saves_path = instance_path.join(PathBuf::from("saves"));
         if !saves_path.exists() {
-            info!("Creating <bright-blue>{:?}</>", &saves_path);
+            if !silent {
+                info!("Creating <bright-blue>{:?}</>", &saves_path);
+            }
             create_dir(&saves_path).await?;
         }
 
         let saves_level_path = saves_path.join(PathBuf::from("level.zip"));
-        if recreate_save && recreate_map_exchange {
+        let map_gen_settings_path = instance_path.join(PathBuf::from("map-gen-settings.json"));
+        if (recreate_save && recreate_map_exchange)
+            || (map_exchange_string.is_some() && !map_gen_settings_path.exists())
+        {
             if let Some(map_exchange_string) = map_exchange_string {
                 if !saves_level_path.exists() {
                     let binary = if cfg!(windows) {
@@ -366,7 +383,9 @@ pub async fn setup_factorio_instance(
             let player_data = include_bytes!("../data/player-data.json");
             let mut outfile = fs::File::create(&player_data_path)?;
             outfile.write_all(player_data)?;
-            info!("Created <bright-blue>{:?}</>", &player_data_path);
+            if !silent {
+                info!("Created <bright-blue>{:?}</>", &player_data_path);
+            }
         }
         let mut value: Value = read_to_value(&player_data_path)?;
         value["service-username"] = Value::from(instance_name);
@@ -380,7 +399,9 @@ pub async fn setup_factorio_instance(
             let config_ini_path = config_path.join(PathBuf::from("config.ini"));
             let mut outfile = fs::File::create(&config_ini_path)?;
             outfile.write_all(config_ini_data)?;
-            info!("Created <bright-blue>{:?}</>", &config_ini_path);
+            if !silent {
+                info!("Created <bright-blue>{:?}</>", &config_ini_path);
+            }
         }
     }
     Ok(())

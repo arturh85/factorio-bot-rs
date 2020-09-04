@@ -1,5 +1,7 @@
 use crate::factorio::output_parser::FactorioWorld;
+use crate::factorio::plan::Planner;
 use crate::factorio::rcon::FactorioRcon;
+use crate::factorio::tasks::dotgraph;
 use crate::factorio::util::blueprint_build_area;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
@@ -687,4 +689,18 @@ pub async fn find_offshore_pump_placement_options(
         .map(|pos| pos.into())
         .collect(),
     ))
+}
+
+pub async fn web_plan_graph(
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<String, MyError> {
+    let players = world.players.len() as u32;
+    let mut planner = Planner::new(
+        world.into_inner().as_ref().clone(),
+        rcon.into_inner().as_ref().clone(),
+    );
+    let graph = planner.plan(players).await?;
+    let dot = dotgraph(&graph);
+    Ok(dot)
 }

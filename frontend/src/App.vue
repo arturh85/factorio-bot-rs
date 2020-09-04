@@ -25,6 +25,11 @@
           <span class="mr-2">Map</span>
         </v-btn>
       </router-link>
+      <router-link to="/graph">
+        <v-btn text>
+          <span class="mr-2">Graph</span>
+        </v-btn>
+      </router-link>
     </v-app-bar>
 
     <v-main>

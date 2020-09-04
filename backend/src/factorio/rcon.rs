@@ -3,11 +3,11 @@ use crate::factorio::util::{
     blueprint_build_area, build_entity_path, calculate_distance, hashmap_to_lua, map_blocked_tiles,
     move_pos, move_position, position_in_rect, position_to_lua, rect_to_lua, span_rect, str_to_lua,
     value_to_lua, vec_to_lua, vector_add, vector_multiply, vector_normalize,
-    vector_rotate_clockwise, vector_substract, Pos,
+    vector_rotate_clockwise, vector_substract,
 };
 use crate::num_traits::FromPrimitive;
 use crate::types::{
-    AreaFilter, Direction, FactorioEntity, FactorioForce, FactorioTile, InventoryResponse,
+    AreaFilter, Direction, FactorioEntity, FactorioForce, FactorioTile, InventoryResponse, Pos,
     Position, Rect, RequestEntity,
 };
 use async_std::sync::Mutex;

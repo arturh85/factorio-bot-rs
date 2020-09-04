@@ -74,6 +74,10 @@ pub async fn start_webserver(
                     .route(web::get().to(crate::web::rest_api::find_entities)),
             )
             .service(
+                web::resource("/api/plan")
+                    .route(web::get().to(crate::web::rest_api::web_plan_graph)),
+            )
+            .service(
                 web::resource("/api/findTiles")
                     .route(web::get().to(crate::web::rest_api::find_tiles)),
             )

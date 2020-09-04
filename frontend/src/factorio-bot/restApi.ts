@@ -342,4 +342,8 @@ export class FactorioApi {
         const response = await fetch(`${baseUrl}/api/itemPrototypes`);
         return await response.json();
     }
+    static async plan(): Promise<string> {
+        const response = await fetch(`${baseUrl}/api/plan`);
+        return await response.text();
+    }
 }

@@ -264,14 +264,8 @@ impl OutputParser {
                 } else {
                     let player = FactorioPlayer {
                         player_id: event.player_id,
-                        position: Position::new(0.0, 0.0),
                         main_inventory: event.main_inventory.clone(),
-                        build_distance: 0,
-                        reach_distance: 0,
-                        drop_item_distance: 0,
-                        item_pickup_distance: 0,
-                        loot_pickup_distance: 0,
-                        resource_reach_distance: 0,
+                        ..Default::default()
                     };
                     if let Some(websocket_server) = self.websocket_server.as_ref() {
                         websocket_server
@@ -313,13 +307,7 @@ impl OutputParser {
                     let player = FactorioPlayer {
                         player_id: event.player_id,
                         position: event.position,
-                        main_inventory: Box::new(BTreeMap::new()),
-                        build_distance: 0,
-                        reach_distance: 0,
-                        drop_item_distance: 0,
-                        item_pickup_distance: 0,
-                        loot_pickup_distance: 0,
-                        resource_reach_distance: 0,
+                        ..Default::default()
                     };
                     if let Some(websocket_server) = self.websocket_server.as_ref() {
                         websocket_server

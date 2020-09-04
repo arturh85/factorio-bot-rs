@@ -1,6 +1,7 @@
 import Vue from "vue";
 import VueRouter, {RouteConfig} from "vue-router";
 import Home from "../views/Home.vue";
+import Graph from "@/views/Graph.vue";
 
 Vue.use(VueRouter);
 
@@ -9,6 +10,11 @@ const routes: Array<RouteConfig> = [
         path: "/",
         name: "Control",
         component: Home,
+    },
+    {
+        path: "/graph",
+        name: "Graph",
+        component: Graph,
     },
     {
         path: "/map",

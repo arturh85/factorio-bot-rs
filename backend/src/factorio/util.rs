@@ -7,11 +7,11 @@ use evmap::ReadHandle;
 use factorio_blueprint::BlueprintCodec;
 use factorio_blueprint::Container::{Blueprint, BlueprintBook};
 use num_traits::ToPrimitive;
-use pathfinding::prelude::{absdiff, astar};
+use pathfinding::prelude::astar;
 use serde_json::Value;
 
 use crate::types::{
-    Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Position, Rect,
+    Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Pos, Position, Rect,
 };
 
 pub fn hashmap_to_lua(map: HashMap<String, String>) -> String {
@@ -257,27 +257,6 @@ pub fn span_rect(a: &Position, b: &Position, margin: f64) -> Rect {
     )
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Pos(pub i32, pub i32);
-
-impl Pos {
-    fn distance(&self, other: &Pos) -> u32 {
-        (absdiff(self.0, other.0) + absdiff(self.1, other.1)) as u32
-    }
-}
-
-impl From<&Position> for Pos {
-    fn from(position: &Position) -> Pos {
-        Pos(position.x().floor() as i32, position.y().floor() as i32)
-    }
-}
-
-impl From<&Pos> for Position {
-    fn from(pos: &Pos) -> Position {
-        Position::new(pos.0 as f64, pos.1 as f64)
-    }
-}
-
 #[allow(clippy::ptr_arg)]
 pub fn map_blocked_tiles(
     entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
@@ -292,7 +271,7 @@ pub fn map_blocked_tiles(
         }
     }
     for entity in block_entities {
-        if entity.entity_type == "character" {
+        if entity.entity_type == "character" || entity.entity_type == "resource" {
             continue;
         }
         match entity_prototypes.get_one(&entity.name) {
@@ -526,6 +505,7 @@ pub fn relative_direction(from: &Pos, to: &Pos) -> Direction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Pos;
 
     #[test]
     fn test_relative_direction() {

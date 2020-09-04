@@ -65,9 +65,9 @@ pub async fn map_tiles(
                             if !chunk.objects.is_empty() {
                                 // info!("chunk found at {:?}: {:?}", &chunk_position, _chunk);
                             }
-                            for (chunk_idx, tile) in chunk.tiles.iter().enumerate() {
-                                let x_mod: f64 = (chunk_idx % 32) as f64;
-                                let y_mod: f64 = (chunk_idx / 32) as f64;
+                            for (tile_idx, tile) in chunk.tiles.iter().enumerate() {
+                                let x_mod: f64 = (tile_idx % 32) as f64;
+                                let y_mod: f64 = (tile_idx / 32) as f64;
                                 let rect_x = (chunk_px + (x_mod * factor).round() as i32) as i32;
                                 let rect_y = (chunk_py + (y_mod * factor).round() as i32) as i32;
                                 let name = match tile.name.find('-') {

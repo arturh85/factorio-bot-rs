@@ -3,7 +3,7 @@ use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::process_control::start_factorio_server;
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::util::calculate_distance;
-use crate::types::{AreaFilter, Position};
+use crate::types::{AreaFilter, FactorioEntity, Position};
 use async_std::sync::{Arc, Mutex};
 use config::Config;
 use std::cmp::Ordering;
@@ -180,13 +180,13 @@ pub async fn score_seed(
     ];
     let mut score = 0.;
     for resource in resources {
-        let nearest = find_nearest_resource(rcon, &center, resource).await?;
-        match nearest {
-            Some(nearest) => {
+        let nearest = find_nearest_entities(rcon, &center, Some(resource.into()), None).await?;
+        match nearest.is_empty() {
+            false => {
                 // info!("nearest {} @ {}/{}", resource, nearest.x(), nearest.y());
-                score -= calculate_distance(&center, &nearest);
+                score -= calculate_distance(&center, &nearest[0].position);
             }
-            None => {
+            true => {
                 // warn!("not found: {}", resource);
                 score -= 10000.;
             }
@@ -196,16 +196,17 @@ pub async fn score_seed(
     Ok(score.floor())
 }
 
-pub async fn find_nearest_resource(
+pub async fn find_nearest_entities(
     rcon: &FactorioRcon,
     search_center: &Position,
-    name: &str,
-) -> anyhow::Result<Option<Position>> {
+    name: Option<String>,
+    entity_type: Option<String>,
+) -> anyhow::Result<Vec<FactorioEntity>> {
     let mut entities = rcon
         .find_entities_filtered(
             &AreaFilter::PositionRadius((search_center.clone(), Some(3000.0))),
-            Some(name.into()),
-            None,
+            name,
+            entity_type,
         )
         .await?;
     entities.sort_by(|a, b| {
@@ -219,5 +220,5 @@ pub async fn find_nearest_resource(
             Ordering::Equal
         }
     });
-    Ok(entities.pop().map(|entity| entity.position))
+    Ok(entities)
 }
