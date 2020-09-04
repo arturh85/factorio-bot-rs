@@ -75,6 +75,54 @@ impl Planner {
         Ok(node)
     }
 
+    pub async fn add_mine_entities_with_bots(
+        &mut self,
+        parent: NodeIndex,
+        bots: &mut HashMap<u32, FactorioPlayer>,
+        search_center: &Position,
+        name: Option<String>,
+        entity_type: Option<String>,
+    ) -> anyhow::Result<NodeIndex> {
+        let start = self.graph.add_node(Task::new(
+            None,
+            &format!(
+                "Start: Mine {} with {} Bots",
+                match name {
+                    Some(ref name) => name.clone(),
+                    None => entity_type
+                        .as_ref()
+                        .expect("must have name or entity_type")
+                        .clone(),
+                },
+                bots.len()
+            ),
+            None,
+        ));
+        self.graph.add_edge(parent, start, 0.);
+        let end = self.graph.add_node(Task::new(None, "End", None));
+
+        let mut entities: Vec<FactorioEntity> =
+            find_nearest_entities(self.rcon.clone(), search_center, name, entity_type).await?;
+
+        for (player_id, mut player) in bots {
+            let player_parent = self.graph.add_node(Task::new(
+                Some(*player_id),
+                &*format!("Bot #{} at {}", player_id, player.position),
+                None,
+            ));
+            self.graph.add_edge(start, player_parent, 0.);
+            let mut parent = player_parent;
+            if !entities.is_empty() {
+                let entity = entities.remove(0);
+                parent = self
+                    .add_mine(parent, &mut player, &entity.position, &entity.name, 1)
+                    .await?
+            }
+            self.graph.add_edge(parent, end, 0.);
+        }
+        Ok(end)
+    }
+
     #[allow(unused_assignments)]
     pub async fn plan(&mut self, bot_count: u32) -> anyhow::Result<TaskGraph> {
         let mut bots: HashMap<u32, FactorioPlayer> = HashMap::new();
@@ -103,42 +151,29 @@ impl Planner {
             player_ids.push(player_id);
         }
 
-        let mut huge_rocks: Vec<FactorioEntity> = find_nearest_entities(
-            &self.rcon,
-            &Position::default(),
-            Some("rock-huge".into()),
-            None,
-        )
-        .await?;
-        let mut trees: Vec<FactorioEntity> =
-            find_nearest_entities(&self.rcon, &Position::default(), None, Some("tree".into()))
-                .await?;
-        for (player_id, mut player) in bots {
-            let player_root = self.graph.add_node(Task::new(
-                player_id,
-                &*format!(
-                    "Bot #{} at {}, {}",
-                    player_id,
-                    player.position.x(),
-                    player.position.y()
-                ),
+        let mut parent = self.graph.add_node(Task::new(None, "Process Start", None));
+        parent = self
+            .add_mine_entities_with_bots(
+                parent,
+                &mut bots,
+                &Position::default(),
+                Some("rock-huge".into()),
                 None,
-            ));
-            let mut parent = player_root;
+            )
+            .await?;
+        parent = self
+            .add_mine_entities_with_bots(
+                parent,
+                &mut bots,
+                &Position::default(),
+                None,
+                Some("tree".into()),
+            )
+            .await?;
 
-            if !huge_rocks.is_empty() {
-                let rock = huge_rocks.remove(0);
-                parent = self
-                    .add_mine(parent, &mut player, &rock.position, &rock.name, 1)
-                    .await?
-            }
-            if !trees.is_empty() {
-                let tree = trees.remove(0);
-                parent = self
-                    .add_mine(parent, &mut player, &tree.position, &tree.name, 1)
-                    .await?
-            }
-        }
+        let end = self.graph.add_node(Task::new(None, "Process End", None));
+        self.graph.add_edge(parent, end, 0.);
+
         Ok(self.graph.clone())
     }
 }

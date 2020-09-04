@@ -76,12 +76,12 @@ pub enum TaskData {
 #[derive(Default, Clone)]
 pub struct Task {
     pub name: String,
-    pub player_id: u32,
+    pub player_id: Option<u32>,
     pub data: Option<TaskData>,
 }
 
 impl Task {
-    pub fn new(player_id: u32, name: &str, data: Option<TaskData>) -> Task {
+    pub fn new(player_id: Option<u32>, name: &str, data: Option<TaskData>) -> Task {
         Task {
             name: name.into(),
             player_id,
@@ -90,7 +90,7 @@ impl Task {
     }
     pub fn new_craft(player_id: u32, item: InventoryItem) -> Task {
         Task::new(
-            player_id,
+            Some(player_id),
             &*format!(
                 "Craft {}{}",
                 item.name,
@@ -105,14 +105,14 @@ impl Task {
     }
     pub fn new_walk(player_id: u32, target: PositionRadius) -> Task {
         Task::new(
-            player_id,
+            Some(player_id),
             &*format!("Walk to {}", target.position),
             Some(TaskData::Walk(target)),
         )
     }
     pub fn new_mine(player_id: u32, target: MineTarget) -> Task {
         Task::new(
-            player_id,
+            Some(player_id),
             &*format!(
                 "Mining {}{}",
                 target.name,
@@ -131,7 +131,7 @@ impl Task {
         item: InventoryItem,
     ) -> Task {
         Task::new(
-            player_id,
+            Some(player_id),
             &*format!(
                 "Insert {}x{} into {} at {}",
                 &item.name, &item.count, location.entity_name, location.position

@@ -1,5 +1,6 @@
 use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::output_parser::FactorioWorld;
+use crate::factorio::plan::Planner;
 use crate::factorio::process_control::start_factorio_server;
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::util::calculate_distance;
@@ -107,16 +108,18 @@ pub async fn roll_seed(
                     )
                     .await
                     .expect("failed to start");
-                    let rcon = FactorioRcon::new(&rcon_settings, true)
-                        .await
-                        .expect("failed to rcon");
+                    let rcon = Arc::new(
+                        FactorioRcon::new(&rcon_settings, true)
+                            .await
+                            .expect("failed to rcon"),
+                    );
                     rcon.silent_print("").await.expect("failed to silent print");
                     // info!(
                     //     "generated {} in <yellow>{:?}</>",
                     //     seed,
                     //     roll_started.elapsed()
                     // );
-                    let score = score_seed(&rcon, &world, seed)
+                    let score = score_seed(rcon, world, seed)
                         .await
                         .expect("failed to score seed");
                     child.kill().expect("failed to kill child");
@@ -164,11 +167,16 @@ pub async fn roll_seed(
 }
 
 pub async fn score_seed(
-    rcon: &FactorioRcon,
-    _world: &FactorioWorld,
+    rcon: Arc<FactorioRcon>,
+    world: Arc<FactorioWorld>,
     _seed: u32,
 ) -> anyhow::Result<f64> {
-    let _started = Instant::now();
+    let mut planner = Planner::new(world, rcon.clone());
+    let graph = planner.plan(4).await?;
+    let mut score = 0.0;
+    for edge in graph.edge_indices() {
+        score -= graph.edge_weight(edge).unwrap_or(&0.);
+    }
     let center = Position::new(0., 0.);
     let resources = vec![
         "rock-huge",
@@ -178,13 +186,13 @@ pub async fn score_seed(
         "stone",
         "crude-oil",
     ];
-    let mut score = 0.;
     for resource in resources {
-        let nearest = find_nearest_entities(rcon, &center, Some(resource.into()), None).await?;
+        let nearest =
+            find_nearest_entities(rcon.clone(), &center, Some(resource.into()), None).await?;
         match nearest.is_empty() {
             false => {
                 // info!("nearest {} @ {}/{}", resource, nearest.x(), nearest.y());
-                score -= calculate_distance(&center, &nearest[0].position);
+                // score -= calculate_distance(&center, &nearest[0].position);
             }
             true => {
                 // warn!("not found: {}", resource);
@@ -197,7 +205,7 @@ pub async fn score_seed(
 }
 
 pub async fn find_nearest_entities(
-    rcon: &FactorioRcon,
+    rcon: Arc<FactorioRcon>,
     search_center: &Position,
     name: Option<String>,
     entity_type: Option<String>,
