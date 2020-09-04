@@ -17,7 +17,7 @@ jobs:
             asset_name: factorio-bot-backend-linux-amd64
           - os: windows-latest
             artifact_name: factorio-bot-backend.exe
-            asset_name: factorio-bot-backend-windows-amd64
+            asset_name: factorio-bot-backend-windows.exe
           - os: macos-latest
             artifact_name: factorio-bot-backend
             asset_name: factorio-bot-backend-macos-amd64

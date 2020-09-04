@@ -151,7 +151,7 @@ function serialize_entity_prototype(entity)
     if entity.mineable_properties.minable then
         local array = {}
         if (entity.mineable_properties.products == nil) then
---            print("wtf, entity "..entity.name.." is mineable, but has no products?!")
+            -- print("wtf, entity "..entity.name.." is mineable, but has no products?!")
         else
             for itemname,amount in pairs(products_to_dict(entity.mineable_properties.products)) do
                 mine_result[itemname] = amount
@@ -169,9 +169,21 @@ function serialize_entity_prototype(entity)
 end
 
 function serialize_entity(entity)
-    local record = table_properties(entity, {"name", "direction", "type", "position"}, {type = "entityType"})
+    local record = table_properties(entity, {"name", "direction", "type", "position", "drop_position"}, {type = "entityType", drop_position = "dropPosition"})
+
+    local output_inventory = entity.get_output_inventory()
+    if output_inventory ~= nil then
+        record.outputInventory = output_inventory.get_contents()
+    end
+    local fuel_inventory = entity.get_fuel_inventory()
+    if fuel_inventory ~= nil then
+        record.fuelInventory = fuel_inventory.get_contents()
+    end
+
     if entity.type == "resource" then
         record.amount = entity.amount
+    elseif entity.type == "inserter" then
+        record.pickupPosition = entity.pickup_position
     elseif entity.type == "entity-ghost" then
         record.ghostName = entity.ghost_name
         record.ghostType = entity.ghost_type

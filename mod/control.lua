@@ -201,6 +201,8 @@ function products_to_dict(products) -- input: array of products, output: dict["i
 	for _,product in ipairs(products) do
 		if product.amount then
 			result[product.name] = (result[product.name] or 0) + product.amount
+		elseif product.amount_min then
+			result[product.name] = (result[product.name] or 0) + product.amount_min
 		end
 	end
 	return result

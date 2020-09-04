@@ -424,10 +424,7 @@ pub fn build_entity_path(
                         } else {
                             direction.to_u8().unwrap()
                         },
-                        recipe: None,
-                        ghost_name: None,
-                        ghost_type: None,
-                        amount: None,
+                        ..Default::default()
                     });
                 } else {
                     result[i - 1].name = underground_entity_name.into();
@@ -441,10 +438,7 @@ pub fn build_entity_path(
                         } else {
                             direction.opposite().to_u8().unwrap()
                         },
-                        recipe: None,
-                        ghost_name: None,
-                        ghost_type: None,
-                        amount: None,
+                        ..Default::default()
                     });
                 }
             }

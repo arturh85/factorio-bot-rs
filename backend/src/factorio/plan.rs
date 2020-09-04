@@ -150,13 +150,14 @@ pub async fn plan_graph(
     bot_count: u32,
 ) -> anyhow::Result<TaskGraph> {
     let started = Instant::now();
+    let instance_name = "plan";
     let workspace_path: String = settings.get("workspace_path")?;
     let rcon_settings = RconSettings::new(&settings, None);
     setup_factorio_instance(
         &workspace_path,
         &rcon_settings,
         None,
-        "plan",
+        instance_name,
         true,
         false,
         false,
@@ -171,7 +172,7 @@ pub async fn plan_graph(
         &workspace_path,
         &rcon_settings,
         None,
-        "server",
+        instance_name,
         None,
         false,
         true,
