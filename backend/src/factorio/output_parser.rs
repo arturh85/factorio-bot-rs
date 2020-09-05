@@ -114,7 +114,7 @@ impl OutputParser {
                 // info!("XXX player_path XXX sended");
             }
             "STATIC_DATA_END" => {
-                // info!("STATIC_DATA_END!");
+                // handled by OutputReader
             }
             "on_player_left_game" => {
                 let player_id: u32 = rest.parse()?;

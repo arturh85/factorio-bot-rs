@@ -32,7 +32,7 @@ pub async fn read_output(
                 match line {
                     Ok(line) => {
                         // wait for factorio init before sending confirmation
-                        if !initialized && line.find("my_client_id").is_some() {
+                        if !initialized && line.find("STATIC_DATA_END").is_some() {
                             initialized = true;
                             rx.recv().await.unwrap();
                             rx.recv().await.unwrap();

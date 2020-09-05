@@ -706,7 +706,7 @@ pub async fn web_plan_graph(
         world.into_inner().as_ref().clone(),
         rcon.into_inner().as_ref().clone(),
     );
-    let graph = planner.plan(players).await?;
+    let (graph, _world) = planner.plan(players).await?;
     let dot = dotgraph(&graph);
     Ok(dot)
 }

@@ -60,6 +60,13 @@ async fn main() -> anyhow::Result<()> {
                         .value_name("rolls")
                         .help("how many seeds to roll"),
                 )
+                .arg(
+                    Arg::with_name("clients")
+                        .short("c")
+                        .long("clients")
+                        .default_value("1")
+                        .help("number of clients to plan for"),
+                )
                 .about("roll good seed for given map-exchange-string based on heuristics"),
         )
         .subcommand(
@@ -187,6 +194,7 @@ async fn main() -> anyhow::Result<()> {
                 None => RollSeedLimit::Seconds(matches.value_of("seconds").unwrap().parse()?),
             },
             matches.value_of("parallel").unwrap().parse()?,
+            matches.value_of("clients").unwrap().parse()?,
         )
         .await?
         {

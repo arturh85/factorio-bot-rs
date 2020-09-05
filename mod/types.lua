@@ -138,7 +138,6 @@ function serialize_technology(technology)
 end
 
 function serialize_entity_prototype(entity)
-    local mine_result = {}
     local collision_mask = nil
     if entity.collision_mask ~= nil then
         for k,v in pairs(entity.collision_mask) do
@@ -148,6 +147,8 @@ function serialize_entity_prototype(entity)
             table.insert(collision_mask, k)
         end
     end
+    local mine_result = {}
+    local mining_time
     if entity.mineable_properties.minable then
         local array = {}
         if (entity.mineable_properties.products == nil) then
@@ -157,11 +158,13 @@ function serialize_entity_prototype(entity)
                 mine_result[itemname] = amount
             end
         end
+        mining_time = entity.mineable_properties.mining_time
     else
         mine_result = nil
     end
 
     local record = table_properties(entity, {"name", "type"}, {type = "entityType"})
+    record.miningTime = mining_time
     record.mineResult = mine_result
     record.collisionMask = collision_mask
     record.collisionBox = table_properties(entity.collision_box, {"left_top", "right_bottom"}, {left_top = "leftTop", right_bottom = "rightBottom"})

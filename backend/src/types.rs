@@ -339,6 +339,7 @@ pub struct FactorioEntityPrototype {
     pub collision_mask: Option<Vec<String>>,
     pub collision_box: Rect,
     pub mine_result: Box<Option<BTreeMap<String, u32>>>,
+    pub mining_time: Box<Option<R64>>,
 }
 
 #[derive(

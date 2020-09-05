@@ -7,6 +7,7 @@ use crate::factorio::world::FactorioWorld;
 use crate::types::{AreaFilter, FactorioEntity, Position};
 use async_std::sync::{Arc, Mutex};
 use config::Config;
+use petgraph::algo::astar;
 use std::cmp::Ordering;
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -22,6 +23,7 @@ pub async fn roll_seed(
     map_exchange_string: String,
     limit: RollSeedLimit,
     parallel: u8,
+    bot_count: u32,
 ) -> anyhow::Result<Option<(u32, f64)>> {
     let roll: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
     let best_seed_with_score: Arc<Mutex<Option<(u32, f64)>>> = Arc::new(Mutex::new(None));
@@ -119,7 +121,7 @@ pub async fn roll_seed(
                     //     seed,
                     //     roll_started.elapsed()
                     // );
-                    let score = score_seed(rcon, world, seed)
+                    let score = score_seed(rcon, world, seed, bot_count)
                         .await
                         .expect("failed to score seed");
                     child.kill().expect("failed to kill child");
@@ -170,13 +172,23 @@ pub async fn score_seed(
     rcon: Arc<FactorioRcon>,
     world: Arc<FactorioWorld>,
     _seed: u32,
+    bot_count: u32,
 ) -> anyhow::Result<f64> {
     let mut planner = Planner::new(world, rcon.clone());
-    let graph = planner.plan(4).await?;
+    let (graph, _world) = planner.plan(bot_count).await?;
     let mut score = 0.0;
-    for edge in graph.edge_indices() {
-        score -= graph.edge_weight(edge).unwrap_or(&0.);
-    }
+
+    let process_start = graph.node_indices().next().unwrap();
+    let process_end = graph.node_indices().last().unwrap();
+    let (weight, _) = astar(
+        &graph,
+        process_start,
+        |finish| finish == process_end,
+        |e| *e.weight(),
+        |_| 0.,
+    )
+    .expect("no path found");
+    score -= weight;
     let center = Position::new(0., 0.);
     let resources = vec![
         "rock-huge",

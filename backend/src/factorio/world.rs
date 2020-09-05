@@ -277,6 +277,7 @@ impl FactorioWorldWriter {
                     self.players_writer.insert(*player_id, player.clone());
                 }
             }
+            self.players_writer.refresh();
         }
         if let Some(entity_prototypes) = &world.entity_prototypes.read() {
             for (name, entity_prototype) in entity_prototypes {
@@ -285,6 +286,7 @@ impl FactorioWorldWriter {
                         .insert(name.clone(), entity_prototype.clone());
                 }
             }
+            self.entity_prototypes_writer.refresh();
         }
         if let Some(item_prototypes) = &world.item_prototypes.read() {
             for (name, item_prototype) in item_prototypes {
@@ -293,6 +295,7 @@ impl FactorioWorldWriter {
                         .insert(name.clone(), item_prototype.clone());
                 }
             }
+            self.item_prototypes_writer.refresh();
         }
         if let Some(recipes) = &world.recipes.read() {
             for (name, recipe) in recipes {
@@ -300,6 +303,7 @@ impl FactorioWorldWriter {
                     self.recipes_writer.insert(name.clone(), recipe.clone());
                 }
             }
+            self.recipes_writer.refresh();
         }
         if let Some(chunks) = &world.chunks.read() {
             for (chunk_position, chunk) in chunks {
@@ -308,6 +312,7 @@ impl FactorioWorldWriter {
                         .insert(chunk_position.clone(), chunk.clone());
                 }
             }
+            self.chunks_writer.refresh();
         }
         if let Some(blocked) = &world.blocked.read() {
             for (pos, minable) in blocked {
@@ -315,6 +320,7 @@ impl FactorioWorldWriter {
                     self.blocked_writer.insert(pos.clone(), *minable);
                 }
             }
+            self.blocked_writer.refresh();
         }
         Ok(())
     }

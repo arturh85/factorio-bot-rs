@@ -11,8 +11,11 @@ use crate::types::{
 };
 use async_std::sync::Arc;
 use evmap::ReadGuard;
+use noisy_float::types::{r64, R64};
+use num_traits::ToPrimitive;
+use petgraph::algo::astar;
 use petgraph::graph::NodeIndex;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
 pub struct Planner {
@@ -23,6 +26,53 @@ pub struct Planner {
 }
 
 impl Planner {
+    pub async fn plan(
+        &mut self,
+        bot_count: u32,
+    ) -> anyhow::Result<(TaskGraph, Arc<FactorioWorld>)> {
+        let mut player_ids: Vec<u32> = vec![];
+
+        for player_id in 1u32..=bot_count {
+            player_ids.push(player_id);
+            // initialize missing players with default inventory
+            if self.world.players.get_one(&player_id).is_none() {
+                let mut main_inventory: BTreeMap<String, u32> = BTreeMap::new();
+                main_inventory.insert("wood".into(), 1);
+                main_inventory.insert("stone-furnace".into(), 1);
+                main_inventory.insert("burner-mining-drill".into(), 1);
+                self.plan_world
+                    .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
+                        player_id,
+                        main_inventory: Box::new(main_inventory.clone()),
+                    })?;
+            }
+        }
+
+        let mut parent = self.graph.add_node(Task::new(None, "Process Start", None));
+        parent = self
+            .add_mine_entities_with_bots(
+                parent,
+                &player_ids,
+                &Position::default(),
+                Some("rock-huge".into()),
+                None,
+            )
+            .await?;
+        parent = self
+            .add_mine_entities_with_bots(
+                parent,
+                &player_ids,
+                &Position::default(),
+                None,
+                Some("tree".into()),
+            )
+            .await?;
+
+        let end = self.graph.add_node(Task::new(None, "Process End", None));
+        self.graph.add_edge(parent, end, 0.);
+        Ok((self.graph.clone(), self.plan_world.world.clone()))
+    }
+
     pub fn new(world: Arc<FactorioWorld>, rcon: Arc<FactorioRcon>) -> Planner {
         let mut plan_world = FactorioWorldWriter::new();
         plan_world.import(world.clone()).expect("import failed");
@@ -95,8 +145,44 @@ impl Planner {
             },
         );
         let node = self.graph.add_node(task);
-        self.graph.add_edge(parent, node, 5.);
+
+        let mut mining_time = 5.;
+        let mut inventory = *self.player(player_id).main_inventory.clone();
+        if let Some(prototype) = self.plan_world.world.entity_prototypes.get_one(name) {
+            if let Some(result) = prototype.mine_result.as_ref() {
+                for (mine_name, mine_count) in result {
+                    if let Some(inventory_count) = inventory.get(mine_name) {
+                        let cnt = *mine_count + *inventory_count;
+                        inventory.insert(mine_name.clone(), cnt);
+                    } else {
+                        inventory.insert(mine_name.clone(), *mine_count);
+                    }
+                }
+                if let Some(time) = prototype.mining_time.as_ref() {
+                    mining_time = time.to_f64().unwrap().ceil()
+                }
+            }
+        }
+        self.plan_world
+            .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
+                player_id,
+                main_inventory: Box::new(inventory),
+            })?;
+
+        self.graph.add_edge(parent, node, mining_time);
         Ok(node)
+    }
+
+    fn add_process_start_node(&mut self, parent: NodeIndex, label: &str) -> NodeIndex {
+        let start = self
+            .graph
+            .add_node(Task::new(None, &format!("Start: {}", label), None));
+        self.graph.add_edge(parent, start, 0.);
+
+        start
+    }
+    fn add_process_end_node(&mut self) -> NodeIndex {
+        self.graph.add_node(Task::new(None, "End", None))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -108,10 +194,10 @@ impl Planner {
         name: Option<String>,
         entity_type: Option<String>,
     ) -> anyhow::Result<NodeIndex> {
-        let start = self.graph.add_node(Task::new(
-            None,
+        let start = self.add_process_start_node(
+            parent,
             &format!(
-                "Start: Mine {} with {} Bots",
+                "Mine {} with {} Bots",
                 match name {
                     Some(ref name) => name.clone(),
                     None => entity_type
@@ -121,13 +207,11 @@ impl Planner {
                 },
                 bots.len()
             ),
-            None,
-        ));
-        self.graph.add_edge(parent, start, 0.);
-        let end = self.graph.add_node(Task::new(None, "End", None));
-
+        );
         let mut entities: Vec<FactorioEntity> =
             find_nearest_entities(self.rcon.clone(), search_center, name, entity_type).await?;
+
+        let mut weights: HashMap<NodeIndex, R64> = HashMap::new();
 
         for player_id in bots {
             let player_parent = self.graph.add_node(Task::new(
@@ -139,7 +223,6 @@ impl Planner {
                 ),
                 None,
             ));
-            self.graph.add_edge(start, player_parent, 0.);
             let mut parent = player_parent;
             if !entities.is_empty() {
                 let entity = entities.remove(0);
@@ -147,54 +230,31 @@ impl Planner {
                     .add_mine(parent, *player_id, &entity.position, &entity.name, 1)
                     .await?
             }
-            self.graph.add_edge(parent, end, 0.);
+            // self.graph.add_edge(parent, end, 0.);
+
+            let (weight, _) = astar(
+                &self.graph,
+                player_parent,
+                |finish| finish == parent,
+                |e| *e.weight(),
+                |_| 0.,
+            )
+            .expect("failed to find path");
+            self.graph.add_edge(start, player_parent, 0.);
+            weights.insert(parent, r64(weight));
         }
-        Ok(end)
-    }
 
-    #[allow(unused_assignments)]
-    pub async fn plan(&mut self, bot_count: u32) -> anyhow::Result<TaskGraph> {
-        let mut player_ids: Vec<u32> = vec![];
+        let end = self.add_process_end_node();
+        let max_weight = weights.values().max();
 
-        for player_id in 1u32..=bot_count {
-            player_ids.push(player_id);
-            if self.world.players.get_one(&player_id).is_none() {
-                let mut main_inventory: BTreeMap<String, u32> = BTreeMap::new();
-                main_inventory.insert("wood".into(), 1);
-                main_inventory.insert("stone-furnace".into(), 1);
-                main_inventory.insert("burner-mining-drill".into(), 1);
-                self.plan_world
-                    .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
-                        player_id,
-                        main_inventory: Box::new(main_inventory.clone()),
-                    })?;
+        if let Some(max_weight) = max_weight {
+            for (node, weight) in weights.iter() {
+                self.graph
+                    .add_edge(*node, end, (*max_weight - *weight).to_f64().unwrap());
             }
         }
 
-        let mut parent = self.graph.add_node(Task::new(None, "Process Start", None));
-        parent = self
-            .add_mine_entities_with_bots(
-                parent,
-                &player_ids,
-                &Position::default(),
-                Some("rock-huge".into()),
-                None,
-            )
-            .await?;
-        parent = self
-            .add_mine_entities_with_bots(
-                parent,
-                &player_ids,
-                &Position::default(),
-                None,
-                Some("tree".into()),
-            )
-            .await?;
-
-        let end = self.graph.add_node(Task::new(None, "Process End", None));
-        self.graph.add_edge(parent, end, 0.);
-
-        Ok(self.graph.clone())
+        Ok(end)
     }
 }
 
@@ -239,7 +299,30 @@ pub async fn plan_graph(
         .expect("failed to rcon");
     rcon.silent_print("").await.expect("failed to silent print");
     let mut planner = Planner::new(world, Arc::new(rcon));
-    let graph = planner.plan(bot_count).await?;
+    let (graph, world) = planner.plan(bot_count).await?;
+    if let Some(players) = &world.players.read() {
+        for (player_id, player) in players {
+            if let Some(player) = player.get_one() {
+                info!(
+                    "bot #{} endet up at {} with inventory: {:?}",
+                    player_id, player.position, player.main_inventory
+                );
+            }
+        }
+    }
+
+    let process_start = graph.node_indices().next().unwrap();
+    let process_end = graph.node_indices().last().unwrap();
+    let (weight, _) = astar(
+        &graph,
+        process_start,
+        |finish| finish == process_end,
+        |e| *e.weight(),
+        |_| 0.,
+    )
+    .expect("no path found");
+    info!("shortest path: {}", weight);
+
     println!("{}", dotgraph(&graph));
     child.kill().expect("failed to kill child");
     info!("took <yellow>{:?}</>", started.elapsed());
