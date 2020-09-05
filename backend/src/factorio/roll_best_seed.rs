@@ -1,9 +1,9 @@
 use crate::factorio::instance_setup::setup_factorio_instance;
-use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::plan::Planner;
 use crate::factorio::process_control::start_factorio_server;
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::util::calculate_distance;
+use crate::factorio::world::FactorioWorld;
 use crate::types::{AreaFilter, FactorioEntity, Position};
 use async_std::sync::{Arc, Mutex};
 use config::Config;

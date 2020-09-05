@@ -1,7 +1,7 @@
 use crate::factorio::instance_setup::setup_factorio_instance;
-use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::output_reader::read_output;
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
+use crate::factorio::world::FactorioWorld;
 use crate::factorio::ws::FactorioWebSocketServer;
 use actix::clock::Duration;
 use actix::Addr;

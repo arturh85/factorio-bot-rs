@@ -4,8 +4,12 @@ version = "1.0.0"
 authors = ["Artur Hallmann <arturh@arturh.de>"]
 edition = "2018"
 
+include = ["src/**/*", "public/**/*", "Cargo.toml"]
+exclude = ["dist/**/*", "node_modules/**/*"]
+
 [build-dependencies]
 which = "4.0.1"
 typescript-definitions = { git = "https://github.com/ufoscout/typescript-definitions", branch = "no-debug-attrs", features = ["export-typescript"]}
 factorio-bot-backend = { path = "../backend/" }
+walkdir = "2"
 

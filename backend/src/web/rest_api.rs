@@ -1,8 +1,8 @@
-use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::plan::Planner;
 use crate::factorio::rcon::FactorioRcon;
 use crate::factorio::tasks::dotgraph;
 use crate::factorio::util::blueprint_build_area;
+use crate::factorio::world::FactorioWorld;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
     AreaFilter, Direction, FactorioBlueprintInfo, FactorioEntity, FactorioEntityPrototype,
@@ -368,14 +368,15 @@ pub async fn remove_from_inventory(
 pub async fn all_players(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<Vec<FactorioPlayer>>, MyError> {
-    let mut players: Vec<FactorioPlayer> = Vec::new();
-    for (_, player) in &world.players.read().unwrap() {
-        let player = player.get_one();
-        if player.is_some() {
-            players.push(player.unwrap().clone());
+    let mut all_players: Vec<FactorioPlayer> = Vec::new();
+    if let Some(players) = &world.players.read() {
+        for (_, player) in players {
+            if let Some(player) = player.get_one() {
+                all_players.push(player.clone());
+            }
         }
     }
-    Ok(Json(players))
+    Ok(Json(all_players))
 }
 
 // #[get("/itemPrototypes")]
@@ -383,9 +384,12 @@ pub async fn item_prototypes(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<HashMap<String, FactorioItemPrototype>>, MyError> {
     let mut data: HashMap<String, FactorioItemPrototype> = HashMap::new();
-    for (key, value) in &world.item_prototypes.read().unwrap() {
-        let value = value.get_one().unwrap();
-        data.insert(key.clone(), value.clone());
+
+    if let Some(item_prototypes) = &world.item_prototypes.read() {
+        for (key, value) in item_prototypes {
+            let value = value.get_one().unwrap();
+            data.insert(key.clone(), value.clone());
+        }
     }
     Ok(Json(data))
 }
@@ -395,9 +399,11 @@ pub async fn entity_prototypes(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<HashMap<String, FactorioEntityPrototype>>, MyError> {
     let mut data: HashMap<String, FactorioEntityPrototype> = HashMap::new();
-    for (key, value) in &world.entity_prototypes.read().unwrap() {
-        let value = value.get_one().unwrap();
-        data.insert(key.clone(), value.clone());
+    if let Some(entity_prototypes) = &world.entity_prototypes.read() {
+        for (key, value) in entity_prototypes {
+            let value = value.get_one().unwrap();
+            data.insert(key.clone(), value.clone());
+        }
     }
     Ok(Json(data))
 }

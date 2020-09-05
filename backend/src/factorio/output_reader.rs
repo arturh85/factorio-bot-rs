@@ -1,4 +1,5 @@
-use crate::factorio::output_parser::{FactorioWorld, OutputParser};
+use crate::factorio::output_parser::OutputParser;
+use crate::factorio::world::FactorioWorld;
 use crate::factorio::ws::FactorioWebSocketServer;
 use actix::Addr;
 use std::fs::File;
@@ -61,8 +62,8 @@ pub async fn read_output(
                                                 | "item_prototypes"
                                                 | "graphics"
                                                 | "tiles"
-                                                | "resources"
-                                                | "objects" => {}
+                                                | "entities"
+                                                 => {}
                                                 _ => {
                                                     info!(
                                                         "<cyan>server</>⮞ §{}§<bright-blue>{}</>§<green>{}</>",

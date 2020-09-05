@@ -1,69 +1,93 @@
 use crate::factorio::instance_setup::setup_factorio_instance;
-use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::process_control::start_factorio_server;
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::roll_best_seed::find_nearest_entities;
 use crate::factorio::tasks::{dotgraph, MineTarget, PositionRadius, Task, TaskGraph};
 use crate::factorio::util::calculate_distance;
-use crate::types::{FactorioEntity, FactorioPlayer, Position};
+use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
+use crate::types::{
+    FactorioEntity, FactorioPlayer, PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent,
+    Position,
+};
 use async_std::sync::Arc;
+use evmap::ReadGuard;
 use petgraph::graph::NodeIndex;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::Instant;
 
 pub struct Planner {
     graph: TaskGraph,
     rcon: Arc<FactorioRcon>,
     world: Arc<FactorioWorld>,
+    plan_world: FactorioWorldWriter,
 }
 
 impl Planner {
     pub fn new(world: Arc<FactorioWorld>, rcon: Arc<FactorioRcon>) -> Planner {
+        let mut plan_world = FactorioWorldWriter::new();
+        plan_world.import(world.clone()).expect("import failed");
         Planner {
             graph: TaskGraph::new(),
             rcon,
             world,
+            plan_world,
         }
     }
+
+    fn player(&self, player_id: u32) -> ReadGuard<FactorioPlayer> {
+        self.plan_world
+            .world
+            .players
+            .get_one(&player_id)
+            .expect("failed to find player")
+    }
+
+    fn distance(&self, player_id: u32, position: &Position) -> f64 {
+        calculate_distance(&self.player(player_id).position, position).ceil()
+    }
+
     pub async fn add_walk(
         &mut self,
         parent_node: NodeIndex,
-        player: &mut FactorioPlayer,
+        player_id: u32,
         goal: &PositionRadius,
     ) -> anyhow::Result<NodeIndex> {
-        let distance = calculate_distance(&player.position, &goal.position).ceil();
-        let task = Task::new_walk(player.player_id, goal.clone());
+        let distance = self.distance(player_id, &goal.position);
+        let task = Task::new_walk(player_id, goal.clone());
         let node = self.graph.add_node(task);
         self.graph.add_edge(parent_node, node, distance);
-        player.position = goal.position.clone();
+        self.plan_world
+            .player_changed_position(PlayerChangedPositionEvent {
+                player_id,
+                position: goal.position.clone(),
+            })?;
         Ok(node)
     }
 
     pub async fn add_mine(
         &mut self,
         parent: NodeIndex,
-        player: &mut FactorioPlayer,
+        player_id: u32,
         position: &Position,
         name: &str,
         count: u32,
     ) -> anyhow::Result<NodeIndex> {
         let mut parent = parent;
-
-        let distance = calculate_distance(&player.position, &position);
-        if distance > player.resource_reach_distance as f64 {
+        let player = self.player(player_id);
+        let distance = calculate_distance(&player.position, position).ceil();
+        let reach_distance = player.resource_reach_distance as f64;
+        drop(player);
+        if distance > reach_distance {
             parent = self
                 .add_walk(
                     parent,
-                    player,
-                    &PositionRadius::from_position(
-                        &position,
-                        player.resource_reach_distance as f64,
-                    ),
+                    player_id,
+                    &PositionRadius::from_position(&position, reach_distance),
                 )
                 .await?;
         }
         let task = Task::new_mine(
-            player.player_id,
+            player_id,
             MineTarget {
                 name: name.into(),
                 count,
@@ -75,10 +99,11 @@ impl Planner {
         Ok(node)
     }
 
+    #[allow(clippy::ptr_arg)]
     pub async fn add_mine_entities_with_bots(
         &mut self,
         parent: NodeIndex,
-        bots: &mut HashMap<u32, FactorioPlayer>,
+        bots: &Vec<u32>,
         search_center: &Position,
         name: Option<String>,
         entity_type: Option<String>,
@@ -104,10 +129,14 @@ impl Planner {
         let mut entities: Vec<FactorioEntity> =
             find_nearest_entities(self.rcon.clone(), search_center, name, entity_type).await?;
 
-        for (player_id, mut player) in bots {
+        for player_id in bots {
             let player_parent = self.graph.add_node(Task::new(
                 Some(*player_id),
-                &*format!("Bot #{} at {}", player_id, player.position),
+                &*format!(
+                    "Bot #{} at {}",
+                    player_id,
+                    &self.player(*player_id).position
+                ),
                 None,
             ));
             self.graph.add_edge(start, player_parent, 0.);
@@ -115,7 +144,7 @@ impl Planner {
             if !entities.is_empty() {
                 let entity = entities.remove(0);
                 parent = self
-                    .add_mine(parent, &mut player, &entity.position, &entity.name, 1)
+                    .add_mine(parent, *player_id, &entity.position, &entity.name, 1)
                     .await?
             }
             self.graph.add_edge(parent, end, 0.);
@@ -125,37 +154,28 @@ impl Planner {
 
     #[allow(unused_assignments)]
     pub async fn plan(&mut self, bot_count: u32) -> anyhow::Result<TaskGraph> {
-        let mut bots: HashMap<u32, FactorioPlayer> = HashMap::new();
         let mut player_ids: Vec<u32> = vec![];
 
-        let _force = self.rcon.player_force().await?;
         for player_id in 1u32..=bot_count {
-            bots.insert(
-                player_id,
-                match self.world.players.get_one(&player_id) {
-                    Some(player) => player.clone(),
-                    None => {
-                        let mut player = FactorioPlayer {
-                            player_id,
-                            ..Default::default()
-                        };
-                        player.main_inventory.insert("wood".into(), 1);
-                        player.main_inventory.insert("stone-furnace".into(), 1);
-                        player
-                            .main_inventory
-                            .insert("burner-mining-drill".into(), 1);
-                        player
-                    }
-                },
-            );
             player_ids.push(player_id);
+            if self.world.players.get_one(&player_id).is_none() {
+                let mut main_inventory: BTreeMap<String, u32> = BTreeMap::new();
+                main_inventory.insert("wood".into(), 1);
+                main_inventory.insert("stone-furnace".into(), 1);
+                main_inventory.insert("burner-mining-drill".into(), 1);
+                self.plan_world
+                    .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
+                        player_id,
+                        main_inventory: Box::new(main_inventory.clone()),
+                    })?;
+            }
         }
 
         let mut parent = self.graph.add_node(Task::new(None, "Process Start", None));
         parent = self
             .add_mine_entities_with_bots(
                 parent,
-                &mut bots,
+                &player_ids,
                 &Position::default(),
                 Some("rock-huge".into()),
                 None,
@@ -164,7 +184,7 @@ impl Planner {
         parent = self
             .add_mine_entities_with_bots(
                 parent,
-                &mut bots,
+                &player_ids,
                 &Position::default(),
                 None,
                 Some("tree".into()),

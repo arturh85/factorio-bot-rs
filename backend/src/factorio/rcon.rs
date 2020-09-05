@@ -1,10 +1,10 @@
-use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::util::{
     blueprint_build_area, build_entity_path, calculate_distance, hashmap_to_lua, map_blocked_tiles,
     move_pos, move_position, position_in_rect, position_to_lua, rect_to_lua, span_rect, str_to_lua,
     value_to_lua, vec_to_lua, vector_add, vector_multiply, vector_normalize,
     vector_rotate_clockwise, vector_substract,
 };
+use crate::factorio::world::FactorioWorld;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
     AreaFilter, Direction, FactorioEntity, FactorioForce, FactorioTile, InventoryResponse, Pos,
@@ -809,7 +809,7 @@ impl FactorioRcon {
             )
             .await?;
         if result.is_none() {
-            return Err(anyhow!("Expected result from find_entitites_filtered"));
+            return Err(anyhow!("Expected result from find_entities_filtered"));
         }
         let mut json = result.unwrap().pop().unwrap();
         // empty objects/arrays are the same in lua

@@ -1,4 +1,3 @@
-use crate::factorio::output_parser::FactorioWorld;
 use crate::types::{ChunkPosition, FactorioGraphic, Position};
 use evmap::ReadGuard;
 use image::imageops::FilterType;
@@ -10,6 +9,7 @@ use rusttype::{Font, Scale};
 use std::sync::Arc;
 // use std::time::Instant;
 
+use crate::factorio::world::FactorioWorld;
 use actix_web::{web, HttpResponse};
 use std::path::Path;
 
@@ -62,7 +62,7 @@ pub async fn map_tiles(
                     let chunk_py = (chunk_iy * chunk_width).floor() as i32;
                     match world.chunks.get_one(&chunk_position) {
                         Some(chunk) => {
-                            if !chunk.objects.is_empty() {
+                            if !chunk.entities.is_empty() {
                                 // info!("chunk found at {:?}: {:?}", &chunk_position, _chunk);
                             }
                             for (tile_idx, tile) in chunk.tiles.iter().enumerate() {
@@ -115,24 +115,16 @@ pub async fn map_tiles(
                                     );
                                 }
                             }
-                            for object in &chunk.objects {
+                            for entitiy in &chunk.entities {
                                 let (x_mod, y_mod) =
-                                    chunk_offset(&chunk_position, &object.bounding_box.left_top);
+                                    chunk_offset(&chunk_position, &entitiy.bounding_box.left_top);
                                 let mut rect_x =
                                     (chunk_px + (x_mod * factor).round() as i32) as i32;
                                 let mut rect_y =
                                     (chunk_py + (y_mod * factor).round() as i32) as i32;
 
                                 let graphic: Option<ReadGuard<FactorioGraphic>> =
-                                    world.graphics.get_one(&object.name);
-                                // let graphic = world.graphics.get_one(&object.name);
-                                // info!(
-                                //     "object {} @ {}/{} -> {:?}",
-                                //     object.name,
-                                //     object.position.x(),
-                                //     object.position.y(),
-                                //     graphic
-                                // );
+                                    world.graphics.get_one(&entitiy.name);
                                 match graphic {
                                     Some(graphic) => {
                                         // let mut image_cache = image_cache.lock().unwrap();
@@ -177,8 +169,8 @@ pub async fn map_tiles(
                                         );
                                         let mut img = image::imageops::resize(
                                             &img,
-                                            (object.bounding_box.width() * factor).ceil() as u32,
-                                            (object.bounding_box.height() * factor).ceil() as u32,
+                                            (entitiy.bounding_box.width() * factor).ceil() as u32,
+                                            (entitiy.bounding_box.height() * factor).ceil() as u32,
                                             FilterType::Nearest,
                                         );
                                         // info!(
@@ -230,68 +222,73 @@ pub async fn map_tiles(
                                         );
                                     }
                                     None => {
-                                        // log::info!("no graphic for {:?}", &object);
-                                        let name = match object.name.find('-') {
-                                            Some(pos) => &object.name[0..pos],
-                                            None => &object.name,
+                                        let color = match &entitiy.name[..] {
+                                            "uranium-ore" => {
+                                                Some(image::Rgba([169u8, 241u8, 18u8, 255u8]))
+                                            }
+                                            "iron-ore" => {
+                                                Some(image::Rgba([79u8, 119u8, 174u8, 255u8]))
+                                            }
+                                            "copper-ore" => {
+                                                Some(image::Rgba([232u8, 105u8, 21u8, 255u8]))
+                                            }
+                                            "coal" => Some(image::Rgba([22u8, 22u8, 22u8, 255u8])),
+                                            "stone" => {
+                                                Some(image::Rgba([162u8, 122u8, 32u8, 255u8]))
+                                            }
+                                            "crude-oil" => {
+                                                Some(image::Rgba([0u8, 0u8, 0u8, 255u8]))
+                                            }
+                                            _ => None,
                                         };
-                                        match &name[..] {
-                                            "tree" => {
-                                                if factor > 1.0 {
-                                                    draw_filled_circle_mut(
-                                                        &mut buffer,
-                                                        (rect_x, rect_y),
-                                                        factor as i32,
-                                                        trees,
-                                                    );
+
+                                        if let Some(color) = color {
+                                            draw_hollow_rect_mut(
+                                                &mut buffer,
+                                                Rect::at(rect_x, rect_y)
+                                                    .of_size(factor as u32, factor as u32),
+                                                color,
+                                            );
+                                        } else {
+                                            let name = match entitiy.name.find('-') {
+                                                Some(pos) => &entitiy.name[0..pos],
+                                                None => &entitiy.name,
+                                            };
+                                            match &name[..] {
+                                                "tree" => {
+                                                    if factor > 1.0 {
+                                                        draw_filled_circle_mut(
+                                                            &mut buffer,
+                                                            (rect_x, rect_y),
+                                                            factor as i32,
+                                                            trees,
+                                                        );
+                                                    }
+                                                }
+                                                _ => {
+                                                    let width = (entitiy.bounding_box.width()
+                                                        * factor)
+                                                        .ceil()
+                                                        as u32;
+                                                    let height = (entitiy.bounding_box.height()
+                                                        * factor)
+                                                        .ceil()
+                                                        as u32;
+                                                    if width > 0 && height > 0 {
+                                                        draw_filled_rect_mut(
+                                                            &mut buffer,
+                                                            Rect::at(rect_x, rect_y)
+                                                                .of_size(width, height),
+                                                            red,
+                                                        );
+                                                    }
                                                 }
                                             }
-                                            _ => {
-                                                let width = (object.bounding_box.width() * factor)
-                                                    .ceil()
-                                                    as u32;
-                                                let height = (object.bounding_box.height() * factor)
-                                                    .ceil()
-                                                    as u32;
-                                                if width > 0 && height > 0 {
-                                                    draw_filled_rect_mut(
-                                                        &mut buffer,
-                                                        Rect::at(rect_x, rect_y)
-                                                            .of_size(width, height),
-                                                        red,
-                                                    );
-                                                }
-                                            }
+                                            // log::info!("no graphic for {:?}", &object);
                                         }
                                     }
-                                };
+                                }
                             }
-                            for resource in &chunk.resources {
-                                let (x_mod, y_mod) =
-                                    chunk_offset(&chunk_position, &resource.position);
-                                let rect_x = (chunk_px + (x_mod * factor).round() as i32) as i32;
-                                let rect_y = (chunk_py + (y_mod * factor).round() as i32) as i32;
-                                draw_hollow_rect_mut(
-                                    &mut buffer,
-                                    Rect::at(rect_x, rect_y).of_size(factor as u32, factor as u32),
-                                    match &resource.name[..] {
-                                        "uranium-ore" => image::Rgba([169u8, 241u8, 18u8, 255u8]),
-                                        "iron-ore" => image::Rgba([79u8, 119u8, 174u8, 255u8]),
-                                        "copper-ore" => image::Rgba([232u8, 105u8, 21u8, 255u8]),
-                                        "coal" => image::Rgba([22u8, 22u8, 22u8, 255u8]),
-                                        "stone" => image::Rgba([162u8, 122u8, 32u8, 255u8]),
-                                        "crude-oil" => image::Rgba([0u8, 0u8, 0u8, 255u8]),
-                                        _ => {
-                                            warn!(
-                                                "<red>unhandled resource type</>: <bright-blue>{}</>",
-                                                resource.name
-                                            );
-                                            image::Rgba([255u8, 0u8, 255u8, 255u8])
-                                        }
-                                    },
-                                );
-                            }
-
                             draw_hollow_rect_mut(
                                 &mut buffer,
                                 Rect::at(chunk_px, chunk_py)

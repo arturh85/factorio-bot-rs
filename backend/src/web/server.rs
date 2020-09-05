@@ -1,8 +1,8 @@
-use crate::factorio::output_parser::FactorioWorld;
 use crate::factorio::rcon::FactorioRcon;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::factorio::world::FactorioWorld;
 use crate::factorio::ws::{FactorioWebSocketClient, FactorioWebSocketServer, RegisterWSClient};
 use actix::Addr;
 use actix_cors::Cors;

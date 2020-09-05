@@ -673,20 +673,20 @@ function on_tick(event)
 
 	-- periodically update the objects around the player to ensure that nothing is missed
 	-- This is merely a safety net and SHOULD be unnecessary, if all other updates don't miss anything
-	if event.tick % 300 == 0 and false then -- don't do that for now, as it eats up too much cpu on the c++ part
-		for idx, player in pairs(game.players) do
-			if player.connected and player.character then
-				local x = math.floor(player.character.position.x/32)*32
-				local y = math.floor(player.character.position.x/32)*32
-
-				for xx = x-96, x+96, 32 do
-					for yy = y-96, y+96, 32 do
-						writeout_objects(event.tick, player.surface, {left_top={x=xx,y=yy}, right_bottom={x=xx+32,y=yy+32}})
-					end
-				end
-			end
-		end
-	end
+--	if event.tick % 300 == 0 and false then -- don't do that for now, as it eats up too much cpu on the c++ part
+--		for idx, player in pairs(game.players) do
+--			if player.connected and player.character then
+--				local x = math.floor(player.character.position.x/32)*32
+--				local y = math.floor(player.character.position.x/32)*32
+--
+--				for xx = x-96, x+96, 32 do
+--					for yy = y-96, y+96, 32 do
+--						writeout_objects(event.tick, player.surface, {left_top={x=xx,y=yy}, right_bottom={x=xx+32,y=yy+32}})
+--					end
+--				end
+--			end
+--		end
+--	end
 
 	if #todo_next_tick > 0 then
 		if not wait_for_player then
@@ -797,8 +797,7 @@ function on_chunk_generated(event)
 	if chunk_xend > global.map_area.x2 then global.map_area.x2 = chunk_xend end
 	if chunk_yend > global.map_area.y2 then global.map_area.y2 = chunk_yend end
 
-	writeout_resources(event.tick, surface, area)
-	writeout_objects(event.tick, surface, area)
+	writeout_entities(event.tick, surface, area)
 	local chunk_id = chunk_x .. "/" .. chunk_y
 	if tile_chunks[chunk_id] == nil then
 		tile_chunks[chunk_id] = true
@@ -851,52 +850,16 @@ function direction_str(d)
 	end
 end
 
-function writeout_objects(tick, surface, area)
+function writeout_entities(tick, surface, area)
 	--if my_client_id ~= 1 then return end
 	local header = area.left_top.x..","..area.left_top.y..";"..area.right_bottom.x..","..area.right_bottom.y..":"
 	local objects = {}
 	for idx, ent in pairs(surface.find_entities(area)) do
-		if ent.type ~= "resource" and area.left_top.x <= ent.position.x and ent.position.x < area.right_bottom.x and area.left_top.y <= ent.position.y and ent.position.y < area.right_bottom.y then
-			local dir
-			if ent.type == "pipe" or ent.type == "wall" or ent.type == "heat-pipe" then
-				-- HACK to render pipes/walls etc correctly *most* of the time. (at least for straight parts)
-				-- this requires writeout_objects of neighboring entities whenever a pipe/wall etc is placed, because adjacent things might change their
-				-- direction as well
-				local n_horiz = 0
-				local n_vert = 0
-				n_horiz = n_horiz + #surface.find_entities_filtered{type=ent.type, position={x=ent.position.x+1, y=ent.position.y}}
-				n_horiz = n_horiz + #surface.find_entities_filtered{type=ent.type, position={x=ent.position.x-1, y=ent.position.y}}
-				n_horiz = n_horiz + #surface.find_entities_filtered{type=ent.type.."-to-ground", position={x=ent.position.x+1, y=ent.position.y}}
-				n_horiz = n_horiz + #surface.find_entities_filtered{type=ent.type.."-to-ground", position={x=ent.position.x-1, y=ent.position.y}}
-				n_vert  = n_vert  + #surface.find_entities_filtered{type=ent.type, position={x=ent.position.x, y=ent.position.y+1}}
-				n_vert  = n_vert  + #surface.find_entities_filtered{type=ent.type, position={x=ent.position.x, y=ent.position.y-1}}
-				n_vert  = n_vert  + #surface.find_entities_filtered{type=ent.type.."-to-ground", position={x=ent.position.x, y=ent.position.y+1}}
-				n_vert  = n_vert  + #surface.find_entities_filtered{type=ent.type.."-to-ground", position={x=ent.position.x, y=ent.position.y-1}}
-
-				if n_horiz > n_vert then
-					dir = defines.direction.east
-				else
-					dir = defines.direction.north
-				end
-			else
-				dir = ent.direction
-			end
-			local object = table_properties(ent, {"name", "position"})
-			object.direction = direction_str(dir)
-			object.collisionMask = ent.prototype.collision_mask
-			object.boundingBox = {leftTop = ent.bounding_box.left_top, rightBottom = ent.bounding_box.right_bottom}
-			local output_inventory = ent.get_output_inventory()
-			if output_inventory ~= nil then
-				object.outputInventory = output_inventory.get_contents()
-			end
-			local fuel_inventory = ent.get_fuel_inventory()
-			if fuel_inventory ~= nil then
-				object.fuelInventory = fuel_inventory.get_contents()
-			end
-			table.insert(objects, object)
+		if ent.type ~= "character" and area.left_top.x <= ent.position.x and ent.position.x < area.right_bottom.x and area.left_top.y <= ent.position.y and ent.position.y < area.right_bottom.y then
+			table.insert(objects, serialize_entity(ent))
 		end
 	end
-	writeout(tick, "objects", header .. game.table_to_json(objects))
+	writeout(tick, "entities", header .. game.table_to_json(objects))
 	line=nil
 end
 
@@ -979,12 +942,14 @@ function on_some_entity_created(event)
 		return
 	end
 
-	if ent.type == "pipe" or ent.type == "pipe-to-ground" or ent.type == "wall" or ent.type == "heat-pipe" then -- HACK to semi-correctly assign an orientation to pipes etc
-		-- need to write out neighboring entities as well, because they might have changed their orientation by this event
-		writeout_objects(event.tick, ent.surface, {left_top={x=math.floor(ent.position.x)-1, y=math.floor(ent.position.y)-1}, right_bottom={x=math.floor(ent.position.x)+2, y=math.floor(ent.position.y)+2}})
-	else
-		writeout_objects(event.tick, ent.surface, {left_top={x=math.floor(ent.position.x), y=math.floor(ent.position.y)}, right_bottom={x=math.floor(ent.position.x)+1, y=math.floor(ent.position.y)+1}})
-	end
+	writeout(event.tick, "on_some_entity_created", game.table_to_json(serialize_entity(ent)))
+
+--	if ent.type == "pipe" or ent.type == "pipe-to-ground" or ent.type == "wall" or ent.type == "heat-pipe" then -- HACK to semi-correctly assign an orientation to pipes etc
+--		-- need to write out neighboring entities as well, because they might have changed their orientation by this event
+--		writeout_objects(event.tick, ent.surface, {left_top={x=math.floor(ent.position.x)-1, y=math.floor(ent.position.y)-1}, right_bottom={x=math.floor(ent.position.x)+2, y=math.floor(ent.position.y)+2}})
+--	else
+--		writeout_objects(event.tick, ent.surface, {left_top={x=math.floor(ent.position.x), y=math.floor(ent.position.y)}, right_bottom={x=math.floor(ent.position.x)+1, y=math.floor(ent.position.y)+1}})
+--	end
 
 --	print("on_some_entity_created: "..ent.name.." at "..ent.position.x..","..ent.position.y)
 end
@@ -995,15 +960,16 @@ function on_some_entity_deleted(event)
 		complain("wtf, on_some_entity_created has nil entity")
 		return
 	end
+	writeout(event.tick, "on_some_entity_deleted", game.table_to_json(serialize_entity(ent)))
 
-	-- we can't do this now, because the entity still exists at this point. instead, we schedule the writeout for the next tick
-	
-	local surface = ent.surface
-	local area = {left_top={x=math.floor(ent.position.x), y=math.floor(ent.position.y)}, right_bottom={x=math.floor(ent.position.x)+1, y=math.floor(ent.position.y)+1}}
-	local tick = event.tick
-
-	table.insert(todo_next_tick, function () writeout_objects(tick, surface, area ) end)
---	complain("on_some_entity_deleted: "..ent.name.." at "..ent.position.x..","..ent.position.y)
+--	-- we can't do this now, because the entity still exists at this point. instead, we schedule the writeout for the next tick
+--
+--	local surface = ent.surface
+--	local area = {left_top={x=math.floor(ent.position.x), y=math.floor(ent.position.y)}, right_bottom={x=math.floor(ent.position.x)+1, y=math.floor(ent.position.y)+1}}
+--	local tick = event.tick
+--
+--	table.insert(todo_next_tick, function () writeout_objects(tick, surface, area ) end)
+----	complain("on_some_entity_deleted: "..ent.name.." at "..ent.position.x..","..ent.position.y)
 end
 
 function on_player_crafted_item(event)

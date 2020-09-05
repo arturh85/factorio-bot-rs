@@ -59,12 +59,12 @@ pub struct FactorioPlayer {
     pub player_id: u32,
     pub position: Position,
     pub main_inventory: Box<BTreeMap<String, u32>>,
-    pub build_distance: u32,
-    pub reach_distance: u32,
-    pub drop_item_distance: u32,
-    pub item_pickup_distance: u32,
-    pub loot_pickup_distance: u32,
-    pub resource_reach_distance: u32,
+    pub build_distance: u32,          // for place_entity
+    pub reach_distance: u32,          // for insert_to_inventory
+    pub drop_item_distance: u32,      // remove_from_inventory
+    pub item_pickup_distance: u32,    // not in use, for picking up items from the ground
+    pub loot_pickup_distance: u32, // not in use, for picking up items from the ground automatically
+    pub resource_reach_distance: u32, // for mine
 }
 
 impl Default for FactorioPlayer {
@@ -74,11 +74,11 @@ impl Default for FactorioPlayer {
             position: Position::default(),
             main_inventory: Box::new(BTreeMap::new()),
             build_distance: 10,
-            reach_distance: 3,
+            reach_distance: 10,
             drop_item_distance: 10,
-            item_pickup_distance: 10,
-            loot_pickup_distance: 10,
-            resource_reach_distance: 10,
+            item_pickup_distance: 1,
+            loot_pickup_distance: 2,
+            resource_reach_distance: 3,
         }
     }
 }
@@ -217,7 +217,9 @@ impl FromStr for Position {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(
+    Debug, Clone, Default, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct Rect {
     pub left_top: Position,
@@ -267,8 +269,7 @@ pub struct FactorioTile {
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioChunk {
-    pub objects: Vec<ChunkObject>,
-    pub resources: Vec<ChunkResource>,
+    pub entities: Vec<FactorioEntity>,
     pub tiles: Vec<FactorioTile>,
 }
 
@@ -348,6 +349,7 @@ pub struct FactorioEntity {
     pub name: String,
     pub entity_type: String,
     pub position: Position,
+    pub bounding_box: Rect,
     pub direction: u8,
     pub drop_position: Option<Position>,
     pub pickup_position: Option<Position>, // only type = inserter

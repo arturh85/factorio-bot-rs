@@ -170,7 +170,7 @@ end
 
 function serialize_entity(entity)
     local record = table_properties(entity, {"name", "direction", "type", "position", "drop_position"}, {type = "entityType", drop_position = "dropPosition"})
-
+    record.boundingBox = table_properties(entity.bounding_box, {"left_top", "right_bottom"}, {left_top = "leftTop", right_bottom = "rightBottom"})
     local output_inventory = entity.get_output_inventory()
     if output_inventory ~= nil then
         record.outputInventory = output_inventory.get_contents()

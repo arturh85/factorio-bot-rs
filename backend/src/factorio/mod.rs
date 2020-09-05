@@ -7,4 +7,5 @@ pub mod rcon;
 pub mod roll_best_seed;
 pub mod tasks;
 pub mod util;
+pub mod world;
 pub mod ws;
