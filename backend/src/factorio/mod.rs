@@ -1,3 +1,4 @@
+pub mod flow;
 pub mod instance_setup;
 pub mod output_parser;
 pub mod output_reader;

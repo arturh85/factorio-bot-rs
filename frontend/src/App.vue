@@ -67,12 +67,14 @@ export default Vue.extend({
     const ws = new WebSocket('ws://localhost:7123/ws/');
     ws.onmessage = (evt: MessageEvent) => {
       if (evt.data !== 'Heartbeat') {
-        const [action, payload] = JSON.parse(evt.data);
+        const [action, payload, other] = JSON.parse(evt.data);
         if (action === 'researchCompleted') {
           FactorioApi.playerForce().then(force => {
             this.$store.commit('updateForce', force)
             FactorioApi.allRecipes().then(recipes => this.$store.commit('updateRecipes', recipes))
           });
+        } else if(action === 'task') {
+          console.log('task ' + payload, other);
         } else {
           this.$store.commit(action, payload);
         }

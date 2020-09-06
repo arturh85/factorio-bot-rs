@@ -1,7 +1,7 @@
 #![warn(clippy::all, clippy::pedantic)]
 use actix::Actor;
 use clap::{App, Arg};
-use factorio_bot_backend::factorio::plan::plan_graph;
+use factorio_bot_backend::factorio::plan::start_factorio_and_plan_graph;
 use factorio_bot_backend::factorio::process_control::start_factorio;
 use factorio_bot_backend::factorio::rcon::{FactorioRcon, RconSettings};
 use factorio_bot_backend::factorio::roll_best_seed::{roll_seed, RollSeedLimit};
@@ -202,7 +202,7 @@ async fn main() -> anyhow::Result<()> {
             None => eprintln!("no seed found"),
         }
     } else if let Some(matches) = matches.subcommand_matches("plan") {
-        let _graph = plan_graph(
+        let _graph = start_factorio_and_plan_graph(
             settings,
             matches.value_of("map"),
             matches.value_of("seed"),

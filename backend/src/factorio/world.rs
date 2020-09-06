@@ -1,3 +1,4 @@
+use crate::factorio::flow::FlowGraph;
 use crate::factorio::util::{add_to_rect, rect_fields, rect_floor};
 use crate::types::{
     ChunkPosition, FactorioChunk, FactorioEntity, FactorioEntityPrototype, FactorioGraphic,
@@ -39,6 +40,7 @@ pub struct FactorioWorldWriter {
     item_prototypes_writer: WriteHandle<String, FactorioItemPrototype>,
     players_writer: WriteHandle<u32, FactorioPlayer>,
     blocked_writer: WriteHandle<Pos, bool>,
+    flow: Arc<Mutex<FlowGraph>>,
 }
 
 impl FactorioWorldWriter {
@@ -337,6 +339,7 @@ impl FactorioWorldWriter {
             evmap::new::<String, FactorioEntityPrototype>();
         let (item_prototypes_reader, item_prototypes_writer) =
             evmap::new::<String, FactorioItemPrototype>();
+        let flow = Arc::new(Mutex::new(FlowGraph::new()));
 
         FactorioWorldWriter {
             players_writer,
@@ -346,6 +349,7 @@ impl FactorioWorldWriter {
             entity_prototypes_writer,
             item_prototypes_writer,
             blocked_writer,
+            flow,
             world: Arc::new(FactorioWorld {
                 image_cache,
                 image_cache_writer: std::sync::Mutex::new(image_cache_writer),
@@ -365,5 +369,8 @@ impl FactorioWorldWriter {
 
     pub fn world(&self) -> Arc<FactorioWorld> {
         self.world.clone()
+    }
+    pub fn flow(&self) -> Arc<Mutex<FlowGraph>> {
+        self.flow.clone()
     }
 }

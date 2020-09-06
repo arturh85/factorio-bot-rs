@@ -1,14 +1,16 @@
-use crate::factorio::plan::Planner;
+use crate::factorio::plan::{execute_plan, Planner};
 use crate::factorio::rcon::FactorioRcon;
 use crate::factorio::tasks::dotgraph;
 use crate::factorio::util::blueprint_build_area;
 use crate::factorio::world::FactorioWorld;
+use crate::factorio::ws::FactorioWebSocketServer;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
     AreaFilter, Direction, FactorioBlueprintInfo, FactorioEntity, FactorioEntityPrototype,
     FactorioForce, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
     InventoryResponse, PlaceEntitiesResult, PlaceEntityResult, Position, RequestEntity,
 };
+use actix::Addr;
 use actix_web::http::StatusCode;
 use actix_web::web::{Json, Path as PathInfo};
 use actix_web::{web, HttpResponse};
@@ -708,5 +710,23 @@ pub async fn web_plan_graph(
     );
     let (graph, _world) = planner.plan(players).await?;
     let dot = dotgraph(&graph);
+    Ok(dot)
+}
+
+pub async fn web_initiate_plan(
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+    websocket_server: web::Data<Addr<FactorioWebSocketServer>>,
+) -> Result<String, MyError> {
+    let players = world.players.len() as u32;
+    let mut planner = Planner::new(world.as_ref().clone(), rcon.as_ref().clone());
+    let (graph, _world) = planner.plan(players).await?;
+    let dot = dotgraph(&graph);
+    execute_plan(
+        world.as_ref().clone(),
+        rcon.as_ref().clone(),
+        Some(websocket_server.as_ref().clone()),
+        graph,
+    );
     Ok(dot)
 }

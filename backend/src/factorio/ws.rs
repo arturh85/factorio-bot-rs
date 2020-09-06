@@ -82,6 +82,29 @@ pub struct PlayerLeftMessage {
 #[rtype(result = "()")]
 pub struct ResearchCompletedMessage {}
 
+#[derive(Message, Serialize)]
+#[rtype(result = "()")]
+pub struct TaskStarted {
+    pub node_id: usize,
+    pub tick: u32,
+}
+#[derive(Message, Serialize)]
+#[rtype(result = "()")]
+pub struct TaskSuccess {
+    pub node_id: usize,
+    pub tick: u32,
+    pub duration: u32,
+}
+
+#[derive(Message, Serialize)]
+#[rtype(result = "()")]
+pub struct TaskFailed {
+    pub node_id: usize,
+    pub tick: u32,
+    pub duration: u32,
+    pub error: String,
+}
+
 pub struct FactorioWebSocketServer {
     pub listeners: Vec<Addr<FactorioWebSocketClient>>,
 }
@@ -187,5 +210,29 @@ impl Handler<ResearchCompletedMessage> for FactorioWebSocketServer {
 
     fn handle(&mut self, _msg: ResearchCompletedMessage, _: &mut Context<Self>) {
         self.broadcast(json!(["researchCompleted",]));
+    }
+}
+
+impl Handler<TaskStarted> for FactorioWebSocketServer {
+    type Result = ();
+
+    fn handle(&mut self, _msg: TaskStarted, _: &mut Context<Self>) {
+        self.broadcast(json!(["task", "started", _msg]));
+    }
+}
+
+impl Handler<TaskSuccess> for FactorioWebSocketServer {
+    type Result = ();
+
+    fn handle(&mut self, _msg: TaskSuccess, _: &mut Context<Self>) {
+        self.broadcast(json!(["task", "success", _msg]));
+    }
+}
+
+impl Handler<TaskFailed> for FactorioWebSocketServer {
+    type Result = ();
+
+    fn handle(&mut self, _msg: TaskFailed, _: &mut Context<Self>) {
+        self.broadcast(json!(["task", "failed", _msg]));
     }
 }

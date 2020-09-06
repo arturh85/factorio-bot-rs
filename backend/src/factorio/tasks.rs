@@ -2,66 +2,9 @@ use crate::types::{Direction, Position};
 use actix::{Addr, SystemService};
 use actix_taskqueue::queue::TaskQueue;
 use actix_taskqueue::worker::*;
+use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use serde::export::Formatter;
-
-#[derive(Debug, Clone)]
-pub struct InventoryItem {
-    pub name: String,
-    pub count: u32,
-}
-
-impl InventoryItem {
-    pub fn new(name: &str, count: u32) -> InventoryItem {
-        InventoryItem {
-            name: name.into(),
-            count,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct InventoryLocation {
-    pub entity_name: String,
-    pub position: Position,
-    pub inventory_type: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct EntityPlacement {
-    pub item_name: String,
-    pub position: Position,
-    pub direction: Direction,
-}
-
-#[derive(Debug, Clone)]
-pub struct PositionRadius {
-    pub position: Position,
-    pub radius: f64,
-}
-impl PositionRadius {
-    pub fn new(x: f64, y: f64, radius: f64) -> PositionRadius {
-        PositionRadius {
-            position: Position::new(x, y),
-            radius,
-        }
-    }
-    pub fn from_position(pos: &Position, radius: f64) -> PositionRadius {
-        PositionRadius {
-            position: pos.clone(),
-            radius,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MineTarget {
-    pub position: Position,
-    pub name: String,
-    pub count: u32,
-}
-
-pub type PlayerId = u32;
 
 #[derive(Debug, Clone)]
 pub enum TaskData {
@@ -158,6 +101,64 @@ pub struct TaskResult(i32);
 
 pub type TaskGraph = StableGraph<Task, f64>;
 
+#[derive(Debug, Clone)]
+pub struct InventoryItem {
+    pub name: String,
+    pub count: u32,
+}
+
+impl InventoryItem {
+    pub fn new(name: &str, count: u32) -> InventoryItem {
+        InventoryItem {
+            name: name.into(),
+            count,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InventoryLocation {
+    pub entity_name: String,
+    pub position: Position,
+    pub inventory_type: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct EntityPlacement {
+    pub item_name: String,
+    pub position: Position,
+    pub direction: Direction,
+}
+
+#[derive(Debug, Clone)]
+pub struct PositionRadius {
+    pub position: Position,
+    pub radius: f64,
+}
+impl PositionRadius {
+    pub fn new(x: f64, y: f64, radius: f64) -> PositionRadius {
+        PositionRadius {
+            position: Position::new(x, y),
+            radius,
+        }
+    }
+    pub fn from_position(pos: &Position, radius: f64) -> PositionRadius {
+        PositionRadius {
+            position: pos.clone(),
+            radius,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MineTarget {
+    pub position: Position,
+    pub name: String,
+    pub count: u32,
+}
+
+pub type PlayerId = u32;
+
 pub fn dotgraph(graph: &TaskGraph) -> String {
     use petgraph::dot::{Config, Dot};
     format!(
@@ -181,8 +182,8 @@ mod tests {
 }
 
 #[async_trait]
-impl QueueConsumer<Task, TaskResult> for TaskWorker<Task, TaskResult> {
-    async fn execute(&self, _task: Task) -> Result<TaskResult, WorkerExecuteError> {
+impl QueueConsumer<NodeIndex, TaskResult> for TaskWorker<NodeIndex, TaskResult> {
+    async fn execute(&self, _task: NodeIndex) -> Result<TaskResult, WorkerExecuteError> {
         // if let Some(data) = task.data {
         //     match data {
         //         TaskData::Craft((item_name, item_count)) => {}
@@ -201,19 +202,19 @@ impl QueueConsumer<Task, TaskResult> for TaskWorker<Task, TaskResult> {
         Err(WorkerExecuteError::NonRetryable)
     }
 
-    fn get_queue(&self) -> Addr<TaskQueue<Task>> {
-        TaskQueue::<Task>::from_registry()
+    fn get_queue(&self) -> Addr<TaskQueue<NodeIndex>> {
+        TaskQueue::<NodeIndex>::from_registry()
     }
 
-    fn retry(&self, _task: Task) -> Task {
+    fn retry(&self, _task: NodeIndex) -> NodeIndex {
         // let Task(n) = task;
         // println!("RETRYING VALUE = {}", n);
         // Task(n + 1)
 
-        Task::default()
+        _task
     }
 
-    fn drop(&self, _task: Task) {
+    fn drop(&self, _task: NodeIndex) {
         // let Task(n) = task;
         // println!("DROPPED TASK WITH VALUE = {}", n);
     }
