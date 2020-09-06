@@ -248,6 +248,12 @@ impl Rect {
     pub fn height(&self) -> f64 {
         self.right_bottom.y() - self.left_top.y()
     }
+    pub fn center(&self) -> Position {
+        Position::new(
+            (self.left_top.x() + self.right_bottom.x()) / 2.,
+            (self.left_top.y() + self.right_bottom.y()) / 2.,
+        )
+    }
 }
 
 impl FromStr for Rect {

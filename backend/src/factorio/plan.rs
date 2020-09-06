@@ -425,6 +425,20 @@ pub async fn start_factorio_and_plan_graph(
             }
         }
     }
+    if let Some(resources) = &world.resources.read() {
+        for (name, _) in resources {
+            let patches = world.resource_patches(&name);
+            for patch in patches {
+                info!(
+                    "{} patch at {} size {}",
+                    patch.name,
+                    patch.rect.center(),
+                    patch.elements.len()
+                );
+            }
+        }
+    }
+
     let process_start = graph.node_indices().next().unwrap();
     let process_end = graph.node_indices().last().unwrap();
     let (weight, _) = astar(

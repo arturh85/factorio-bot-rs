@@ -1,10 +1,10 @@
 use crate::factorio::flow::FlowGraph;
-use crate::factorio::util::{add_to_rect, rect_fields, rect_floor};
+use crate::factorio::util::{add_to_rect, move_position, rect_fields, rect_floor};
 use crate::types::{
-    ChunkPosition, FactorioChunk, FactorioEntity, FactorioEntityPrototype, FactorioGraphic,
-    FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
+    ChunkPosition, Direction, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
+    FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
     PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent, Pos,
-    Position,
+    Position, Rect,
 };
 use async_std::sync::Mutex;
 use evmap::{ReadHandle, WriteHandle};
@@ -18,6 +18,13 @@ pub enum EntityName {
     Stone,
     Coal,
     IronOre,
+}
+
+pub struct ResourcePatch {
+    pub name: String,
+    pub id: u32,
+    pub rect: Rect,
+    pub elements: Vec<Position>,
 }
 
 #[derive(Debug)]
@@ -35,6 +42,69 @@ pub struct FactorioWorld {
     pub actions: Mutex<HashMap<u32, String>>,
     pub path_requests: Mutex<HashMap<u32, String>>,
     pub next_action_id: Mutex<u32>,
+}
+
+impl FactorioWorld {
+    fn walk(&self, m: &mut HashMap<Position, Option<u32>>, pos: &Position, id: u32) {
+        m.insert(pos.clone(), Some(id));
+        for direction in Direction::all() {
+            let other = move_position(pos, direction, 1.0);
+            if let Some(p) = m.get(&other) {
+                if p.is_none() {
+                    self.walk(m, &other, id);
+                }
+            }
+        }
+    }
+
+    pub fn resource_patches(&self, resource_name: &str) -> Vec<ResourcePatch> {
+        let mut patches: Vec<ResourcePatch> = vec![];
+        let mut positions_by_id: HashMap<Position, Option<u32>> = HashMap::new();
+        for point in self
+            .resources
+            .get_one(resource_name)
+            .expect("resource patch not found")
+            .iter()
+        {
+            positions_by_id.insert(point.clone(), None);
+        }
+        let mut next_id: u32 = 0;
+        while let Some((next_pos, _)) = positions_by_id.iter().find(|(_, value)| value.is_none()) {
+            next_id += 1;
+            self.walk(&mut positions_by_id, &next_pos, next_id);
+        }
+        for id in 1..=next_id {
+            let mut elements: Vec<Position> = vec![];
+            for (k, v) in &positions_by_id {
+                if v.unwrap() == id {
+                    elements.push(k.clone());
+                }
+            }
+            let min_max_positions = elements
+                .iter()
+                .fold(
+                    None as Option<(Position, Position)>,
+                    |min_max, position| match min_max {
+                        None => Some((position.clone(), position.clone())),
+                        Some((a, b)) => Some((
+                            Position::new(position.x().min(a.x()), position.y().min(a.y())),
+                            Position::new(position.x().max(b.x()), position.y().max(b.y())),
+                        )),
+                    },
+                )
+                .unwrap();
+            patches.push(ResourcePatch {
+                name: resource_name.into(),
+                rect: Rect {
+                    left_top: min_max_positions.0,
+                    right_bottom: min_max_positions.1,
+                },
+                elements,
+                id,
+            });
+        }
+        patches
+    }
 }
 
 unsafe impl Send for FactorioWorld {}
