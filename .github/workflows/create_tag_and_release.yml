@@ -13,14 +13,14 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: factorio-bot-backend
-            asset_name: factorio-bot-backend-linux-amd64
+            artifact_name: factorio-bot-backend-linux
+            asset_name: factorio-bot-backend-linux
           - os: windows-latest
             artifact_name: factorio-bot-backend.exe
-            asset_name: factorio-bot-backend-windows.exe
+            asset_name: factorio-bot-backend.exe
           - os: macos-latest
-            artifact_name: factorio-bot-backend
-            asset_name: factorio-bot-backend-macos-amd64
+            artifact_name: factorio-bot-backend-macos
+            asset_name: factorio-bot-backend-macos
 
     steps:
       - uses: actions/checkout@v2

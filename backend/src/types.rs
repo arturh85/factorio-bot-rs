@@ -1,3 +1,4 @@
+use crate::factorio::util::add_to_rect;
 use crate::num_traits::FromPrimitive;
 use noisy_float::prelude::*;
 use num_traits::ToPrimitive;
@@ -245,6 +246,12 @@ impl Rect {
             right_bottom: right_bottom.clone(),
         }
     }
+    pub fn from_wh(width: f64, height: f64) -> Rect {
+        Rect {
+            left_top: Position::new(-width / 2., -height / 2.),
+            right_bottom: Position::new(width / 2., height / 2.),
+        }
+    }
     pub fn width(&self) -> f64 {
         self.right_bottom.x() - self.left_top.x()
     }
@@ -284,7 +291,9 @@ pub struct FactorioTile {
     pub position: Position,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(
+    Debug, Clone, Default, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioChunk {
     pub entities: Vec<FactorioEntity>,
@@ -378,6 +387,29 @@ pub struct FactorioEntity {
     pub recipe: Option<String>,     // only CraftingMachines
     pub ghost_name: Option<String>, // only type = entity-ghost
     pub ghost_type: Option<String>, // only type = entity-ghost
+}
+
+impl FactorioEntity {
+    pub fn new_burner_mining_drill(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: "burner-mining-drill".into(),
+            entity_type: "mining-drill".into(),
+            position: position.clone(),
+            bounding_box: add_to_rect(&Rect::from_wh(1.8, 1.8), &position),
+            direction: direction.to_u8().unwrap(),
+            ..Default::default()
+        }
+    }
+    pub fn new_stone_furnace(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: "stone-furnace".into(),
+            entity_type: "furnace".into(),
+            position: position.clone(),
+            bounding_box: add_to_rect(&Rect::from_wh(1.8, 1.8), &position),
+            direction: direction.to_u8().unwrap(),
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]

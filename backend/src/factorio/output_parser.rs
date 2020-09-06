@@ -149,6 +149,11 @@ impl OutputParser {
                     websocket_server.send(ResearchCompletedMessage {}).await?;
                 }
             }
+            "on_some_entity_created" => {
+                let entity: FactorioEntity =
+                    serde_json::from_str(rest).expect("failed to deserialize created entity");
+                self.world.on_some_entity_created(entity)?;
+            }
             "on_player_main_inventory_changed" => {
                 let event: PlayerChangedMainInventoryEvent = serde_json::from_str(rest)?;
                 let player_id = event.player_id;

@@ -1,4 +1,5 @@
-use crate::types::{Direction, Position};
+use crate::num_traits::FromPrimitive;
+use crate::types::{Direction, FactorioEntity, Position};
 use actix::{Addr, SystemService};
 use actix_taskqueue::queue::TaskQueue;
 use actix_taskqueue::worker::*;
@@ -13,7 +14,7 @@ pub enum TaskData {
     Craft(InventoryItem),
     InsertToInventory(InventoryLocation, InventoryItem),
     RemoveFromInventory(InventoryLocation, InventoryItem),
-    PlaceEntity(EntityPlacement),
+    PlaceEntity(FactorioEntity),
 }
 
 #[derive(Default, Clone)]
@@ -68,14 +69,16 @@ impl Task {
             Some(TaskData::Mine(target)),
         )
     }
-    pub fn new_place(player_id: u32, target: EntityPlacement) -> Task {
+    pub fn new_place(player_id: u32, entity: FactorioEntity) -> Task {
         Task::new(
             Some(player_id),
             &*format!(
                 "Place {} at {} ({:?})",
-                target.item_name, target.position, target.direction
+                entity.name,
+                entity.position,
+                Direction::from_u8(entity.direction).unwrap()
             ),
-            Some(TaskData::PlaceEntity(target)),
+            Some(TaskData::PlaceEntity(entity)),
         )
     }
     pub fn new_insert_to_inventory(

@@ -1,7 +1,6 @@
 use crate::factorio::flow::FlowGraph;
 use crate::factorio::util::{
-    add_to_rect, bounding_box, calculate_distance, move_position, rect_fields, rect_floor,
-    rect_floor_ceil,
+    bounding_box, calculate_distance, move_position, rect_fields, rect_floor, rect_floor_ceil,
 };
 use crate::types::{
     ChunkPosition, Direction, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
@@ -57,7 +56,7 @@ impl ResourcePatch {
                 for x in 0i32..width as i32 {
                     let pos = Pos(element.x() as i32 + x, element.y() as i32 + y);
                     let blocked_pos = blocked.get_one(&pos);
-                    if blocked_pos.is_some() && *blocked_pos.unwrap() {
+                    if blocked_pos.is_some() && !*blocked_pos.unwrap() {
                         invalid = true;
                         break;
                     }
@@ -191,6 +190,7 @@ impl FactorioWorldWriter {
         self.item_prototypes_writer.refresh();
         Ok(())
     }
+
     pub fn remove_player(&mut self, player_id: u32) -> anyhow::Result<()> {
         self.players_writer.empty(player_id);
         self.players_writer.refresh();
@@ -267,6 +267,37 @@ impl FactorioWorldWriter {
         Ok(())
     }
 
+    pub fn on_some_entity_created(&mut self, entity: FactorioEntity) -> anyhow::Result<()> {
+        info!("on_some_entity_created {:?}", &entity);
+        let rect = rect_floor(&entity.bounding_box);
+        for position in rect_fields(&rect) {
+            info!("blocking {}, {}", position, &entity.entity_type == "tree");
+            self.blocked_writer
+                .insert((&position).into(), &entity.entity_type == "tree");
+        }
+        let pos: Pos = (&entity.position).into();
+        let chunk_position: ChunkPosition = (&pos).into();
+        match self.world.chunks.get_one(&chunk_position) {
+            Some(chunk) => {
+                let mut chunk = chunk.clone();
+                chunk.entities.push(entity);
+                self.chunks_writer.update(chunk_position, chunk);
+            }
+            None => {
+                self.chunks_writer.insert(
+                    chunk_position,
+                    FactorioChunk {
+                        entities: vec![entity],
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        self.blocked_writer.refresh();
+        self.chunks_writer.refresh();
+        Ok(())
+    }
+
     pub fn player_changed_main_inventory(
         &mut self,
         event: PlayerChangedMainInventoryEvent,
@@ -340,8 +371,8 @@ impl FactorioWorldWriter {
             self.chunks_writer.insert(
                 chunk_position,
                 FactorioChunk {
-                    entities: vec![],
                     tiles,
+                    ..Default::default()
                 },
             );
         }
@@ -381,21 +412,13 @@ impl FactorioWorldWriter {
                         },
                     };
                 }
-                _ => match self.world.entity_prototypes.get_one(&entity.name) {
-                    Some(entity_prototype) => {
-                        let collision_box =
-                            add_to_rect(&entity_prototype.collision_box, &entity.position);
-                        let rect = rect_floor(&collision_box);
-                        for position in rect_fields(&rect) {
-                            self.blocked_writer
-                                .insert((&position).into(), entity.entity_type == "tree");
-                        }
-                    }
-                    None => {
+                _ => {
+                    let rect = rect_floor_ceil(&entity.bounding_box);
+                    for position in rect_fields(&rect) {
                         self.blocked_writer
-                            .insert((&entity.position).into(), entity.entity_type == "tree");
+                            .insert((&position).into(), entity.entity_type == "tree");
                     }
-                },
+                }
             }
         }
 
@@ -413,7 +436,7 @@ impl FactorioWorldWriter {
                 chunk_position,
                 FactorioChunk {
                     entities,
-                    tiles: vec![],
+                    ..Default::default()
                 },
             );
         }

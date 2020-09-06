@@ -2,9 +2,7 @@ use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::roll_best_seed::find_nearest_entities;
-use crate::factorio::tasks::{
-    dotgraph, EntityPlacement, MineTarget, PositionRadius, Task, TaskGraph, TaskResult,
-};
+use crate::factorio::tasks::{dotgraph, MineTarget, PositionRadius, Task, TaskGraph, TaskResult};
 use crate::factorio::util::calculate_distance;
 use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
 use crate::factorio::ws::FactorioWebSocketServer;
@@ -165,9 +163,7 @@ impl Planner {
                     .add_place(
                         parent,
                         *player_id,
-                        &miner_position,
-                        Direction::South,
-                        "burner-mining-drill",
+                        FactorioEntity::new_burner_mining_drill(&miner_position, Direction::South),
                     )
                     .await?;
                 let furnace_position = miner_position.add_xy(0., 2.);
@@ -175,9 +171,7 @@ impl Planner {
                     .add_place(
                         parent,
                         *player_id,
-                        &furnace_position,
-                        Direction::North,
-                        "stone-furnace",
+                        FactorioEntity::new_stone_furnace(&furnace_position, Direction::North),
                     )
                     .await?;
             }
@@ -360,13 +354,11 @@ impl Planner {
         &mut self,
         parent: NodeIndex,
         player_id: u32,
-        position: &Position,
-        direction: Direction,
-        name: &str,
+        entity: FactorioEntity,
     ) -> anyhow::Result<NodeIndex> {
         let mut parent = parent;
         let player = self.player(player_id);
-        let distance = calculate_distance(&player.position, position).ceil();
+        let distance = calculate_distance(&player.position, &entity.position).ceil();
         let build_distance = player.build_distance as f64;
         drop(player);
         if distance > build_distance {
@@ -374,37 +366,31 @@ impl Planner {
                 .add_walk(
                     parent,
                     player_id,
-                    &PositionRadius::from_position(&position, build_distance),
+                    &PositionRadius::from_position(&entity.position, build_distance),
                 )
                 .await?;
         }
 
         let mut inventory = *self.player(player_id).main_inventory.clone();
-        let inventory_item_count = *inventory.get(name).unwrap_or(&0);
+        let inventory_item_count = *inventory.get(&entity.name).unwrap_or(&0);
         if inventory_item_count < 1 {
             return Err(anyhow!(
                 "player #{} does not have {} in inventory",
                 player_id,
-                name
+                &entity.name
             ));
         }
-        let task = Task::new_place(
-            player_id,
-            EntityPlacement {
-                item_name: name.into(),
-                position: position.clone(),
-                direction,
-            },
-        );
+        let name = entity.name.clone();
+        let task = Task::new_place(player_id, entity.clone());
         let node = self.graph.add_node(task);
-        inventory.insert(name.into(), inventory_item_count - 1);
+        inventory.insert(name, inventory_item_count - 1);
 
         self.plan_world
             .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
                 player_id,
                 main_inventory: Box::new(inventory),
             })?;
-
+        self.plan_world.on_some_entity_created(entity)?;
         self.graph.add_edge(parent, node, 1.);
         Ok(node)
     }
