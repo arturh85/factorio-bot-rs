@@ -1,5 +1,5 @@
 use crate::factorio::flow::FlowGraph;
-use crate::factorio::util::{add_to_rect, move_position, rect_fields, rect_floor};
+use crate::factorio::util::{add_to_rect, bounding_box, move_position, rect_fields, rect_floor};
 use crate::types::{
     ChunkPosition, Direction, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
     FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
@@ -69,8 +69,10 @@ impl FactorioWorld {
             positions_by_id.insert(point.clone(), None);
         }
         let mut next_id: u32 = 0;
+
         while let Some((next_pos, _)) = positions_by_id.iter().find(|(_, value)| value.is_none()) {
             next_id += 1;
+            let next_pos = next_pos.clone();
             self.walk(&mut positions_by_id, &next_pos, next_id);
         }
         for id in 1..=next_id {
@@ -80,25 +82,9 @@ impl FactorioWorld {
                     elements.push(k.clone());
                 }
             }
-            let min_max_positions = elements
-                .iter()
-                .fold(
-                    None as Option<(Position, Position)>,
-                    |min_max, position| match min_max {
-                        None => Some((position.clone(), position.clone())),
-                        Some((a, b)) => Some((
-                            Position::new(position.x().min(a.x()), position.y().min(a.y())),
-                            Position::new(position.x().max(b.x()), position.y().max(b.y())),
-                        )),
-                    },
-                )
-                .unwrap();
             patches.push(ResourcePatch {
                 name: resource_name.into(),
-                rect: Rect {
-                    left_top: min_max_positions.0,
-                    right_bottom: min_max_positions.1,
-                },
+                rect: bounding_box(&elements).unwrap(),
                 elements,
                 id,
             });

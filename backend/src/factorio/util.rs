@@ -258,6 +258,24 @@ pub fn span_rect(a: &Position, b: &Position, margin: f64) -> Rect {
 }
 
 #[allow(clippy::ptr_arg)]
+pub fn bounding_box(elements: &Vec<Position>) -> Option<Rect> {
+    let min_max_positions = elements.iter().fold(
+        None as Option<(Position, Position)>,
+        |min_max, position| match min_max {
+            None => Some((position.clone(), position.clone())),
+            Some((a, b)) => Some((
+                Position::new(position.x().min(a.x()), position.y().min(a.y())),
+                Position::new(position.x().max(b.x()), position.y().max(b.y())),
+            )),
+        },
+    );
+    min_max_positions.map(|min_max_positions| Rect {
+        left_top: min_max_positions.0,
+        right_bottom: min_max_positions.1,
+    })
+}
+
+#[allow(clippy::ptr_arg)]
 pub fn map_blocked_tiles(
     entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
     block_entities: &Vec<&FactorioEntity>,
