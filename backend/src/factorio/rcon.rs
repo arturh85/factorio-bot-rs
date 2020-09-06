@@ -1,8 +1,7 @@
 use crate::factorio::util::{
     blueprint_build_area, build_entity_path, calculate_distance, hashmap_to_lua, map_blocked_tiles,
-    move_pos, move_position, position_in_rect, position_to_lua, rect_to_lua, span_rect, str_to_lua,
-    value_to_lua, vec_to_lua, vector_add, vector_multiply, vector_normalize,
-    vector_rotate_clockwise, vector_substract,
+    move_pos, move_position, position_to_lua, rect_to_lua, span_rect, str_to_lua, value_to_lua,
+    vec_to_lua, vector_add, vector_multiply, vector_normalize, vector_substract,
 };
 use crate::factorio::world::FactorioWorld;
 use crate::num_traits::FromPrimitive;
@@ -248,7 +247,7 @@ impl FactorioRcon {
         for entity in build_area_entities {
             if entity.name != "character"
                 && entity.entity_type != "resource"
-                && position_in_rect(&build_area, &entity.position)
+                && build_area.contains(&entity.position)
             {
                 warn!(
                     "mining entity in build area: {} @ {}/{}",
@@ -978,7 +977,7 @@ impl FactorioRcon {
                     {
                         return Ok(result);
                     }
-                    direction = vector_rotate_clockwise(&direction);
+                    direction = direction.rotate_clockwise();
                 }
                 Err(err)
             }
@@ -1021,7 +1020,7 @@ impl FactorioRcon {
                     {
                         return Ok(result);
                     }
-                    direction = vector_rotate_clockwise(&direction);
+                    direction = direction.rotate_clockwise();
                 }
                 Err(err)
             }

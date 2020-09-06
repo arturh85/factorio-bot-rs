@@ -1,6 +1,6 @@
 use crate::factorio::plan::{execute_plan, Planner};
 use crate::factorio::rcon::FactorioRcon;
-use crate::factorio::tasks::dotgraph;
+use crate::factorio::tasks::{dotgraph_flow, dotgraph_task};
 use crate::factorio::util::blueprint_build_area;
 use crate::factorio::world::FactorioWorld;
 use crate::factorio::ws::FactorioWebSocketServer;
@@ -708,8 +708,22 @@ pub async fn web_plan_graph(
         world.into_inner().as_ref().clone(),
         rcon.into_inner().as_ref().clone(),
     );
-    let (graph, _world) = planner.plan(players).await?;
-    let dot = dotgraph(&graph);
+    let (graph, _flow, _world) = planner.plan(players).await?;
+    let dot = dotgraph_task(&graph);
+    Ok(dot)
+}
+
+pub async fn web_flow_graph(
+    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<String, MyError> {
+    let players = world.players.len() as u32;
+    let mut planner = Planner::new(
+        world.into_inner().as_ref().clone(),
+        rcon.into_inner().as_ref().clone(),
+    );
+    let (_graph, flow, _world) = planner.plan(players).await?;
+    let dot = dotgraph_flow(&flow);
     Ok(dot)
 }
 
@@ -720,8 +734,8 @@ pub async fn web_initiate_plan(
 ) -> Result<String, MyError> {
     let players = world.players.len() as u32;
     let mut planner = Planner::new(world.as_ref().clone(), rcon.as_ref().clone());
-    let (graph, _world) = planner.plan(players).await?;
-    let dot = dotgraph(&graph);
+    let (graph, _flow, _world) = planner.plan(players).await?;
+    let dot = dotgraph_task(&graph);
     execute_plan(
         world.as_ref().clone(),
         rcon.as_ref().clone(),

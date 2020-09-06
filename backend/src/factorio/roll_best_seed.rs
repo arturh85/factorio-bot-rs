@@ -170,7 +170,7 @@ pub async fn score_seed(
     bot_count: u32,
 ) -> anyhow::Result<f64> {
     let mut planner = Planner::new(world, rcon.clone());
-    let (graph, _world) = planner.plan(bot_count).await?;
+    let (graph, _flow, _world) = planner.plan(bot_count).await?;
     let mut score = 0.0;
 
     let process_start = graph.node_indices().next().unwrap();

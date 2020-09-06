@@ -76,6 +76,10 @@ pub async fn start_webserver(
                     .route(web::get().to(crate::web::rest_api::web_plan_graph)),
             )
             .service(
+                web::resource("/api/flow")
+                    .route(web::get().to(crate::web::rest_api::web_flow_graph)),
+            )
+            .service(
                 web::resource("/api/initiatePlan")
                     .route(web::get().to(crate::web::rest_api::web_initiate_plan)),
             )

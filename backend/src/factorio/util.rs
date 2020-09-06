@@ -185,13 +185,6 @@ pub fn expand_rect(total_rect: &mut Rect, rect: &Rect) {
     }
 }
 
-pub fn position_in_rect(rect: &Rect, position: &Position) -> bool {
-    position.x() > rect.left_top.x()
-        && position.x() < rect.right_bottom.x()
-        && position.y() > rect.left_top.y()
-        && position.y() < rect.right_bottom.y()
-}
-
 pub fn blueprint_build_area(
     entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
     blueprint: &str,
@@ -239,15 +232,6 @@ pub fn vector_add(a: &Position, b: &Position) -> Position {
 
 pub fn vector_multiply(a: &Position, len: f64) -> Position {
     Position::new(a.x() * len, a.y() * len)
-}
-
-/*
-https://limnu.com/sketch-easy-90-degree-rotate-vectors/#:~:text=Normally%20rotating%20vectors%20involves%20matrix,swap%20X%20and%20Y%20values.
-Normally rotating vectors involves matrix math, but there’s a really simple trick for rotating a 2D vector by 90° clockwise:
-just multiply the X part of the vector by -1, and then swap X and Y values.
- */
-pub fn vector_rotate_clockwise(vector: &Position) -> Position {
-    Position::new(vector.y(), vector.x() * -1.0)
 }
 
 pub fn span_rect(a: &Position, b: &Position, margin: f64) -> Rect {

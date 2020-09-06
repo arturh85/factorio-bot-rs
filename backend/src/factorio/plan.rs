@@ -1,10 +1,13 @@
+use crate::factorio::flow::FlowGraph;
 use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::roll_best_seed::find_nearest_entities;
-use crate::factorio::tasks::{dotgraph, MineTarget, PositionRadius, Task, TaskGraph, TaskResult};
+use crate::factorio::tasks::{
+    dotgraph_flow, dotgraph_task, MineTarget, PositionRadius, Task, TaskGraph, TaskResult,
+};
 use crate::factorio::util::calculate_distance;
-use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
+use crate::factorio::world::{EntityName, FactorioWorld, FactorioWorldWriter};
 use crate::factorio::ws::FactorioWebSocketServer;
 use crate::types::{
     Direction, FactorioEntity, FactorioPlayer, PlayerChangedMainInventoryEvent,
@@ -35,7 +38,7 @@ impl Planner {
     pub async fn plan(
         &mut self,
         bot_count: u32,
-    ) -> anyhow::Result<(TaskGraph, Arc<FactorioWorld>)> {
+    ) -> anyhow::Result<(TaskGraph, FlowGraph, Arc<FactorioWorld>)> {
         let player_ids = self.initiate_missing_players_with_default_inventory(bot_count);
         let mut parent = self.graph.add_node(Task::new(None, "Process Start", None));
 
@@ -66,7 +69,11 @@ impl Planner {
 
         let end = self.graph.add_node(Task::new(None, "Process End", None));
         self.graph.add_edge(parent, end, 0.);
-        Ok((self.graph.clone(), self.plan_world.world.clone()))
+        Ok((
+            self.graph.clone(),
+            self.plan_world.flow().lock().unwrap().clone(),
+            self.plan_world.world.clone(),
+        ))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -81,18 +88,18 @@ impl Planner {
         parent = self
             .add_build_starter_miner_furnace(parent, &player_ids, "iron-ore", "iron-plate", 2)
             .await?;
-        // build 2x coal minerLoop
-        parent = self
-            .add_build_starter_miner_loop(parent, &player_ids, "coal", 2)
-            .await?;
+        // // build 2x coal minerLoop
+        // parent = self
+        //     .add_build_starter_miner_loop(parent, &player_ids, "coal", 2)
+        //     .await?;
         // build 2x iron minerFurnace
         parent = self
             .add_build_starter_miner_furnace(parent, &player_ids, "iron-ore", "iron-plate", 2)
             .await?;
-        // build 2x stone minerChest
-        parent = self
-            .add_build_starter_miner_chest(parent, &player_ids, "stone", 2)
-            .await?;
+        // // build 2x stone minerChest
+        // parent = self
+        //     .add_build_starter_miner_chest(parent, &player_ids, "stone", 2)
+        //     .await?;
 
         Ok(parent)
     }
@@ -134,9 +141,10 @@ impl Planner {
         }
         let rect = rect.unwrap();
         let mut bots = bots.clone();
+        let entity_name = EntityName::BurnerMiningDrill.to_string();
         bots.sort_by(|a, b| {
-            let da = self.inventory(*a, "burner-mining-drill");
-            let db = self.inventory(*b, "burner-mining-drill");
+            let da = self.inventory(*a, &entity_name);
+            let db = self.inventory(*b, &entity_name);
             db.cmp(&da)
         });
         let mut to_place = miner_furnace_count;
@@ -158,20 +166,22 @@ impl Planner {
             ));
             let mut parent = player_parent;
             for i in 0..to_place_player {
-                let miner_position = rect.left_top.add_xy((to_place + i + 1) as f64 * 2., 1.);
-                parent = self
-                    .add_place(
-                        parent,
-                        *player_id,
-                        FactorioEntity::new_burner_mining_drill(&miner_position, Direction::South),
-                    )
-                    .await?;
-                let furnace_position = miner_position.add_xy(0., 2.);
+                let miner_position = rect
+                    .left_top
+                    .add(&Position::new((to_place + i + 1) as f64 * 2., 1.));
+                let furnace_position = miner_position.add(&Position::new(0., 2.));
                 parent = self
                     .add_place(
                         parent,
                         *player_id,
                         FactorioEntity::new_stone_furnace(&furnace_position, Direction::North),
+                    )
+                    .await?;
+                parent = self
+                    .add_place(
+                        parent,
+                        *player_id,
+                        FactorioEntity::new_burner_mining_drill(&miner_position, Direction::South),
                     )
                     .await?;
             }
@@ -413,9 +423,9 @@ impl Planner {
             // initialize missing players with default inventory
             if self.real_world.players.get_one(&player_id).is_none() {
                 let mut main_inventory: BTreeMap<String, u32> = BTreeMap::new();
-                main_inventory.insert("wood".into(), 1);
-                main_inventory.insert("stone-furnace".into(), 1);
-                main_inventory.insert("burner-mining-drill".into(), 1);
+                main_inventory.insert(EntityName::Wood.to_string(), 1);
+                main_inventory.insert(EntityName::StoneFurnace.to_string(), 1);
+                main_inventory.insert(EntityName::BurnerMiningDrill.to_string(), 1);
                 self.plan_world
                     .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
                         player_id,
@@ -525,7 +535,7 @@ pub async fn start_factorio_and_plan_graph(
     .await
     .expect("failed to start");
     let mut planner = Planner::new(world, rcon);
-    let (graph, world) = planner.plan(bot_count).await?;
+    let (graph, flow, world) = planner.plan(bot_count).await?;
     if let Some(players) = &world.players.read() {
         for (player_id, player) in players {
             if let Some(player) = player.get_one() {
@@ -536,19 +546,19 @@ pub async fn start_factorio_and_plan_graph(
             }
         }
     }
-    if let Some(resources) = &world.resources.read() {
-        for (name, _) in resources {
-            let patches = world.resource_patches(&name);
-            for patch in patches {
-                info!(
-                    "{} patch at {} size {}",
-                    patch.name,
-                    patch.rect.center(),
-                    patch.elements.len()
-                );
-            }
-        }
-    }
+    // if let Some(resources) = &world.resources.read() {
+    //     for (name, _) in resources {
+    //         let patches = world.resource_patches(&name);
+    //         for patch in patches {
+    //             info!(
+    //                 "{} patch at {} size {}",
+    //                 patch.name,
+    //                 patch.rect.center(),
+    //                 patch.elements.len()
+    //             );
+    //         }
+    //     }
+    // }
 
     let process_start = graph.node_indices().next().unwrap();
     let process_end = graph.node_indices().last().unwrap();
@@ -562,7 +572,9 @@ pub async fn start_factorio_and_plan_graph(
     .expect("no path found");
     info!("shortest path: {}", weight);
 
-    println!("{}", dotgraph(&graph));
+    println!("{}", dotgraph_task(&graph));
+    println!("{}", dotgraph_flow(&flow));
+
     child.kill().expect("failed to kill child");
     info!("took <yellow>{:?}</>", started.elapsed());
     Ok(graph)

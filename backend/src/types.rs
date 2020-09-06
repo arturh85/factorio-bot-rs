@@ -1,4 +1,5 @@
 use crate::factorio::util::add_to_rect;
+use crate::factorio::world::{EntityName, EntityType};
 use crate::num_traits::FromPrimitive;
 use noisy_float::prelude::*;
 use num_traits::ToPrimitive;
@@ -205,8 +206,30 @@ impl Position {
     pub fn y(&self) -> f64 {
         (*self.y).to_f64().expect("failed to cast r64 to f64")
     }
-    pub fn add_xy(&self, x: f64, y: f64) -> Position {
-        Position::new(self.x() + x, self.y() + y)
+    pub fn add(&self, position: &Position) -> Position {
+        Position::new(self.x() + position.x(), self.y() + position.y())
+    }
+
+    pub fn turn(&self, direction: Direction) -> Position {
+        match direction {
+            Direction::North => self.clone(),
+            Direction::East => self.rotate_clockwise(),
+            Direction::South => self.rotate_clockwise().rotate_clockwise(),
+            Direction::West => self
+                .rotate_clockwise()
+                .rotate_clockwise()
+                .rotate_clockwise(),
+            _ => panic!("diagonal turning not supported"),
+        }
+    }
+
+    /*
+    https://limnu.com/sketch-easy-90-degree-rotate-vectors/#:~:text=Normally%20rotating%20vectors%20involves%20matrix,swap%20X%20and%20Y%20values.
+    Normally rotating vectors involves matrix math, but there’s a really simple trick for rotating a 2D vector by 90° clockwise:
+    just multiply the X part of the vector by -1, and then swap X and Y values.
+     */
+    pub fn rotate_clockwise(&self) -> Position {
+        Position::new(self.y(), self.x() * -1.0)
     }
 }
 
@@ -246,6 +269,13 @@ impl Rect {
             right_bottom: right_bottom.clone(),
         }
     }
+    pub fn contains(&self, position: &Position) -> bool {
+        position.x() > self.left_top.x()
+            && position.x() < self.right_bottom.x()
+            && position.y() > self.left_top.y()
+            && position.y() < self.right_bottom.y()
+    }
+
     pub fn from_wh(width: f64, height: f64) -> Rect {
         Rect {
             left_top: Position::new(-width / 2., -height / 2.),
@@ -392,23 +422,29 @@ pub struct FactorioEntity {
 impl FactorioEntity {
     pub fn new_burner_mining_drill(position: &Position, direction: Direction) -> FactorioEntity {
         FactorioEntity {
-            name: "burner-mining-drill".into(),
-            entity_type: "mining-drill".into(),
+            name: EntityName::BurnerMiningDrill.to_string(),
+            entity_type: EntityType::MiningDrill.to_string(),
+            position: position.clone(),
+            bounding_box: add_to_rect(&Rect::from_wh(1.8, 1.8), &position),
+            direction: direction.to_u8().unwrap(),
+            drop_position: Some(position.add(&Position::new(-0.5, -1.296875).turn(direction))),
+            ..Default::default()
+        }
+    }
+    pub fn new_stone_furnace(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: EntityName::StoneFurnace.to_string(),
+            entity_type: EntityType::Furnace.to_string(),
             position: position.clone(),
             bounding_box: add_to_rect(&Rect::from_wh(1.8, 1.8), &position),
             direction: direction.to_u8().unwrap(),
             ..Default::default()
         }
     }
-    pub fn new_stone_furnace(position: &Position, direction: Direction) -> FactorioEntity {
-        FactorioEntity {
-            name: "stone-furnace".into(),
-            entity_type: "furnace".into(),
-            position: position.clone(),
-            bounding_box: add_to_rect(&Rect::from_wh(1.8, 1.8), &position),
-            direction: direction.to_u8().unwrap(),
-            ..Default::default()
-        }
+
+    pub fn is_minable(&self) -> bool {
+        self.entity_type == EntityType::Tree.to_string()
+            || self.entity_type == EntityType::SimpleEntity.to_string()
     }
 }
 

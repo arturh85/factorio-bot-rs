@@ -1,3 +1,4 @@
+use crate::factorio::flow::FlowGraph;
 use crate::num_traits::FromPrimitive;
 use crate::types::{Direction, FactorioEntity, Position};
 use actix::{Addr, SystemService};
@@ -172,7 +173,14 @@ pub struct MineTarget {
 
 pub type PlayerId = u32;
 
-pub fn dotgraph(graph: &TaskGraph) -> String {
+pub fn dotgraph_task(graph: &TaskGraph) -> String {
+    use petgraph::dot::{Config, Dot};
+    format!(
+        "digraph {{\n{:?}}}\n",
+        Dot::with_config(graph, &[Config::GraphContentOnly])
+    )
+}
+pub fn dotgraph_flow(graph: &FlowGraph) -> String {
     use petgraph::dot::{Config, Dot};
     format!(
         "digraph {{\n{:?}}}\n",
@@ -190,7 +198,7 @@ mod tests {
         let rocket_node = g.add_node(Task::new_craft(1, InventoryItem::new("rocket", 42)));
         let walk_node = g.add_node(Task::new_walk(1, PositionRadius::new(1., 5., 2.)));
         g.add_edge(rocket_node, walk_node, 4.);
-        println!("{}", dotgraph(&g));
+        println!("{}", dotgraph_task(&g));
     }
 }
 

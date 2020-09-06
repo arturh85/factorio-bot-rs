@@ -1,7 +1,8 @@
-use crate::factorio::flow::FlowGraph;
+use crate::factorio::flow::{flow_node_at, FlowGraph, FlowNode};
 use crate::factorio::util::{
     bounding_box, calculate_distance, move_position, rect_fields, rect_floor, rect_floor_ceil,
 };
+use crate::num_traits::FromPrimitive;
 use crate::types::{
     ChunkPosition, Direction, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
     FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
@@ -12,15 +13,37 @@ use async_std::sync::Mutex;
 use evmap::{ReadHandle, WriteHandle};
 use image::RgbaImage;
 use noisy_float::types::r64;
+use petgraph::graph::NodeIndex;
 use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 use std::sync::Arc;
 
-#[derive(EnumString)]
+#[derive(EnumString, Display, Debug)]
 #[strum(serialize_all = "kebab-case")]
 pub enum EntityName {
+    Wood,
     Stone,
     Coal,
     IronOre,
+    StoneFurnace,
+    BurnerMiningDrill,
+}
+
+#[derive(EnumString, Display, Debug)]
+#[strum(serialize_all = "kebab-case")]
+pub enum EntityType {
+    Assembler,
+    Container,
+    Resource,
+    SimpleEntity,
+    Tree,
+    Inserter,
+    MiningDrill,
+    Furnace,
+    TransportBelt,
+    UndergroundBelt,
+    Pipe,
+    PipeToGround,
 }
 
 #[derive(Debug)]
@@ -163,7 +186,7 @@ pub struct FactorioWorldWriter {
     players_writer: WriteHandle<u32, FactorioPlayer>,
     blocked_writer: WriteHandle<Pos, bool>,
     resources_writer: WriteHandle<String, Vec<Position>>,
-    flow: Arc<Mutex<FlowGraph>>,
+    flow: Arc<std::sync::Mutex<FlowGraph>>,
 }
 
 impl FactorioWorldWriter {
@@ -267,16 +290,91 @@ impl FactorioWorldWriter {
         Ok(())
     }
 
+    #[allow(clippy::single_match)]
+    pub fn connect_flow_graph(&mut self) -> anyhow::Result<()> {
+        let mut flow = self.flow.lock().unwrap();
+        let mut edges_to_add: Vec<(NodeIndex, NodeIndex)> = vec![];
+        for node_index in flow.node_indices() {
+            let node_index = node_index;
+            let node = flow.node_weight(node_index).unwrap();
+            if let Some(drop_position) = node.entity.drop_position.as_ref() {
+                match flow_node_at(&flow, drop_position) {
+                    Some(drop_index) => {
+                        if !flow.contains_edge(node_index, drop_index) {
+                            edges_to_add.push((node_index, drop_index));
+                        }
+                    }
+                    None => error!(
+                        "connect flow could not find entity at drop position {}",
+                        drop_position
+                    ),
+                }
+            }
+            if let Some(pickup_position) = node.entity.pickup_position.as_ref() {
+                match flow_node_at(&flow, pickup_position) {
+                    Some(pickup_index) => {
+                        if !flow.contains_edge(pickup_index, node_index) {
+                            edges_to_add.push((pickup_index, node_index));
+                        }
+                    }
+                    None => error!(
+                        "connect flow could not find entity at pickup position {}",
+                        pickup_position
+                    ),
+                }
+            }
+            if EntityType::TransportBelt.to_string() == node.entity.entity_type {
+                match flow_node_at(
+                    &flow,
+                    &move_position(
+                        &node.entity.position,
+                        Direction::from_u8(node.entity.direction).unwrap(),
+                        1.0,
+                    ),
+                ) {
+                    Some(next_index) => {
+                        if !flow.contains_edge(node_index, next_index) {
+                            edges_to_add.push((node_index, next_index));
+                        }
+                    }
+                    None => {}
+                }
+            }
+        }
+        for (a, b) in edges_to_add {
+            flow.add_edge(a, b, 1.);
+        }
+        Ok(())
+    }
+
+    fn add_to_flow_graph(&mut self, entity: &FactorioEntity) -> anyhow::Result<()> {
+        if let Ok(entity_type) = EntityType::from_str(&entity.entity_type) {
+            match entity_type {
+                EntityType::Furnace
+                | EntityType::MiningDrill
+                | EntityType::Container
+                | EntityType::Assembler => {
+                    let mut flow = self.flow.lock().unwrap();
+                    if flow_node_at(&flow, &entity.position).is_none() {
+                        flow.add_node(FlowNode::new(entity.clone()));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     pub fn on_some_entity_created(&mut self, entity: FactorioEntity) -> anyhow::Result<()> {
-        info!("on_some_entity_created {:?}", &entity);
         let rect = rect_floor(&entity.bounding_box);
         for position in rect_fields(&rect) {
-            info!("blocking {}, {}", position, &entity.entity_type == "tree");
             self.blocked_writer
-                .insert((&position).into(), &entity.entity_type == "tree");
+                .insert((&position).into(), entity.is_minable());
         }
         let pos: Pos = (&entity.position).into();
         let chunk_position: ChunkPosition = (&pos).into();
+        self.add_to_flow_graph(&entity)?;
+        self.connect_flow_graph()?;
         match self.world.chunks.get_one(&chunk_position) {
             Some(chunk) => {
                 let mut chunk = chunk.clone();
@@ -416,7 +514,7 @@ impl FactorioWorldWriter {
                     let rect = rect_floor_ceil(&entity.bounding_box);
                     for position in rect_fields(&rect) {
                         self.blocked_writer
-                            .insert((&position).into(), entity.entity_type == "tree");
+                            .insert((&position).into(), entity.is_minable());
                     }
                 }
             }
@@ -425,7 +523,7 @@ impl FactorioWorldWriter {
         if self.chunks_writer.contains_key(&chunk_position) {
             let existing_chunk = self.chunks_writer.get_one(&chunk_position).unwrap(); // unwrap OK because of contains_key
             let chunk = FactorioChunk {
-                entities,
+                entities: entities.clone(),
                 tiles: existing_chunk.tiles.clone(),
             };
             drop(existing_chunk);
@@ -435,7 +533,7 @@ impl FactorioWorldWriter {
             self.chunks_writer.insert(
                 chunk_position,
                 FactorioChunk {
-                    entities,
+                    entities: entities.clone(),
                     ..Default::default()
                 },
             );
@@ -451,6 +549,12 @@ impl FactorioWorldWriter {
 
         self.blocked_writer.refresh();
         self.chunks_writer.refresh();
+        for entity in &entities {
+            self.add_to_flow_graph(entity)?;
+        }
+
+        self.connect_flow_graph()?;
+
         Ok(())
     }
 
@@ -543,7 +647,7 @@ impl FactorioWorldWriter {
         let (item_prototypes_reader, item_prototypes_writer) =
             evmap::new::<String, FactorioItemPrototype>();
         let (resources_reader, resources_writer) = evmap::new::<String, Vec<Position>>();
-        let flow = Arc::new(Mutex::new(FlowGraph::new()));
+        let flow = Arc::new(std::sync::Mutex::new(FlowGraph::new()));
 
         FactorioWorldWriter {
             players_writer,
@@ -576,7 +680,7 @@ impl FactorioWorldWriter {
     pub fn world(&self) -> Arc<FactorioWorld> {
         self.world.clone()
     }
-    pub fn flow(&self) -> Arc<Mutex<FlowGraph>> {
+    pub fn flow(&self) -> Arc<std::sync::Mutex<FlowGraph>> {
         self.flow.clone()
     }
 }
