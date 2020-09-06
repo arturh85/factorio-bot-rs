@@ -151,6 +151,12 @@ pub fn rect_floor(rect: &Rect) -> Rect {
     }
 }
 
+pub fn rect_floor_ceil(rect: &Rect) -> Rect {
+    Rect {
+        left_top: Position::new(rect.left_top.x().floor(), rect.left_top.y().floor()),
+        right_bottom: Position::new(rect.right_bottom.x().ceil(), rect.right_bottom.y().ceil()),
+    }
+}
 pub fn add_to_rect(rect: &Rect, position: &Position) -> Rect {
     Rect {
         left_top: Position::new(

@@ -204,6 +204,9 @@ impl Position {
     pub fn y(&self) -> f64 {
         (*self.y).to_f64().expect("failed to cast r64 to f64")
     }
+    pub fn add_xy(&self, x: f64, y: f64) -> Position {
+        Position::new(self.x() + x, self.y() + y)
+    }
 }
 
 impl Default for Position {

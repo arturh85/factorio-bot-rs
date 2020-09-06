@@ -68,6 +68,16 @@ impl Task {
             Some(TaskData::Mine(target)),
         )
     }
+    pub fn new_place(player_id: u32, target: EntityPlacement) -> Task {
+        Task::new(
+            Some(player_id),
+            &*format!(
+                "Place {} at {} ({:?})",
+                target.item_name, target.position, target.direction
+            ),
+            Some(TaskData::PlaceEntity(target)),
+        )
+    }
     pub fn new_insert_to_inventory(
         player_id: u32,
         location: InventoryLocation,

@@ -1,5 +1,8 @@
 use crate::factorio::flow::FlowGraph;
-use crate::factorio::util::{add_to_rect, bounding_box, move_position, rect_fields, rect_floor};
+use crate::factorio::util::{
+    add_to_rect, bounding_box, calculate_distance, move_position, rect_fields, rect_floor,
+    rect_floor_ceil,
+};
 use crate::types::{
     ChunkPosition, Direction, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
     FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
@@ -9,6 +12,7 @@ use crate::types::{
 use async_std::sync::Mutex;
 use evmap::{ReadHandle, WriteHandle};
 use image::RgbaImage;
+use noisy_float::types::r64;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -20,11 +24,64 @@ pub enum EntityName {
     IronOre,
 }
 
+#[derive(Debug)]
 pub struct ResourcePatch {
     pub name: String,
     pub id: u32,
     pub rect: Rect,
     pub elements: Vec<Position>,
+}
+
+impl ResourcePatch {
+    pub fn find_free_rect(
+        &self,
+        width: u32,
+        height: u32,
+        near: &Position,
+        blocked: &ReadHandle<Pos, bool>,
+    ) -> Option<Rect> {
+        let mut elements = self.elements.clone();
+        elements.sort_by(|a, b| {
+            let da = r64(calculate_distance(&a, &near));
+            let db = r64(calculate_distance(&b, &near));
+            da.cmp(&db)
+        });
+
+        let mut element_map: HashMap<Pos, bool> = HashMap::new();
+        for element in &elements {
+            element_map.insert(element.into(), true);
+        }
+        for element in &elements {
+            let mut invalid = false;
+            for y in 0i32..height as i32 {
+                for x in 0i32..width as i32 {
+                    let pos = Pos(element.x() as i32 + x, element.y() as i32 + y);
+                    let blocked_pos = blocked.get_one(&pos);
+                    if blocked_pos.is_some() && *blocked_pos.unwrap() {
+                        invalid = true;
+                        break;
+                    }
+                    if element_map.get(&pos).is_none() {
+                        invalid = true;
+                        break;
+                    }
+                }
+                if invalid {
+                    break;
+                }
+            }
+            if !invalid {
+                return Some(rect_floor_ceil(&Rect {
+                    left_top: element.clone(),
+                    right_bottom: Position::new(
+                        element.x() + width as f64,
+                        element.y() + height as f64,
+                    ),
+                }));
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -89,6 +146,7 @@ impl FactorioWorld {
                 id,
             });
         }
+        patches.sort_by(|a, b| b.elements.len().cmp(&a.elements.len()));
         patches
     }
 }

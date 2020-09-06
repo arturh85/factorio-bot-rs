@@ -2,13 +2,15 @@ use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::roll_best_seed::find_nearest_entities;
-use crate::factorio::tasks::{dotgraph, MineTarget, PositionRadius, Task, TaskGraph, TaskResult};
+use crate::factorio::tasks::{
+    dotgraph, EntityPlacement, MineTarget, PositionRadius, Task, TaskGraph, TaskResult,
+};
 use crate::factorio::util::calculate_distance;
 use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
 use crate::factorio::ws::FactorioWebSocketServer;
 use crate::types::{
-    FactorioEntity, FactorioPlayer, PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent,
-    Position,
+    Direction, FactorioEntity, FactorioPlayer, PlayerChangedMainInventoryEvent,
+    PlayerChangedPositionEvent, Position,
 };
 use actix::{Addr, SystemService};
 use actix_taskqueue::messages::Push;
@@ -21,7 +23,6 @@ use num_traits::ToPrimitive;
 use petgraph::algo::astar;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
@@ -102,7 +103,7 @@ impl Planner {
     pub async fn add_build_starter_miner_furnace(
         &mut self,
         parent: NodeIndex,
-        _bots: &Vec<u32>,
+        bots: &Vec<u32>,
         ore_name: &str,
         plate_name: &str,
         miner_furnace_count: u16,
@@ -114,11 +115,76 @@ impl Planner {
                 ore_name, plate_name, miner_furnace_count,
             ),
         );
-        let weights: HashMap<NodeIndex, R64> = HashMap::new();
-
-        // TODO: find ore patch
+        let mut weights: HashMap<NodeIndex, R64> = HashMap::new();
+        let patches = self.plan_world.world.resource_patches(ore_name);
+        if patches.is_empty() {
+            return Err(anyhow!("no {} found", ore_name));
+        }
+        let patch = patches.first().unwrap();
+        let rect = patch.find_free_rect(
+            (miner_furnace_count * 2) as u32,
+            (miner_furnace_count * 4) as u32,
+            &Position::default(),
+            &self.plan_world.world.blocked,
+        );
+        if rect.is_none() {
+            return Err(anyhow!(
+                "no free rect found for {} in patch of size {}",
+                ore_name,
+                patch.elements.len()
+            ));
+        }
+        let rect = rect.unwrap();
+        let mut bots = bots.clone();
+        bots.sort_by(|a, b| {
+            let da = self.inventory(*a, "burner-mining-drill");
+            let db = self.inventory(*b, "burner-mining-drill");
+            db.cmp(&da)
+        });
+        let mut to_place = miner_furnace_count;
+        for player_id in &bots {
+            let to_place_player =
+                to_place.min((miner_furnace_count as f64 / bots.len() as f64).ceil() as u16);
+            to_place -= to_place_player;
+            if to_place_player == 0 {
+                continue;
+            }
+            let player_parent = self.graph.add_node(Task::new(
+                Some(*player_id),
+                &*format!(
+                    "Bot #{} at {}",
+                    player_id,
+                    &self.player(*player_id).position
+                ),
+                None,
+            ));
+            let mut parent = player_parent;
+            for i in 0..to_place_player {
+                let miner_position = rect.left_top.add_xy((to_place + i + 1) as f64 * 2., 1.);
+                parent = self
+                    .add_place(
+                        parent,
+                        *player_id,
+                        &miner_position,
+                        Direction::South,
+                        "burner-mining-drill",
+                    )
+                    .await?;
+                let furnace_position = miner_position.add_xy(0., 2.);
+                parent = self
+                    .add_place(
+                        parent,
+                        *player_id,
+                        &furnace_position,
+                        Direction::North,
+                        "stone-furnace",
+                    )
+                    .await?;
+            }
+            self.graph.add_edge(start, player_parent, 0.);
+            weights.insert(parent, self.weight(player_parent, parent));
+        }
         // TODO: collect ingredients for (miner + furnace) * minerFurnaceCount
-        // TODO: place entities
         // TODO: init process with coal?
         Ok(self.join_using_weights(start, weights))
     }
@@ -290,6 +356,58 @@ impl Planner {
         self.graph.add_edge(parent, node, mining_time);
         Ok(node)
     }
+    pub async fn add_place(
+        &mut self,
+        parent: NodeIndex,
+        player_id: u32,
+        position: &Position,
+        direction: Direction,
+        name: &str,
+    ) -> anyhow::Result<NodeIndex> {
+        let mut parent = parent;
+        let player = self.player(player_id);
+        let distance = calculate_distance(&player.position, position).ceil();
+        let build_distance = player.build_distance as f64;
+        drop(player);
+        if distance > build_distance {
+            parent = self
+                .add_walk(
+                    parent,
+                    player_id,
+                    &PositionRadius::from_position(&position, build_distance),
+                )
+                .await?;
+        }
+
+        let mut inventory = *self.player(player_id).main_inventory.clone();
+        let inventory_item_count = *inventory.get(name).unwrap_or(&0);
+        if inventory_item_count < 1 {
+            return Err(anyhow!(
+                "player #{} does not have {} in inventory",
+                player_id,
+                name
+            ));
+        }
+        let task = Task::new_place(
+            player_id,
+            EntityPlacement {
+                item_name: name.into(),
+                position: position.clone(),
+                direction,
+            },
+        );
+        let node = self.graph.add_node(task);
+        inventory.insert(name.into(), inventory_item_count - 1);
+
+        self.plan_world
+            .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
+                player_id,
+                main_inventory: Box::new(inventory),
+            })?;
+
+        self.graph.add_edge(parent, node, 1.);
+        Ok(node)
+    }
 
     pub fn new(world: Arc<FactorioWorld>, rcon: Arc<FactorioRcon>) -> Planner {
         let mut plan_world = FactorioWorldWriter::new();
@@ -329,6 +447,13 @@ impl Planner {
             .players
             .get_one(&player_id)
             .expect("failed to find player")
+    }
+    fn inventory(&self, player_id: u32, name: &str) -> u32 {
+        *self
+            .player(player_id)
+            .main_inventory
+            .get(name)
+            .unwrap_or(&0)
     }
     fn distance(&self, player_id: u32, position: &Position) -> f64 {
         calculate_distance(&self.player(player_id).position, position).ceil()
@@ -392,8 +517,8 @@ pub async fn start_factorio_and_plan_graph(
         None,
         instance_name,
         true,
-        false,
-        false,
+        true,
+        true,
         map_exchange_string,
         seed,
         true,
@@ -482,11 +607,11 @@ pub fn execute_plan(
         //         .await?;
         // }
 
-        // let incoming = plan.edges_directed(pointer, Direction::Incoming);
+        // let incoming = plan.edges_directed(pointer, petgraph::Direction::Incoming);
         // for edge in incoming {
         //     let target = edge.target();
         // }
-        let outgoing = plan.edges_directed(pointer, Direction::Outgoing);
+        let outgoing = plan.edges_directed(pointer, petgraph::Direction::Outgoing);
         for edge in outgoing {
             queue.do_send(Push::new(edge.target()));
         }
