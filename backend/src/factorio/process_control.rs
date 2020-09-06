@@ -29,11 +29,11 @@ pub async fn start_factorio(
     websocket_server: Option<Addr<FactorioWebSocketServer>>,
     write_logs: bool,
     silent: bool,
-) -> anyhow::Result<(Option<Arc<FactorioWorld>>, FactorioRcon)> {
+) -> anyhow::Result<(Option<Arc<FactorioWorld>>, Arc<FactorioRcon>)> {
     let mut world: Option<Arc<FactorioWorld>> = None;
+    let rcon_settings = RconSettings::new(&settings, server_host);
     let workspace_path: String = settings.get("workspace_path")?;
     if server_host.is_none() {
-        let rcon_settings = RconSettings::new(&settings, server_host);
         setup_factorio_instance(
             &workspace_path,
             &rcon_settings,
@@ -49,8 +49,6 @@ pub async fn start_factorio(
         .await?;
     }
     let settings = settings.clone();
-    let rcon_settings = RconSettings::new(&settings, server_host);
-    let rcon = FactorioRcon::new(&rcon_settings, false).await.unwrap();
     for instance_number in 0..client_count {
         let instance_name = format!("client{}", instance_number + 1);
         if let Err(err) = setup_factorio_instance(
@@ -72,30 +70,36 @@ pub async fn start_factorio(
         }
     }
 
-    if server_host.is_none() {
-        let started = Instant::now();
-        let (_world, child) = start_factorio_server(
-            &workspace_path,
-            &rcon_settings,
-            None,
-            "server",
-            websocket_server,
-            write_logs,
-            silent,
-        )
-        .await?;
-        world = Some(_world);
-        report_child_death(child);
-        let rcon = FactorioRcon::new(&rcon_settings, silent).await?;
-        if !silent {
-            success!(
-                "Started <bright-blue>server</> in <yellow>{:?}</>",
-                started.elapsed()
-            );
+    let rcon = match server_host {
+        None => {
+            let started = Instant::now();
+            let (_world, rcon, child) = start_factorio_server(
+                &workspace_path,
+                &rcon_settings,
+                None,
+                "server",
+                websocket_server,
+                write_logs,
+                silent,
+                FactorioStartCondition::Initialized,
+            )
+            .await?;
+            world = Some(_world);
+            report_child_death(child);
+            if !silent {
+                success!(
+                    "Started <bright-blue>server</> in <yellow>{:?}</>",
+                    started.elapsed()
+                );
+            }
+            rcon
         }
-        rcon.silent_print("").await?;
-        rcon.whoami("server").await?;
-    }
+        Some(_) => Arc::new(
+            FactorioRcon::new(&rcon_settings, silent)
+                .await
+                .expect("failed to connect"),
+        ),
+    };
     for instance_number in 0..client_count {
         let instance_name = format!("client{}", instance_number + 1);
         let started = Instant::now();
@@ -157,6 +161,13 @@ pub fn await_lock(lock_path: PathBuf, silent: bool) {
     }
 }
 
+#[derive(PartialEq, Clone)]
+pub enum FactorioStartCondition {
+    Initialized,
+    DiscoveryComplete,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn start_factorio_server(
     workspace_path: &str,
     rcon_settings: &RconSettings,
@@ -165,7 +176,8 @@ pub async fn start_factorio_server(
     websocket_server: Option<Addr<FactorioWebSocketServer>>,
     write_logs: bool,
     silent: bool,
-) -> anyhow::Result<(Arc<FactorioWorld>, Child)> {
+    wait_until: FactorioStartCondition,
+) -> anyhow::Result<(Arc<FactorioWorld>, Arc<FactorioRcon>, Child)> {
     let workspace_path = Path::new(&workspace_path);
     if !workspace_path.exists() {
         error!(
@@ -250,10 +262,19 @@ pub async fn start_factorio_server(
     let reader = BufReader::new(stdout);
     let log_path = workspace_path.join(PathBuf::from_str(&"server-log.txt").unwrap());
 
-    let world = read_output(reader, log_path, websocket_server, write_logs, silent).await?;
+    let (world, rcon) = read_output(
+        reader,
+        rcon_settings,
+        log_path,
+        websocket_server,
+        write_logs,
+        silent,
+        wait_until,
+    )
+    .await?;
     // await for factorio to start before returning
 
-    Ok((world, child))
+    Ok((world, rcon, child))
 }
 
 pub fn report_child_death(mut child: Child) {

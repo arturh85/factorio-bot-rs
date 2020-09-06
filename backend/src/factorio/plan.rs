@@ -1,5 +1,5 @@
 use crate::factorio::instance_setup::setup_factorio_instance;
-use crate::factorio::process_control::start_factorio_server;
+use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::roll_best_seed::find_nearest_entities;
 use crate::factorio::tasks::{dotgraph, MineTarget, PositionRadius, Task, TaskGraph, TaskResult};
@@ -401,7 +401,7 @@ pub async fn start_factorio_and_plan_graph(
     .await
     .expect("failed to initially setup instance");
 
-    let (world, mut child) = start_factorio_server(
+    let (world, rcon, mut child) = start_factorio_server(
         &workspace_path,
         &rcon_settings,
         None,
@@ -409,14 +409,11 @@ pub async fn start_factorio_and_plan_graph(
         None,
         false,
         true,
+        FactorioStartCondition::DiscoveryComplete,
     )
     .await
     .expect("failed to start");
-    let rcon = FactorioRcon::new(&rcon_settings, true)
-        .await
-        .expect("failed to rcon");
-    rcon.silent_print("").await.expect("failed to silent print");
-    let mut planner = Planner::new(world, Arc::new(rcon));
+    let mut planner = Planner::new(world, rcon);
     let (graph, world) = planner.plan(bot_count).await?;
     if let Some(players) = &world.players.read() {
         for (player_id, player) in players {

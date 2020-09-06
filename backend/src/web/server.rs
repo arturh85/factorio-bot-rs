@@ -28,7 +28,7 @@ async fn ws_index(
 }
 
 pub async fn start_webserver(
-    rcon: FactorioRcon,
+    rcon: Arc<FactorioRcon>,
     websocket_server: Addr<FactorioWebSocketServer>,
     open_browser: bool,
     world: Arc<FactorioWorld>,
@@ -47,8 +47,6 @@ pub async fn start_webserver(
         true => "public/",
         false => "frontend/dist/",
     };
-    let rcon = Arc::new(rcon);
-
     HttpServer::new(move || {
         App::new()
             .data(world.clone())

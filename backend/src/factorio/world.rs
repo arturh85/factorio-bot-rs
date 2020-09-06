@@ -289,6 +289,8 @@ impl FactorioWorldWriter {
                 }
             }
             self.entity_prototypes_writer.refresh();
+        } else {
+            warn!("no entity_prototypes to import");
         }
         if let Some(item_prototypes) = &world.item_prototypes.read() {
             for (name, item_prototype) in item_prototypes {
@@ -298,6 +300,8 @@ impl FactorioWorldWriter {
                 }
             }
             self.item_prototypes_writer.refresh();
+        } else {
+            warn!("no item_prototypes to import");
         }
         if let Some(recipes) = &world.recipes.read() {
             for (name, recipe) in recipes {
@@ -306,6 +310,8 @@ impl FactorioWorldWriter {
                 }
             }
             self.recipes_writer.refresh();
+        } else {
+            warn!("no recipes to import");
         }
         if let Some(chunks) = &world.chunks.read() {
             for (chunk_position, chunk) in chunks {
@@ -315,6 +321,8 @@ impl FactorioWorldWriter {
                 }
             }
             self.chunks_writer.refresh();
+        } else {
+            warn!("no chunks to import");
         }
         if let Some(blocked) = &world.blocked.read() {
             for (pos, minable) in blocked {
@@ -323,6 +331,8 @@ impl FactorioWorldWriter {
                 }
             }
             self.blocked_writer.refresh();
+        } else {
+            warn!("no blocked to import");
         }
         Ok(())
     }

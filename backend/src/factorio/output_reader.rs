@@ -1,4 +1,6 @@
 use crate::factorio::output_parser::OutputParser;
+use crate::factorio::process_control::FactorioStartCondition;
+use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::world::FactorioWorld;
 use crate::factorio::ws::FactorioWebSocketServer;
 use actix::Addr;
@@ -10,19 +12,24 @@ use std::sync::Arc;
 
 pub async fn read_output(
     reader: BufReader<ChildStdout>,
+    rcon_settings: &RconSettings,
     log_path: PathBuf,
     websocket_server: Option<Addr<FactorioWebSocketServer>>,
     write_logs: bool,
     silent: bool,
-) -> anyhow::Result<Arc<FactorioWorld>> {
+    wait_until: FactorioStartCondition,
+) -> anyhow::Result<(Arc<FactorioWorld>, Arc<FactorioRcon>)> {
     let mut log_file = match write_logs {
         true => Some(File::create(log_path)?),
         false => None,
     };
     let mut parser = OutputParser::new(websocket_server);
 
-    let (tx, rx) = async_std::sync::channel(1);
-    tx.send(()).await;
+    let wait_until_thread = wait_until.clone();
+    let (tx1, rx1) = async_std::sync::channel(1);
+    tx1.send(()).await;
+    let (tx2, rx2) = async_std::sync::channel(1);
+    tx2.send(()).await;
     let world = parser.world();
     std::thread::spawn(move || {
         actix::run(async move {
@@ -31,11 +38,19 @@ pub async fn read_output(
             for line in lines {
                 match line {
                     Ok(line) => {
+                        // after we receive this line we can connect via rcon
+                        if !initialized && line.find("my_client_id").is_some() {
+                            rx1.recv().await.unwrap();
+                            rx1.recv().await.unwrap();
+                            if wait_until_thread == FactorioStartCondition::Initialized {
+                                initialized = true;
+                            }
+                        }
                         // wait for factorio init before sending confirmation
-                        if !initialized && line.find("STATIC_DATA_END").is_some() {
+                        if !initialized && line.find("(100% done)").is_some() {
                             initialized = true;
-                            rx.recv().await.unwrap();
-                            rx.recv().await.unwrap();
+                            rx2.recv().await.unwrap();
+                            rx2.recv().await.unwrap();
                         }
                         // filter out 6 million lines like 6664601 / 6665150
                         if initialized || !line.contains(" / ") {
@@ -98,6 +113,18 @@ pub async fn read_output(
             }
         }).unwrap();
     });
-    tx.send(()).await;
-    Ok(world)
+    tx1.send(()).await;
+    let rcon = Arc::new(
+        FactorioRcon::new(rcon_settings, silent)
+            .await
+            .expect("failed to rcon"),
+    );
+    rcon.silent_print("").await.expect("failed to silent print");
+    rcon.whoami("server").await.expect("failed to whoami");
+
+    if wait_until == FactorioStartCondition::DiscoveryComplete {
+        tx2.send(()).await;
+    }
+
+    Ok((world, rcon))
 }

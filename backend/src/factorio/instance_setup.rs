@@ -1,6 +1,6 @@
 use crate::factorio::output_reader::read_output;
-use crate::factorio::process_control::await_lock;
-use crate::factorio::rcon::{FactorioRcon, RconSettings};
+use crate::factorio::process_control::{await_lock, FactorioStartCondition};
+use crate::factorio::rcon::RconSettings;
 use crate::factorio::util::{read_to_value, write_value_to};
 use archiver_rs::{Archive, Compressed};
 use async_std::fs::create_dir;
@@ -490,11 +490,18 @@ pub async fn update_map_gen_settings(
     let stdout = child.stdout.take().unwrap();
     let reader = BufReader::new(stdout);
     let log_path = workspace_path.join(PathBuf::from_str(&"server-log.txt").unwrap());
-    read_output(reader, log_path, None, false, true).await?;
-    let rcon = FactorioRcon::new(&rcon_settings, true).await?;
+    let (_, rcon) = read_output(
+        reader,
+        &rcon_settings,
+        log_path,
+        None,
+        false,
+        true,
+        FactorioStartCondition::Initialized,
+    )
+    .await?;
     let map_gen_settings_filename = "map-gen-settings.json";
     let map_settings_filename = "map-settings.json";
-    rcon.silent_print("").await?;
     rcon.parse_map_exchange_string(map_gen_settings_filename, map_exchange_string)
         .await?;
     child.kill()?;

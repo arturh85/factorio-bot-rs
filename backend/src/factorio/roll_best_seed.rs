@@ -1,6 +1,6 @@
 use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::plan::Planner;
-use crate::factorio::process_control::start_factorio_server;
+use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::util::calculate_distance;
 use crate::factorio::world::FactorioWorld;
@@ -99,7 +99,7 @@ pub async fn roll_seed(
                     )
                     .await
                     .expect("failed to setup instance");
-                    let (world, mut child) = start_factorio_server(
+                    let (world, rcon, mut child) = start_factorio_server(
                         &workspace_path,
                         &rcon_settings,
                         Some(factorio_port),
@@ -107,15 +107,10 @@ pub async fn roll_seed(
                         None,
                         false,
                         true,
+                        FactorioStartCondition::DiscoveryComplete,
                     )
                     .await
                     .expect("failed to start");
-                    let rcon = Arc::new(
-                        FactorioRcon::new(&rcon_settings, true)
-                            .await
-                            .expect("failed to rcon"),
-                    );
-                    rcon.silent_print("").await.expect("failed to silent print");
                     // info!(
                     //     "generated {} in <yellow>{:?}</>",
                     //     seed,
