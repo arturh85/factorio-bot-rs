@@ -6,10 +6,9 @@ use crate::factorio::ws::{
 use crate::types::{
     ChunkPosition, FactorioEntity, FactorioEntityPrototype, FactorioGraphic, FactorioItemPrototype,
     FactorioRecipe, FactorioTile, PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent,
-    PlayerChangedPositionEvent, Position, Rect,
+    PlayerChangedPositionEvent, Pos, Position, Rect,
 };
 use actix::Addr;
-use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
 
 pub struct OutputParser {
@@ -23,16 +22,36 @@ impl OutputParser {
             "entities" => {
                 let colon_pos = rest.find(':').unwrap();
                 let rect: Rect = rest[0..colon_pos].parse()?;
-                let chunk_position = ChunkPosition {
-                    x: (*rect.left_top.x).to_i32().unwrap() / 32,
-                    y: (*rect.left_top.y).to_i32().unwrap() / 32,
-                };
+                let pos: Pos = (&rect.left_top).into();
+                let chunk_position: ChunkPosition = (&pos).into();
                 let mut entities = &rest[colon_pos + 1..];
                 if entities == "{}" {
                     entities = "[]"
                 }
                 let entities: Vec<FactorioEntity> = serde_json::from_str(entities).unwrap();
                 self.world.update_chunk_entities(chunk_position, entities)?;
+            }
+            "tiles" => {
+                let colon_pos = rest.find(':').unwrap();
+                let rect: Rect = rest[0..colon_pos].parse()?;
+                let pos: Pos = (&rect.left_top).into();
+                let chunk_position: ChunkPosition = (&pos).into();
+                let tiles: Vec<FactorioTile> = rest[colon_pos + 1..]
+                    .split(',')
+                    .enumerate()
+                    .map(|(index, tile)| {
+                        let parts: Vec<&str> = tile.split(':').collect();
+                        FactorioTile {
+                            name: parts[0].trim().into(),
+                            player_collidable: parts[1].parse::<u8>().unwrap() == 1,
+                            position: Position::new(
+                                (chunk_position.x * 32 + (index % 32) as i32) as f64,
+                                (chunk_position.y * 32 + (index / 32) as i32) as f64,
+                            ),
+                        }
+                    })
+                    .collect();
+                self.world.update_chunk_tiles(chunk_position, tiles)?;
             }
             "graphics" => {
                 // 0 graphics: spark-explosion*__core__/graphics/empty.png:1:1:0:0:0:0:1|spark-explosion-higher*__core__/graphics/empty.png:1:1:0:0:0:0:1|
@@ -171,30 +190,6 @@ impl OutputParser {
             }
             "tick" => {
                 // info!("tick!");
-            }
-            "tiles" => {
-                let colon_pos = rest.find(':').unwrap();
-                let rect: Rect = rest[0..colon_pos].parse()?;
-                let chunk_position = ChunkPosition {
-                    x: (*rect.left_top.x).to_i32().unwrap() / 32,
-                    y: (*rect.left_top.y).to_i32().unwrap() / 32,
-                };
-                let tiles: Vec<FactorioTile> = rest[colon_pos + 1..]
-                    .split(',')
-                    .enumerate()
-                    .map(|(index, tile)| {
-                        let parts: Vec<&str> = tile.split(':').collect();
-                        FactorioTile {
-                            name: parts[0].trim().into(),
-                            player_collidable: parts[1].parse::<u8>().unwrap() == 1,
-                            position: Position::new(
-                                (chunk_position.x * 32 + (index % 32) as i32) as f64,
-                                (chunk_position.y * 32 + (index / 32) as i32) as f64,
-                            ),
-                        }
-                    })
-                    .collect();
-                self.world.update_chunk_tiles(chunk_position, tiles)?;
             }
             _ => {
                 error!("<red>unexpected action</>: <bright-blue>{}</>", action);

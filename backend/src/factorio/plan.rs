@@ -425,7 +425,6 @@ pub async fn start_factorio_and_plan_graph(
             }
         }
     }
-
     let process_start = graph.node_indices().next().unwrap();
     let process_end = graph.node_indices().last().unwrap();
     let (weight, _) = astar(

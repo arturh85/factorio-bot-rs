@@ -106,6 +106,15 @@ pub struct ChunkPosition {
     pub y: i32,
 }
 
+impl From<&Pos> for ChunkPosition {
+    fn from(pos: &Pos) -> ChunkPosition {
+        ChunkPosition {
+            x: pos.0 / 32,
+            y: pos.1 / 32,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
