@@ -475,7 +475,7 @@ pub fn rect_fields(rect: &Rect) -> Vec<Position> {
     res
 }
 
-// if "from" is west of "to" then returns Direction::West
+// if "to" is west of "from" then returns Direction::West
 #[allow(clippy::comparison_chain)]
 pub fn relative_direction(from: &Pos, to: &Pos) -> Direction {
     if from.0 < to.0 {

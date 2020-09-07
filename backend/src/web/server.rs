@@ -72,11 +72,15 @@ pub async fn start_webserver(
                     .route(web::get().to(crate::web::rest_api::find_entities)),
             )
             .service(
-                web::resource("/api/plan")
+                web::resource("/api/dotTaskGraph")
                     .route(web::get().to(crate::web::rest_api::web_plan_graph)),
             )
             .service(
-                web::resource("/api/flow")
+                web::resource("/api/dotEntityGraph")
+                    .route(web::get().to(crate::web::rest_api::web_entity_graph)),
+            )
+            .service(
+                web::resource("/api/dotFlowGraph")
                     .route(web::get().to(crate::web::rest_api::web_flow_graph)),
             )
             .service(

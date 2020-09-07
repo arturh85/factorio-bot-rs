@@ -1,7 +1,9 @@
 import Vue from "vue";
 import VueRouter, {RouteConfig} from "vue-router";
 import Home from "../views/Home.vue";
-import Graph from "@/views/Graph.vue";
+import EntityGraph from "@/views/EntityGraph.vue";
+import TasksGraph from "@/views/TasksGraph.vue";
+import FlowGraph from "@/views/FlowGraph.vue";
 
 Vue.use(VueRouter);
 
@@ -12,9 +14,19 @@ const routes: Array<RouteConfig> = [
         component: Home,
     },
     {
-        path: "/graph",
-        name: "Graph",
-        component: Graph,
+        path: "/tasks",
+        name: "TasksGraph",
+        component: TasksGraph,
+    },
+    {
+        path: "/entities",
+        name: "EntityGraph",
+        component: EntityGraph,
+    },
+    {
+        path: "/flow",
+        name: "FlowGraph",
+        component: FlowGraph,
     },
     {
         path: "/map",

@@ -1,114 +1,26 @@
-use crate::factorio::flow::{flow_node_at, FlowGraph, FlowNode};
+use crate::factorio::entity_graph::{entity_node_at, EntityGraph, EntityNode};
 use crate::factorio::util::{
-    bounding_box, calculate_distance, move_position, rect_fields, rect_floor, rect_floor_ceil,
+    bounding_box, move_position, position_equal, rect_fields, rect_floor, rect_floor_ceil,
 };
-use crate::num_traits::FromPrimitive;
 use crate::types::{
-    ChunkPosition, Direction, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
-    FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
-    PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent, Pos,
-    Position, Rect,
+    ChunkPosition, Direction, EntityName, EntityType, FactorioChunk, FactorioEntity,
+    FactorioEntityPrototype, FactorioForce, FactorioGraphic, FactorioItemPrototype, FactorioPlayer,
+    FactorioRecipe, FactorioTile, PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent,
+    PlayerChangedPositionEvent, Pos, Position, ResourcePatch,
 };
 use async_std::sync::Mutex;
 use evmap::{ReadHandle, WriteHandle};
 use image::RgbaImage;
-use noisy_float::types::r64;
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::visit::EdgeRef;
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
 
-#[derive(EnumString, Display, Debug)]
-#[strum(serialize_all = "kebab-case")]
-pub enum EntityName {
-    Wood,
-    Stone,
-    Coal,
-    IronOre,
-    StoneFurnace,
-    BurnerMiningDrill,
-}
-
-#[derive(EnumString, Display, Debug)]
-#[strum(serialize_all = "kebab-case")]
-pub enum EntityType {
-    Assembler,
-    Container,
-    Resource,
-    SimpleEntity,
-    Tree,
-    Inserter,
-    MiningDrill,
-    Furnace,
-    TransportBelt,
-    UndergroundBelt,
-    Pipe,
-    PipeToGround,
-}
-
-#[derive(Debug)]
-pub struct ResourcePatch {
-    pub name: String,
-    pub id: u32,
-    pub rect: Rect,
-    pub elements: Vec<Position>,
-}
-
-impl ResourcePatch {
-    pub fn find_free_rect(
-        &self,
-        width: u32,
-        height: u32,
-        near: &Position,
-        blocked: &ReadHandle<Pos, bool>,
-    ) -> Option<Rect> {
-        let mut elements = self.elements.clone();
-        elements.sort_by(|a, b| {
-            let da = r64(calculate_distance(&a, &near));
-            let db = r64(calculate_distance(&b, &near));
-            da.cmp(&db)
-        });
-
-        let mut element_map: HashMap<Pos, bool> = HashMap::new();
-        for element in &elements {
-            element_map.insert(element.into(), true);
-        }
-        for element in &elements {
-            let mut invalid = false;
-            for y in 0i32..height as i32 {
-                for x in 0i32..width as i32 {
-                    let pos = Pos(element.x() as i32 + x, element.y() as i32 + y);
-                    let blocked_pos = blocked.get_one(&pos);
-                    if blocked_pos.is_some() && !*blocked_pos.unwrap() {
-                        invalid = true;
-                        break;
-                    }
-                    if element_map.get(&pos).is_none() {
-                        invalid = true;
-                        break;
-                    }
-                }
-                if invalid {
-                    break;
-                }
-            }
-            if !invalid {
-                return Some(rect_floor_ceil(&Rect {
-                    left_top: element.clone(),
-                    right_bottom: Position::new(
-                        element.x() + width as f64,
-                        element.y() + height as f64,
-                    ),
-                }));
-            }
-        }
-        None
-    }
-}
-
 #[derive(Debug)]
 pub struct FactorioWorld {
     pub players: ReadHandle<u32, FactorioPlayer>,
+    pub forces: ReadHandle<String, FactorioForce>,
     pub chunks: ReadHandle<ChunkPosition, FactorioChunk>,
     pub blocked: ReadHandle<Pos, bool>,
     pub resources: ReadHandle<String, Vec<Position>>,
@@ -133,6 +45,15 @@ impl FactorioWorld {
                     self.walk(m, &other, id);
                 }
             }
+        }
+    }
+    pub fn resource_contains(&self, resource_name: &str, pos: Pos) -> bool {
+        let elements = self.resources.get_one(resource_name);
+        if let Some(elements) = elements {
+            let field: Vec<Pos> = elements.iter().map(|e| e.into()).collect();
+            field.contains(&pos)
+        } else {
+            false
         }
     }
 
@@ -178,6 +99,7 @@ unsafe impl Sync for FactorioWorld {}
 
 pub struct FactorioWorldWriter {
     pub world: Arc<FactorioWorld>,
+    forces_writer: WriteHandle<String, FactorioForce>,
     chunks_writer: WriteHandle<ChunkPosition, FactorioChunk>,
     graphics_writer: WriteHandle<String, FactorioGraphic>,
     recipes_writer: WriteHandle<String, FactorioRecipe>,
@@ -186,7 +108,7 @@ pub struct FactorioWorldWriter {
     players_writer: WriteHandle<u32, FactorioPlayer>,
     blocked_writer: WriteHandle<Pos, bool>,
     resources_writer: WriteHandle<String, Vec<Position>>,
-    flow: Arc<std::sync::Mutex<FlowGraph>>,
+    entity_graph: Arc<std::sync::Mutex<EntityGraph>>,
 }
 
 impl FactorioWorldWriter {
@@ -290,78 +212,263 @@ impl FactorioWorldWriter {
         Ok(())
     }
 
-    #[allow(clippy::single_match)]
-    pub fn connect_flow_graph(&mut self) -> anyhow::Result<()> {
-        let mut flow = self.flow.lock().unwrap();
-        let mut edges_to_add: Vec<(NodeIndex, NodeIndex)> = vec![];
-        for node_index in flow.node_indices() {
+    pub fn connect_entity_graph(&mut self) -> anyhow::Result<()> {
+        let mut entity_graph = self.entity_graph.lock().unwrap();
+        let mut edges_to_add: Vec<(NodeIndex, NodeIndex, f64)> = vec![];
+        for node_index in entity_graph.node_indices() {
             let node_index = node_index;
-            let node = flow.node_weight(node_index).unwrap();
+            let node = entity_graph.node_weight(node_index).unwrap();
             if let Some(drop_position) = node.entity.drop_position.as_ref() {
-                match flow_node_at(&flow, drop_position) {
+                match entity_node_at(&entity_graph, drop_position) {
                     Some(drop_index) => {
-                        if !flow.contains_edge(node_index, drop_index) {
-                            edges_to_add.push((node_index, drop_index));
+                        if !entity_graph.contains_edge(node_index, drop_index) {
+                            edges_to_add.push((node_index, drop_index, 1.));
                         }
                     }
                     None => error!(
-                        "connect flow could not find entity at drop position {}",
-                        drop_position
+                        "connect entity graph could not find entity at Drop position {} for {:?}",
+                        drop_position, &node.entity
                     ),
                 }
             }
             if let Some(pickup_position) = node.entity.pickup_position.as_ref() {
-                match flow_node_at(&flow, pickup_position) {
+                match entity_node_at(&entity_graph, pickup_position) {
                     Some(pickup_index) => {
-                        if !flow.contains_edge(pickup_index, node_index) {
-                            edges_to_add.push((pickup_index, node_index));
+                        if !entity_graph.contains_edge(pickup_index, node_index) {
+                            edges_to_add.push((pickup_index, node_index, 1.));
                         }
                     }
                     None => error!(
-                        "connect flow could not find entity at pickup position {}",
-                        pickup_position
+                        "connect entity graph could not find entity at Pickup position {} for {:?}",
+                        pickup_position, &node.entity
                     ),
                 }
             }
-            if EntityType::TransportBelt.to_string() == node.entity.entity_type {
-                match flow_node_at(
-                    &flow,
-                    &move_position(
-                        &node.entity.position,
-                        Direction::from_u8(node.entity.direction).unwrap(),
-                        1.0,
-                    ),
-                ) {
-                    Some(next_index) => {
-                        if !flow.contains_edge(node_index, next_index) {
-                            edges_to_add.push((node_index, next_index));
+            if EntityType::Splitter == node.entity_type {
+                let in1 = node
+                    .entity
+                    .position
+                    .add(&Position::new(-0.5, 1.).turn(node.direction));
+                let in2 = node
+                    .entity
+                    .position
+                    .add(&Position::new(0.5, 1.).turn(node.direction));
+                for pos in vec![in1, in2] {
+                    if let Some(prev_index) = entity_node_at(&entity_graph, &pos) {
+                        let prev = entity_graph.node_weight(prev_index).unwrap();
+                        if (prev.entity_type == EntityType::TransportBelt
+                            || prev.entity_type == EntityType::UndergroundBelt
+                            || prev.entity_type == EntityType::Splitter)
+                            && !entity_graph.contains_edge(node_index, prev_index)
+                        {
+                            edges_to_add.push((node_index, prev_index, 1.));
                         }
                     }
-                    None => {}
+                }
+            } else if EntityType::TransportBelt == node.entity_type {
+                if let Some(next_index) = entity_node_at(
+                    &entity_graph,
+                    &move_position(&node.entity.position, node.direction, 1.0),
+                ) {
+                    let next = entity_graph.node_weight(next_index).unwrap();
+                    if (next.entity_type == EntityType::TransportBelt
+                        || next.entity_type == EntityType::UndergroundBelt
+                        || next.entity_type == EntityType::Splitter)
+                        && !entity_graph.contains_edge(node_index, next_index)
+                    {
+                        edges_to_add.push((node_index, next_index, 1.));
+                    }
+                }
+            } else if EntityType::OffshorePump == node.entity_type {
+                if let Some(next_index) = entity_node_at(
+                    &entity_graph,
+                    &move_position(&node.entity.position, node.direction, -1.),
+                ) {
+                    let next = entity_graph.node_weight(next_index).unwrap();
+                    if next.entity.is_fluid_input()
+                        && !entity_graph.contains_edge(node_index, next_index)
+                    {
+                        edges_to_add.push((node_index, next_index, 1.));
+                    }
+                }
+            } else if EntityType::Pipe == node.entity_type {
+                for direction in Direction::orthogonal() {
+                    if let Some(next_index) = entity_node_at(
+                        &entity_graph,
+                        &move_position(&node.entity.position, direction, 1.),
+                    ) {
+                        let next = entity_graph.node_weight(next_index).unwrap();
+                        if next.entity.is_fluid_input() {
+                            if !entity_graph.contains_edge(node_index, next_index) {
+                                edges_to_add.push((node_index, next_index, 1.));
+                            }
+                            if !entity_graph.contains_edge(next_index, node_index) {
+                                edges_to_add.push((next_index, node_index, 1.));
+                            }
+                        }
+                    }
+                }
+            } else if EntityType::UndergroundBelt == node.entity_type {
+                let mut found = false;
+                for length in 1..5 {
+                    // todo: lookup in EntityPrototypes for real belt length
+                    if let Some(next_index) = entity_node_at(
+                        &entity_graph,
+                        &move_position(
+                            &node.entity.position,
+                            node.direction.opposite(),
+                            length as f64,
+                        ),
+                    ) {
+                        let next = entity_graph.node_weight(next_index).unwrap();
+                        if next.entity_type == EntityType::UndergroundBelt {
+                            if !entity_graph.contains_edge(next_index, node_index) {
+                                edges_to_add.push((next_index, node_index, length as f64));
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if found {
+                    if let Some(next_index) = entity_node_at(
+                        &entity_graph,
+                        &move_position(&node.entity.position, node.direction, 1.),
+                    ) {
+                        let next = entity_graph.node_weight(next_index).unwrap();
+                        if (next.entity_type == EntityType::TransportBelt
+                            || next.entity_type == EntityType::Splitter)
+                            && !entity_graph.contains_edge(node_index, next_index)
+                        {
+                            edges_to_add.push((node_index, next_index, 1.));
+                        }
+                    }
+                }
+            } else if EntityType::PipeToGround == node.entity_type {
+                let mut found = false;
+                for length in 1..12 {
+                    // todo: lookup in EntityPrototypes for real pipe length
+                    if let Some(next_index) = entity_node_at(
+                        &entity_graph,
+                        &move_position(&node.entity.position, node.direction, -length as f64),
+                    ) {
+                        let next = entity_graph.node_weight(next_index).unwrap();
+                        if next.entity_type == EntityType::PipeToGround {
+                            if !entity_graph.contains_edge(next_index, node_index) {
+                                edges_to_add.push((next_index, node_index, length as f64));
+                            }
+                            if !entity_graph.contains_edge(node_index, next_index) {
+                                edges_to_add.push((node_index, next_index, length as f64));
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if found {
+                    if let Some(next_index) = entity_node_at(
+                        &entity_graph,
+                        &move_position(&node.entity.position, node.direction, 1.),
+                    ) {
+                        let next = entity_graph.node_weight(next_index).unwrap();
+                        if next.entity.is_fluid_input()
+                            && !entity_graph.contains_edge(node_index, next_index)
+                        {
+                            edges_to_add.push((node_index, next_index, 1.));
+                        }
+                    }
                 }
             }
         }
-        for (a, b) in edges_to_add {
-            flow.add_edge(a, b, 1.);
+        for (a, b, w) in edges_to_add {
+            if !entity_graph.contains_edge(a, b) {
+                entity_graph.add_edge(a, b, w);
+            }
         }
         Ok(())
     }
 
-    fn add_to_flow_graph(&mut self, entity: &FactorioEntity) -> anyhow::Result<()> {
+    fn add_to_entity_graph(&mut self, entity: &FactorioEntity) -> anyhow::Result<()> {
         if let Ok(entity_type) = EntityType::from_str(&entity.entity_type) {
             match entity_type {
                 EntityType::Furnace
+                | EntityType::Inserter
+                | EntityType::Boiler
+                | EntityType::OffshorePump
                 | EntityType::MiningDrill
                 | EntityType::Container
+                | EntityType::Splitter
+                | EntityType::TransportBelt
+                | EntityType::UndergroundBelt
+                | EntityType::Pipe
+                | EntityType::PipeToGround
                 | EntityType::Assembler => {
-                    let mut flow = self.flow.lock().unwrap();
-                    if flow_node_at(&flow, &entity.position).is_none() {
-                        flow.add_node(FlowNode::new(entity.clone()));
+                    let mut entity_graph = self.entity_graph.lock().unwrap();
+                    if entity_node_at(&entity_graph, &entity.position).is_none() {
+                        let miner_ore = if entity_type == EntityType::MiningDrill {
+                            let rect = rect_floor(&entity.bounding_box);
+                            let mut miner_ore: Option<String> = None;
+                            for resource in &[
+                                EntityName::IronOre,
+                                EntityName::CopperOre,
+                                EntityName::Coal,
+                                EntityName::Stone,
+                                EntityName::UraniumOre,
+                            ] {
+                                let resource = resource.to_string();
+                                let resource_found = rect_fields(&rect)
+                                    .iter()
+                                    .any(|p| self.world.resource_contains(&resource, p.into()));
+                                if resource_found {
+                                    miner_ore = Some(resource);
+                                    break;
+                                }
+                            }
+                            if miner_ore.is_none() {
+                                warn!("no ore found under miner {:?}", &entity);
+                            }
+                            miner_ore
+                        } else {
+                            None
+                        };
+                        entity_graph.add_node(EntityNode::new(entity.clone(), miner_ore));
                     }
                 }
                 _ => {}
             }
         }
+        Ok(())
+    }
+
+    fn remove_from_entity_graph(&mut self, entity: &FactorioEntity) -> anyhow::Result<()> {
+        let mut entity_graph = self.entity_graph.lock().unwrap();
+
+        let mut nodes_to_remove: Vec<NodeIndex> = vec![];
+        let mut edges_to_remove: Vec<EdgeIndex> = vec![];
+
+        if let Some(node_index) = entity_node_at(&entity_graph, &entity.position) {
+            for edge in entity_graph.edges_directed(node_index, petgraph::Direction::Incoming) {
+                edges_to_remove.push(edge.id());
+            }
+            for edge in entity_graph.edges_directed(node_index, petgraph::Direction::Outgoing) {
+                edges_to_remove.push(edge.id());
+            }
+            nodes_to_remove.push(node_index);
+        }
+        for edge in edges_to_remove {
+            entity_graph.remove_edge(edge);
+        }
+        for node in nodes_to_remove {
+            entity_graph.remove_node(node);
+        }
+
+        Ok(())
+    }
+
+    pub fn update_force(&mut self, force: FactorioForce) -> anyhow::Result<()> {
+        let name = force.name.clone();
+        self.forces_writer.insert(name, force);
+        self.forces_writer.refresh();
         Ok(())
     }
 
@@ -373,8 +480,7 @@ impl FactorioWorldWriter {
         }
         let pos: Pos = (&entity.position).into();
         let chunk_position: ChunkPosition = (&pos).into();
-        self.add_to_flow_graph(&entity)?;
-        self.connect_flow_graph()?;
+        self.add_to_entity_graph(&entity)?;
         match self.world.chunks.get_one(&chunk_position) {
             Some(chunk) => {
                 let mut chunk = chunk.clone();
@@ -390,6 +496,30 @@ impl FactorioWorldWriter {
                     },
                 );
             }
+        }
+        self.blocked_writer.refresh();
+        self.chunks_writer.refresh();
+        Ok(())
+    }
+
+    pub fn on_some_entity_deleted(&mut self, entity: FactorioEntity) -> anyhow::Result<()> {
+        let rect = rect_floor(&entity.bounding_box);
+        for position in rect_fields(&rect) {
+            self.blocked_writer.clear((&position).into());
+        }
+        let pos: Pos = (&entity.position).into();
+        let chunk_position: ChunkPosition = (&pos).into();
+        self.remove_from_entity_graph(&entity)?;
+        if let Some(chunk) = self.world.chunks.get_one(&chunk_position) {
+            let mut chunk = chunk.clone();
+            if let Some(index) = chunk
+                .entities
+                .iter()
+                .position(|en| position_equal(&en.position, &entity.position))
+            {
+                chunk.entities.remove(index);
+            }
+            self.chunks_writer.update(chunk_position, chunk);
         }
         self.blocked_writer.refresh();
         self.chunks_writer.refresh();
@@ -550,11 +680,8 @@ impl FactorioWorldWriter {
         self.blocked_writer.refresh();
         self.chunks_writer.refresh();
         for entity in &entities {
-            self.add_to_flow_graph(entity)?;
+            self.add_to_entity_graph(entity)?;
         }
-
-        self.connect_flow_graph()?;
-
         Ok(())
     }
 
@@ -599,11 +726,22 @@ impl FactorioWorldWriter {
         } else {
             warn!("no recipes to import");
         }
+        if let Some(forces) = &world.forces.read() {
+            for (name, force) in forces {
+                if let Some(force) = force.get_one() {
+                    self.forces_writer.insert(name.clone(), force.clone());
+                }
+            }
+            self.forces_writer.refresh();
+        } else {
+            warn!("no forces to import");
+        }
         if let Some(chunks) = &world.chunks.read() {
             for (chunk_position, chunk) in chunks {
                 if let Some(chunk) = chunk.get_one() {
-                    self.chunks_writer
-                        .insert(chunk_position.clone(), chunk.clone());
+                    let FactorioChunk { entities, tiles } = chunk;
+                    self.update_chunk_entities(chunk_position.clone(), entities.clone())?;
+                    self.update_chunk_tiles(chunk_position.clone(), tiles.clone())?;
                 }
             }
             self.chunks_writer.refresh();
@@ -631,11 +769,13 @@ impl FactorioWorldWriter {
         } else {
             warn!("no resources to import");
         }
+        self.connect_entity_graph()?;
         Ok(())
     }
 
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
+        let (forces_reader, forces_writer) = evmap::new::<String, FactorioForce>();
         let (players_reader, players_writer) = evmap::new::<u32, FactorioPlayer>();
         let (blocked_reader, blocked_writer) = evmap::new::<Pos, bool>();
         let (chunks_reader, chunks_writer) = evmap::new::<ChunkPosition, FactorioChunk>();
@@ -647,9 +787,10 @@ impl FactorioWorldWriter {
         let (item_prototypes_reader, item_prototypes_writer) =
             evmap::new::<String, FactorioItemPrototype>();
         let (resources_reader, resources_writer) = evmap::new::<String, Vec<Position>>();
-        let flow = Arc::new(std::sync::Mutex::new(FlowGraph::new()));
+        let entity_graph = Arc::new(std::sync::Mutex::new(EntityGraph::new()));
 
         FactorioWorldWriter {
+            forces_writer,
             players_writer,
             chunks_writer,
             graphics_writer,
@@ -658,7 +799,7 @@ impl FactorioWorldWriter {
             item_prototypes_writer,
             blocked_writer,
             resources_writer,
-            flow,
+            entity_graph,
             world: Arc::new(FactorioWorld {
                 image_cache,
                 image_cache_writer: std::sync::Mutex::new(image_cache_writer),
@@ -667,6 +808,7 @@ impl FactorioWorldWriter {
                 chunks: chunks_reader,
                 graphics: graphics_reader,
                 recipes: recipes_reader,
+                forces: forces_reader,
                 entity_prototypes: entity_prototypes_reader,
                 item_prototypes: item_prototypes_reader,
                 resources: resources_reader,
@@ -680,7 +822,7 @@ impl FactorioWorldWriter {
     pub fn world(&self) -> Arc<FactorioWorld> {
         self.world.clone()
     }
-    pub fn flow(&self) -> Arc<std::sync::Mutex<FlowGraph>> {
-        self.flow.clone()
+    pub fn entity_graph(&self) -> Arc<std::sync::Mutex<EntityGraph>> {
+        self.entity_graph.clone()
     }
 }

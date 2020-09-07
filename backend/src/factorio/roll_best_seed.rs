@@ -170,7 +170,7 @@ pub async fn score_seed(
     bot_count: u32,
 ) -> anyhow::Result<f64> {
     let mut planner = Planner::new(world, rcon.clone());
-    let (graph, _flow, _world) = planner.plan(bot_count).await?;
+    let (graph, _entity_graph, _world) = planner.plan(bot_count).await?;
     let mut score = 0.0;
 
     let process_start = graph.node_indices().next().unwrap();
@@ -195,7 +195,8 @@ pub async fn score_seed(
     ];
     for resource in resources {
         let nearest =
-            find_nearest_entities(rcon.clone(), &center, Some(resource.into()), None).await?;
+            find_nearest_entities(rcon.clone(), &center, 3000., Some(resource.into()), None)
+                .await?;
         match nearest.is_empty() {
             false => {
                 // info!("nearest {} @ {}/{}", resource, nearest.x(), nearest.y());
@@ -214,12 +215,13 @@ pub async fn score_seed(
 pub async fn find_nearest_entities(
     rcon: Arc<FactorioRcon>,
     search_center: &Position,
+    search_radius: f64,
     name: Option<String>,
     entity_type: Option<String>,
 ) -> anyhow::Result<Vec<FactorioEntity>> {
     let mut entities = rcon
         .find_entities_filtered(
-            &AreaFilter::PositionRadius((search_center.clone(), Some(3000.0))),
+            &AreaFilter::PositionRadius((search_center.clone(), Some(search_radius))),
             name,
             entity_type,
         )

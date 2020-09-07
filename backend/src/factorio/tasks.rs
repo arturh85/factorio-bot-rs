@@ -1,4 +1,5 @@
-use crate::factorio::flow::FlowGraph;
+use crate::factorio::entity_graph::{EntityGraph, EntityNode};
+use crate::factorio::flow_graph::FlowGraph;
 use crate::num_traits::FromPrimitive;
 use crate::types::{Direction, FactorioEntity, Position};
 use actix::{Addr, SystemService};
@@ -180,7 +181,21 @@ pub fn dotgraph_task(graph: &TaskGraph) -> String {
         Dot::with_config(graph, &[Config::GraphContentOnly])
     )
 }
+pub fn dotgraph_entity(graph: &EntityGraph) -> String {
+    use petgraph::dot::{Config, Dot};
+    format!(
+        "digraph {{\n{:?}}}\n",
+        Dot::with_config(graph, &[Config::GraphContentOnly])
+    )
+}
 pub fn dotgraph_flow(graph: &FlowGraph) -> String {
+    use petgraph::dot::{Config, Dot};
+    format!(
+        "digraph {{\n{:?}}}\n",
+        Dot::with_config(graph, &[Config::GraphContentOnly])
+    )
+}
+pub fn dotgraph_entity2(graph: &petgraph::Graph<Vec<EntityNode>, f64>) -> String {
     use petgraph::dot::{Config, Dot};
     format!(
         "digraph {{\n{:?}}}\n",

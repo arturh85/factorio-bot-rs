@@ -1,4 +1,5 @@
-pub mod flow;
+pub mod entity_graph;
+pub mod flow_graph;
 pub mod instance_setup;
 pub mod output_parser;
 pub mod output_reader;

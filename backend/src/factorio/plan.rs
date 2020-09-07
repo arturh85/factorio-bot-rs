@@ -1,16 +1,16 @@
-use crate::factorio::flow::FlowGraph;
+use crate::factorio::entity_graph::EntityGraph;
 use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::roll_best_seed::find_nearest_entities;
 use crate::factorio::tasks::{
-    dotgraph_flow, dotgraph_task, MineTarget, PositionRadius, Task, TaskGraph, TaskResult,
+    dotgraph_entity, dotgraph_task, MineTarget, PositionRadius, Task, TaskGraph, TaskResult,
 };
 use crate::factorio::util::calculate_distance;
-use crate::factorio::world::{EntityName, FactorioWorld, FactorioWorldWriter};
+use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
 use crate::factorio::ws::FactorioWebSocketServer;
 use crate::types::{
-    Direction, FactorioEntity, FactorioPlayer, PlayerChangedMainInventoryEvent,
+    Direction, EntityName, FactorioEntity, FactorioPlayer, PlayerChangedMainInventoryEvent,
     PlayerChangedPositionEvent, Position,
 };
 use actix::{Addr, SystemService};
@@ -38,7 +38,7 @@ impl Planner {
     pub async fn plan(
         &mut self,
         bot_count: u32,
-    ) -> anyhow::Result<(TaskGraph, FlowGraph, Arc<FactorioWorld>)> {
+    ) -> anyhow::Result<(TaskGraph, EntityGraph, Arc<FactorioWorld>)> {
         let player_ids = self.initiate_missing_players_with_default_inventory(bot_count);
         let mut parent = self.graph.add_node(Task::new(None, "Process Start", None));
 
@@ -66,12 +66,13 @@ impl Planner {
 
         // build starter base
         parent = self.add_build_starter_base(parent, &player_ids).await?;
+        self.plan_world.connect_entity_graph()?;
 
         let end = self.graph.add_node(Task::new(None, "Process End", None));
         self.graph.add_edge(parent, end, 0.);
         Ok((
             self.graph.clone(),
-            self.plan_world.flow().lock().unwrap().clone(),
+            self.plan_world.entity_graph().lock().unwrap().clone(),
             self.plan_world.world.clone(),
         ))
     }
@@ -257,7 +258,8 @@ impl Planner {
             ),
         );
         let mut entities: Vec<FactorioEntity> =
-            find_nearest_entities(self.rcon.clone(), search_center, name, entity_type).await?;
+            find_nearest_entities(self.rcon.clone(), search_center, 500., name, entity_type)
+                .await?;
 
         let mut weights: HashMap<NodeIndex, R64> = HashMap::new();
 
@@ -535,7 +537,7 @@ pub async fn start_factorio_and_plan_graph(
     .await
     .expect("failed to start");
     let mut planner = Planner::new(world, rcon);
-    let (graph, flow, world) = planner.plan(bot_count).await?;
+    let (graph, entity_graph, world) = planner.plan(bot_count).await?;
     if let Some(players) = &world.players.read() {
         for (player_id, player) in players {
             if let Some(player) = player.get_one() {
@@ -573,7 +575,7 @@ pub async fn start_factorio_and_plan_graph(
     info!("shortest path: {}", weight);
 
     println!("{}", dotgraph_task(&graph));
-    println!("{}", dotgraph_flow(&flow));
+    println!("{}", dotgraph_entity(&entity_graph));
 
     child.kill().expect("failed to kill child");
     info!("took <yellow>{:?}</>", started.elapsed());

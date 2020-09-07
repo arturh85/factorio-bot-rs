@@ -1,6 +1,6 @@
-use crate::factorio::util::add_to_rect;
-use crate::factorio::world::{EntityName, EntityType};
+use crate::factorio::util::{add_to_rect, calculate_distance, rect_floor_ceil};
 use crate::num_traits::FromPrimitive;
+use evmap::ReadHandle;
 use noisy_float::prelude::*;
 use num_traits::ToPrimitive;
 use pathfinding::utils::absdiff;
@@ -189,6 +189,12 @@ impl Direction {
     }
     pub fn clockwise(&self) -> Direction {
         Direction::from_u8((Direction::to_u8(self).unwrap() + 2) % 8).unwrap()
+    }
+}
+
+impl Default for Direction {
+    fn default() -> Self {
+        Direction::North
     }
 }
 
@@ -446,6 +452,11 @@ impl FactorioEntity {
         self.entity_type == EntityType::Tree.to_string()
             || self.entity_type == EntityType::SimpleEntity.to_string()
     }
+    pub fn is_fluid_input(&self) -> bool {
+        self.entity_type == EntityType::Pipe.to_string()
+            || self.entity_type == EntityType::PipeToGround.to_string()
+            || self.entity_type == EntityType::Boiler.to_string()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
@@ -458,6 +469,110 @@ pub struct FactorioItemPrototype {
     pub place_result: String,
     pub group: String,
     pub subgroup: String,
+}
+
+#[derive(EnumString, Display, Debug)]
+#[strum(serialize_all = "kebab-case")]
+pub enum EntityName {
+    Wood,
+    Stone,
+    Coal,
+    IronOre,
+    CopperOre,
+    UraniumOre,
+    StoneFurnace,
+    BurnerMiningDrill,
+}
+
+#[derive(EnumString, Display, Debug, PartialEq, Clone)]
+#[strum(serialize_all = "kebab-case")]
+pub enum EntityType {
+    None,
+    Assembler,
+    Boiler,
+    Container,
+    Resource,
+    SimpleEntity,
+    Tree,
+    Inserter,
+    MiningDrill,
+    Furnace,
+    TransportBelt,
+    Splitter,
+    UndergroundBelt,
+    Pipe,
+    PipeToGround,
+    OffshorePump,
+}
+
+impl Default for EntityType {
+    fn default() -> Self {
+        EntityType::None
+    }
+}
+
+#[derive(Debug)]
+pub struct ResourcePatch {
+    pub name: String,
+    pub id: u32,
+    pub rect: Rect,
+    pub elements: Vec<Position>,
+}
+
+impl ResourcePatch {
+    pub fn contains(&self, pos: Pos) -> bool {
+        let field: Vec<Pos> = self.elements.iter().map(|e| e.into()).collect();
+        field.contains(&pos)
+    }
+    pub fn find_free_rect(
+        &self,
+        width: u32,
+        height: u32,
+        near: &Position,
+        blocked: &ReadHandle<Pos, bool>,
+    ) -> Option<Rect> {
+        let mut elements = self.elements.clone();
+        elements.sort_by(|a, b| {
+            let da = r64(calculate_distance(&a, &near));
+            let db = r64(calculate_distance(&b, &near));
+            da.cmp(&db)
+        });
+
+        let mut element_map: HashMap<Pos, bool> = HashMap::new();
+        for element in &elements {
+            element_map.insert(element.into(), true);
+        }
+        for element in &elements {
+            let mut invalid = false;
+            for y in 0i32..height as i32 {
+                for x in 0i32..width as i32 {
+                    let pos = Pos(element.x() as i32 + x, element.y() as i32 + y);
+                    let blocked_pos = blocked.get_one(&pos);
+                    if blocked_pos.is_some() && !*blocked_pos.unwrap() {
+                        invalid = true;
+                        break;
+                    }
+                    if element_map.get(&pos).is_none() {
+                        invalid = true;
+                        break;
+                    }
+                }
+                if invalid {
+                    break;
+                }
+            }
+            if !invalid {
+                return Some(rect_floor_ceil(&Rect {
+                    left_top: element.clone(),
+                    right_bottom: Position::new(
+                        element.x() + width as f64,
+                        element.y() + height as f64,
+                    ),
+                }));
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]

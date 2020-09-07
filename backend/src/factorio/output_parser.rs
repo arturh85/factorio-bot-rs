@@ -4,9 +4,9 @@ use crate::factorio::ws::{
     PlayerDistanceChangedMessage, PlayerLeftMessage, ResearchCompletedMessage,
 };
 use crate::types::{
-    ChunkPosition, FactorioEntity, FactorioEntityPrototype, FactorioGraphic, FactorioItemPrototype,
-    FactorioRecipe, FactorioTile, PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent,
-    PlayerChangedPositionEvent, Pos, Position, Rect,
+    ChunkPosition, FactorioEntity, FactorioEntityPrototype, FactorioForce, FactorioGraphic,
+    FactorioItemPrototype, FactorioRecipe, FactorioTile, PlayerChangedDistanceEvent,
+    PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent, Pos, Position, Rect,
 };
 use actix::Addr;
 use std::sync::Arc;
@@ -149,10 +149,20 @@ impl OutputParser {
                     websocket_server.send(ResearchCompletedMessage {}).await?;
                 }
             }
+            "force" => {
+                let force: FactorioForce =
+                    serde_json::from_str(rest).expect("failed to deserialize force");
+                self.world.update_force(force)?;
+            }
             "on_some_entity_created" => {
                 let entity: FactorioEntity =
                     serde_json::from_str(rest).expect("failed to deserialize created entity");
                 self.world.on_some_entity_created(entity)?;
+            }
+            "on_some_entity_deleted" => {
+                let entity: FactorioEntity =
+                    serde_json::from_str(rest).expect("failed to deserialize created entity");
+                self.world.on_some_entity_deleted(entity)?;
             }
             "on_player_main_inventory_changed" => {
                 let event: PlayerChangedMainInventoryEvent = serde_json::from_str(rest)?;

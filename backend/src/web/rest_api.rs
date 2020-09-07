@@ -1,8 +1,9 @@
+use crate::factorio::flow_graph::build_flow_graph;
 use crate::factorio::plan::{execute_plan, Planner};
 use crate::factorio::rcon::FactorioRcon;
-use crate::factorio::tasks::{dotgraph_flow, dotgraph_task};
+use crate::factorio::tasks::{dotgraph_entity, dotgraph_flow, dotgraph_task};
 use crate::factorio::util::blueprint_build_area;
-use crate::factorio::world::FactorioWorld;
+use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
 use crate::factorio::ws::FactorioWebSocketServer;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
@@ -613,9 +614,15 @@ pub async fn all_recipes(
 }
 // #[get("/playerForce")]
 pub async fn player_force(
-    rcon: web::Data<Arc<FactorioRcon>>,
+    world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<FactorioForce>, MyError> {
-    Ok(Json(rcon.player_force().await?))
+    Ok(Json(
+        world
+            .forces
+            .get_one("player")
+            .expect("player force not found")
+            .clone(),
+    ))
 }
 
 // #[get("/<player_id>/mine?<name>&<position>&<count>")]
@@ -713,17 +720,29 @@ pub async fn web_plan_graph(
     Ok(dot)
 }
 
-pub async fn web_flow_graph(
-    rcon: web::Data<Arc<FactorioRcon>>,
-    world: web::Data<Arc<FactorioWorld>>,
-) -> Result<String, MyError> {
-    let players = world.players.len() as u32;
-    let mut planner = Planner::new(
-        world.into_inner().as_ref().clone(),
-        rcon.into_inner().as_ref().clone(),
-    );
-    let (_graph, flow, _world) = planner.plan(players).await?;
-    let dot = dotgraph_flow(&flow);
+pub async fn web_entity_graph(world: web::Data<Arc<FactorioWorld>>) -> Result<String, MyError> {
+    let mut plan_world = FactorioWorldWriter::new();
+    plan_world
+        .import(world.as_ref().clone())
+        .expect("import failed");
+    let graph = plan_world.entity_graph().lock().unwrap().clone();
+    // use petgraph::algo::condensation;
+    // let condensed_graph = condensation(graph.into(), true);
+    // let dot = dotgraph_entity2(&condensed_graph);
+    let dot = dotgraph_entity(&graph);
+    Ok(dot)
+}
+pub async fn web_flow_graph(world: web::Data<Arc<FactorioWorld>>) -> Result<String, MyError> {
+    let mut plan_world = FactorioWorldWriter::new();
+    plan_world
+        .import(world.as_ref().clone())
+        .expect("import failed");
+    let entity_graph = plan_world.entity_graph().lock().unwrap().clone();
+    let graph = build_flow_graph(&entity_graph);
+    // use petgraph::algo::condensation;
+    // let condensed_graph = condensation(graph.into(), true);
+    // let dot = dotgraph_entity2(&condensed_graph);
+    let dot = dotgraph_flow(&graph);
     Ok(dot)
 }
 

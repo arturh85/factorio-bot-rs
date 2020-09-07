@@ -1,5 +1,5 @@
 <template>
-  <div id="graph" style="height: 700px"></div>
+  <div id="flowGraph" style="height: 700px"></div>
 </template>
 
 <script lang="ts">
@@ -8,12 +8,12 @@ import Vue from "vue";
 import {FactorioApi} from "@/factorio-bot/restApi";
 
 export default Vue.extend({
-  name: "Graph",
+  name: "FlowGraph",
   mounted() {
-    FactorioApi.plan().then(plan => {
+    FactorioApi.flow().then(plan => {
       const d3 = (window as any).d3;
       (window as any).colors = d3.schemeCategory20;
-      d3.select("#graph").graphviz({fit: true, width: '100vw', height: '90vh'}).renderDot(plan)
+      d3.select("#flowGraph").graphviz({fit: true, width: '100vw', height: '90vh'}).renderDot(plan)
           // .transition(function () {
           //   return d3.transition("main")
           //       .ease(d3.easeLinear)

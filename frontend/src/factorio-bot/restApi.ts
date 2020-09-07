@@ -1,6 +1,5 @@
 import type {
     FactorioBlueprintInfo,
-    FactorioBlueprintResult,
     FactorioEntity, FactorioEntityPrototypeByName,
     FactorioForce, FactorioItemPrototypeByName,
     FactorioPlayer,
@@ -343,7 +342,15 @@ export class FactorioApi {
         return await response.json();
     }
     static async plan(): Promise<string> {
-        const response = await fetch(`${baseUrl}/api/plan`);
+        const response = await fetch(`${baseUrl}/api/dotTaskGraph`);
+        return await response.text();
+    }
+    static async flow(): Promise<string> {
+        const response = await fetch(`${baseUrl}/api/dotFlowGraph`);
+        return await response.text();
+    }
+    static async entity(): Promise<string> {
+        const response = await fetch(`${baseUrl}/api/dotEntityGraph`);
         return await response.text();
     }
 }

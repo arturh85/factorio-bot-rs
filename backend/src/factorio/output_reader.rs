@@ -72,11 +72,14 @@ pub async fn read_output(
                                             match action {
                                                 "on_player_changed_position"
                                                 | "on_player_main_inventory_changed"
+                                                | "on_player_changed_distance"
                                                 | "entity_prototypes"
                                                 | "recipes"
+                                                | "force"
                                                 | "item_prototypes"
                                                 | "graphics"
                                                 | "tiles"
+                                                | "STATIC_DATA_END"
                                                 | "entities"
                                                  => {}
                                                 _ => {

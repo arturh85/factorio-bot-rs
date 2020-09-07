@@ -25,9 +25,19 @@
           <span class="mr-2">Map</span>
         </v-btn>
       </router-link>
-      <router-link to="/graph">
+      <router-link to="/tasks">
         <v-btn text>
-          <span class="mr-2">Graph</span>
+          <span class="mr-2">Tasks</span>
+        </v-btn>
+      </router-link>
+      <router-link to="/flow">
+        <v-btn text>
+          <span class="mr-2">Flow</span>
+        </v-btn>
+      </router-link>
+      <router-link to="/entities">
+        <v-btn text>
+          <span class="mr-2">Entities</span>
         </v-btn>
       </router-link>
     </v-app-bar>

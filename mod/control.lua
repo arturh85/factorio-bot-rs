@@ -251,6 +251,7 @@ function writeout_initial_stuff()
 	writeout_entity_prototypes()
 	writeout_item_prototypes()
 	writeout_recipes()
+	writeout_forces()
 	writeout(0, "STATIC_DATA_END", "done")
 end
 
@@ -494,6 +495,12 @@ function writeout_recipes()
 		end
 	end
 	writeout(0, "recipes", table.concat(lines,"$"))
+end
+function writeout_forces()
+	local lines = {}
+	for name, force in pairs(game.forces) do
+		writeout(0, "force", game.table_to_json(serialize_force(force)))
+	end
 end
 
 function on_whoami()
@@ -1094,6 +1101,7 @@ function on_research_finished(event)
 	writeout_recipes()
 	on_player_changed_distance(event)
 	writeout(event.tick, "on_research_finished", "")
+	writeout_forces()
 end
 
 function on_player_main_inventory_changed(event)

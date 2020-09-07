@@ -7,6 +7,7 @@ on:
 
 jobs:
   publish:
+    if: false # always skip job for now
     name: Publish for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
