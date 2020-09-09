@@ -1,7 +1,6 @@
 use crate::factorio::util::{move_position, rect_fields, rect_floor};
-use crate::factorio::world::FactorioWorld;
 use crate::num_traits::FromPrimitive;
-use crate::types::{Direction, EntityName, EntityType, FactorioEntity, Position};
+use crate::types::{Direction, EntityName, EntityType, FactorioEntity, Pos, Position};
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::stable_graph::StableGraph;
@@ -69,10 +68,24 @@ impl EntityGraph {
             // quad_tree: Quadtree::new(16),
         }
     }
+    pub fn from<F>(vec: Vec<FactorioEntity>, check_for_resource: F) -> anyhow::Result<Self>
+    where
+        F: FnOnce(&str, Pos) -> bool + Copy,
+    {
+        let graph = EntityGraph::new();
+        for e in vec {
+            graph.add(&e, check_for_resource)?;
+        }
+        graph.connect()?;
+        Ok(graph)
+    }
     pub fn inner(&self) -> AtomicRef<EntityGraphInner> {
         self.inner.borrow()
     }
-    pub fn add(&self, entity: &FactorioEntity, world: &FactorioWorld) -> anyhow::Result<()> {
+    pub fn add<F>(&self, entity: &FactorioEntity, check_for_resource: F) -> anyhow::Result<()>
+    where
+        F: FnOnce(&str, Pos) -> bool + Copy,
+    {
         let mut inner = self.inner.borrow_mut();
         if let Ok(entity_type) = EntityType::from_str(&entity.entity_type) {
             match entity_type {
@@ -102,7 +115,7 @@ impl EntityGraph {
                                 let resource = resource.to_string();
                                 let resource_found = rect_fields(&rect)
                                     .iter()
-                                    .any(|p| world.resource_contains(&resource, p.into()));
+                                    .any(|p| check_for_resource(&resource, p.into()));
                                 if resource_found {
                                     miner_ore = Some(resource);
                                     break;
@@ -188,23 +201,31 @@ impl EntityGraph {
             }
             match node.entity_type {
                 EntityType::Splitter => {
-                    let in1 = node
+                    let out1 = node
                         .entity
                         .position
-                        .add(&Position::new(-0.5, 1.).turn(node.direction));
-                    let in2 = node
+                        .add(&Position::new(-0.5, -1.).turn(node.direction));
+                    let out2 = node
                         .entity
                         .position
-                        .add(&Position::new(0.5, 1.).turn(node.direction));
-                    for pos in vec![in1, in2] {
-                        if let Some(prev_index) = EntityGraph::node_at(&inner, &pos) {
-                            let prev = inner.node_weight(prev_index).unwrap();
-                            info!("splitter inputs {}", pos);
-                            if !inner.contains_edge(node_index, prev_index)
-                                && self.is_entity_belt_connectable(node, prev)
+                        .add(&Position::new(0.5, -1.).turn(node.direction));
+                    for pos in &[&out1, &out2] {
+                        if let Some(next_index) = EntityGraph::node_at(&inner, pos) {
+                            let next = inner.node_weight(next_index).unwrap();
+                            // info!(
+                            //     "found splitter output: {} @ {}",
+                            //     next.entity.name, next.entity.position
+                            // );
+                            if !inner.contains_edge(node_index, next_index)
+                                && self.is_entity_belt_connectable(node, next)
                             {
-                                edges_to_add.push((node_index, prev_index, 1.));
+                                edges_to_add.push((node_index, next_index, 1.));
                             }
+                            // } else {
+                            //     warn!(
+                            //         "NOT found splitter output: for {} @ {} -> searched @ {}",
+                            //         node.entity.name, node.entity.position, pos
+                            //     );
                         }
                     }
                 }
@@ -219,6 +240,13 @@ impl EntityGraph {
                         {
                             edges_to_add.push((node_index, next_index, 1.));
                         }
+                        // } else {
+                        //     warn!(
+                        //         "not found transport belt connect from {} to {} ({:?})",
+                        //         node.entity.position,
+                        //         move_position(&node.entity.position, node.direction, 1.0),
+                        //         node.direction
+                        //     )
                     }
                 }
                 EntityType::OffshorePump => {
@@ -336,6 +364,10 @@ impl EntityGraph {
     pub fn node_at(graph: &EntityGraphInner, position: &Position) -> Option<NodeIndex> {
         graph.node_indices().find(|i| {
             if let Some(f) = graph.node_weight(*i) {
+                // info!(
+                //     "checking for {} in {} {:?}",
+                //     position, f.entity.name, f.entity.bounding_box
+                // );
                 return f.entity.bounding_box.contains(&position);
             }
             false
@@ -353,5 +385,65 @@ impl EntityGraph {
             "digraph {{\n{:?}}}\n",
             Dot::with_config(&self.inner().deref(), &[Config::GraphContentOnly])
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::factorio::tests::{blueprint_entities, fixture_entity_prototypes};
+
+    #[test]
+    fn test_splitters() {
+        let entities: Vec<FactorioEntity> = vec![
+            FactorioEntity::new_transport_belt(&Position::new(0.5, 0.5), Direction::South),
+            FactorioEntity::new_transport_belt(&Position::new(1.5, 0.5), Direction::South),
+            FactorioEntity::new_splitter(&Position::new(1., 1.5), Direction::South),
+            FactorioEntity::new_transport_belt(&Position::new(0.5, 2.5), Direction::South),
+            FactorioEntity::new_transport_belt(&Position::new(1.5, 2.5), Direction::South),
+        ];
+        assert_eq!(
+            EntityGraph::from(entities, |_name, _pos| false)
+                .unwrap()
+                .graphviz_dot(),
+            r#"digraph {
+    0 [ label = "transport-belt at [0.5, 0.5]" ]
+    1 [ label = "transport-belt at [1.5, 0.5]" ]
+    2 [ label = "splitter at [1, 1.5]" ]
+    3 [ label = "transport-belt at [0.5, 2.5]" ]
+    4 [ label = "transport-belt at [1.5, 2.5]" ]
+    0 -> 2 [ label = "1.0" ]
+    1 -> 2 [ label = "1.0" ]
+    2 -> 4 [ label = "1.0" ]
+    2 -> 3 [ label = "1.0" ]
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn test_splitters2() {
+        let (prototypes, _writer) = fixture_entity_prototypes();
+        let entities: Vec<FactorioEntity> = blueprint_entities("0eNqd0u+KwyAMAPB3yWd3TK/q5quM42i3MITWimbHleK7n64clK1lf74ZMb8kkhGa9oI+WEdgRrDH3kUwhxGiPbu6LXc0eAQDlrADBq7uShR9a4kwQGJg3Ql/wfDEHqZRqF30faBNgy3NkkX6YoCOLFmcGrgGw7e7dE0uY/iawcD3Maf1rlTN1EbxD8lgAKPzIZc42YDH6YEoPd7I4n6oBXP7b4rH4uczotytiGpBrJ6fXu7n0y9Y8h1L3P5ktSCrF2S9KquyCte1MbPlZPCDIU5fvuOVrvZaab5VUqX0B2ef55s=", &prototypes).expect("failed to read blueprint");
+        assert_eq!(
+            EntityGraph::from(entities, |_name, _pos| false)
+                .unwrap()
+                .graphviz_dot(),
+            r#"digraph {
+    0 [ label = "transport-belt at [-61.5, 71.5]" ]
+    1 [ label = "splitter at [-60.5, 72]" ]
+    2 [ label = "splitter at [-58.5, 72]" ]
+    3 [ label = "transport-belt at [-59.5, 71.5]" ]
+    4 [ label = "transport-belt at [-59.5, 72.5]" ]
+    5 [ label = "transport-belt at [-57.5, 72.5]" ]
+    0 -> 1 [ label = "1.0" ]
+    1 -> 3 [ label = "1.0" ]
+    1 -> 4 [ label = "1.0" ]
+    2 -> 4 [ label = "1.0" ]
+    2 -> 3 [ label = "1.0" ]
+    5 -> 2 [ label = "1.0" ]
+}
+"#,
+        );
     }
 }

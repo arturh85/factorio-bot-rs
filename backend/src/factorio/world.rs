@@ -223,7 +223,9 @@ impl FactorioWorldWriter {
         }
         let pos: Pos = (&entity.position).into();
         let chunk_position: ChunkPosition = (&pos).into();
-        self.world.entity_graph.add(&entity, &self.world)?;
+        self.world
+            .entity_graph
+            .add(&entity, |name, pos| self.world.resource_contains(name, pos))?;
         match self.world.chunks.get_one(&chunk_position) {
             Some(chunk) => {
                 let mut chunk = chunk.clone();
@@ -423,7 +425,9 @@ impl FactorioWorldWriter {
         self.blocked_writer.refresh();
         self.chunks_writer.refresh();
         for entity in &entities {
-            self.world.entity_graph.add(&entity, &self.world)?;
+            self.world
+                .entity_graph
+                .add(&entity, |name, pos| self.world.resource_contains(name, pos))?;
         }
         Ok(())
     }

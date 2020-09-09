@@ -240,20 +240,6 @@ pub struct MineTarget {
     pub count: u32,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_play() {
-        let mut g = TaskGraphInner::new();
-        let rocket_node = g.add_node(TaskNode::new_craft(1, InventoryItem::new("rocket", 42)));
-        let walk_node = g.add_node(TaskNode::new_walk(1, PositionRadius::new(1., 5., 2.)));
-        g.add_edge(rocket_node, walk_node, 4.);
-        println!("{}", dotgraph_task(&g));
-    }
-}
-
 #[async_trait]
 impl QueueConsumer<NodeIndex, TaskResult> for TaskWorker<NodeIndex, TaskResult> {
     async fn execute(&self, _task: NodeIndex) -> Result<TaskResult, WorkerExecuteError> {

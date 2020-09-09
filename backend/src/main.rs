@@ -186,7 +186,7 @@ async fn main() -> anyhow::Result<()> {
         let rcon = FactorioRcon::new(&rcon_settings, false).await.unwrap();
         rcon.send(command).await.unwrap();
     } else if let Some(matches) = matches.subcommand_matches("roll-seed") {
-        match roll_seed(
+        if let Some((seed, score)) = roll_seed(
             settings,
             matches.value_of("map").expect("map required!").into(),
             match matches.value_of("rolls") {
@@ -198,8 +198,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?
         {
-            Some((seed, score)) => println!("Best Seed: {} with Score {}", seed, score),
-            None => eprintln!("no seed found"),
+            println!("Best Seed: {} with Score {}", seed, score);
+        } else {
+            eprintln!("no seed found");
         }
     } else if let Some(matches) = matches.subcommand_matches("plan") {
         let _graph = start_factorio_and_plan_graph(

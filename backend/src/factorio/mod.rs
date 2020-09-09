@@ -8,6 +8,9 @@ pub mod process_control;
 pub mod rcon;
 pub mod roll_best_seed;
 pub mod task_graph;
+#[cfg(test)]
+pub mod tests;
+
 pub mod util;
 pub mod world;
 pub mod ws;

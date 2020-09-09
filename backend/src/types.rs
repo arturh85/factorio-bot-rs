@@ -1,6 +1,7 @@
-use crate::factorio::util::{add_to_rect, calculate_distance, rect_floor_ceil};
+use crate::factorio::util::{add_to_rect_turned, calculate_distance, rect_floor_ceil};
 use crate::num_traits::FromPrimitive;
 use evmap::ReadHandle;
+use factorio_blueprint::objects::Entity;
 use noisy_float::prelude::*;
 use num_traits::ToPrimitive;
 use pathfinding::utils::absdiff;
@@ -219,12 +220,12 @@ impl Position {
     pub fn turn(&self, direction: Direction) -> Position {
         match direction {
             Direction::North => self.clone(),
-            Direction::East => self.rotate_clockwise(),
-            Direction::South => self.rotate_clockwise().rotate_clockwise(),
-            Direction::West => self
+            Direction::East => self
                 .rotate_clockwise()
                 .rotate_clockwise()
                 .rotate_clockwise(),
+            Direction::South => self.rotate_clockwise().rotate_clockwise(),
+            Direction::West => self.rotate_clockwise(),
             _ => panic!("diagonal turning not supported"),
         }
     }
@@ -299,6 +300,9 @@ impl Rect {
             (self.left_top.x() + self.right_bottom.x()) / 2.,
             (self.left_top.y() + self.right_bottom.y()) / 2.,
         )
+    }
+    pub fn rotate_clockwise(&self) -> Rect {
+        Rect::from_wh(self.height(), self.width())
     }
 }
 
@@ -398,36 +402,56 @@ pub struct FactorioGraphic {
 #[serde(rename_all = "camelCase")]
 pub struct FactorioFluidBoxPrototype {
     pub pipe_connections: Vec<FactorioFluidBoxConnection>,
-    pub production_type: FactorioFluidBoxProductionType,
+    pub production_type: String,
 }
 
-#[derive(
-    EnumString, Display, Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy,
-)]
-#[strum(serialize_all = "kebab-case")]
-#[serde(rename_all = "kebab-case")]
-pub enum FactorioFluidBoxConnectionType {
-    Input,
-    Output,
-    InputOutput,
-}
-#[derive(
-    EnumString, Display, Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy,
-)]
-#[strum(serialize_all = "kebab-case")]
-#[serde(rename_all = "kebab-case")]
-pub enum FactorioFluidBoxProductionType {
-    Input,
-    Output,
-    InputOutput,
-    None,
-}
+// #[derive(
+//     EnumString,
+//     Display,
+//     Debug,
+//     Clone,
+//     TypeScriptify,
+//     PartialEq,
+//     Serialize,
+//     Deserialize,
+//     Hash,
+//     Eq,
+//     ShallowCopy,
+// )]
+// #[strum(serialize_all = "kebab-case")]
+// #[serde(rename_all = "kebab-case")]
+// pub enum FactorioFluidBoxConnectionType {
+//     Input,
+//     Output,
+//     InputOutput,
+// }
+// #[derive(
+//     EnumString,
+//     Display,
+//     Debug,
+//     Clone,
+//     TypeScriptify,
+//     PartialEq,
+//     Serialize,
+//     Deserialize,
+//     Hash,
+//     Eq,
+//     ShallowCopy,
+// )]
+// #[strum(serialize_all = "kebab-case")]
+// #[serde(rename_all = "kebab-case")]
+// pub enum FactorioFluidBoxProductionType {
+//     Input,
+//     Output,
+//     InputOutput,
+//     None,
+// }
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioFluidBoxConnection {
     pub max_underground_distance: Option<u32>,
-    pub connection_type: FactorioFluidBoxConnectionType,
+    pub connection_type: String,
     pub positions: Vec<Position>,
 }
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
@@ -465,14 +489,80 @@ pub struct FactorioEntity {
 }
 
 impl FactorioEntity {
+    pub fn from_blueprint_entity(
+        entity: Entity,
+        prototypes: &ReadHandle<String, FactorioEntityPrototype>,
+    ) -> anyhow::Result<Self> {
+        let prototype = prototypes.get_one(&entity.name).unwrap();
+        let position: Position = entity.position.into();
+        let direction = entity.direction.map(|d| d % 8).unwrap_or(0);
+        Ok(FactorioEntity {
+            bounding_box: add_to_rect_turned(
+                &prototype.collision_box,
+                &position,
+                Direction::from_u8(direction).unwrap(),
+            ),
+            position,
+            direction,
+            name: entity.name.clone(),
+            entity_type: prototype.entity_type.clone(),
+            pickup_position: entity.pickup_position.map(|p| p.into()),
+            drop_position: entity.drop_position.map(|p| p.into()),
+            recipe: entity.recipe.clone(),
+            ..Default::default()
+        })
+    }
+    pub fn new_transport_belt(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: EntityName::TransportBelt.to_string(),
+            entity_type: EntityType::TransportBelt.to_string(),
+            position: position.clone(),
+            bounding_box: add_to_rect_turned(&Rect::from_wh(0.8, 0.8), &position, direction),
+            direction: direction.to_u8().unwrap(),
+            ..Default::default()
+        }
+    }
+    pub fn new_splitter(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: EntityName::Splitter.to_string(),
+            entity_type: EntityType::Splitter.to_string(),
+            position: position.clone(),
+            bounding_box: add_to_rect_turned(&Rect::from_wh(1.78, 0.78), &position, direction),
+            direction: direction.to_u8().unwrap(),
+            ..Default::default()
+        }
+    }
+    pub fn new_inserter(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: EntityName::Inserter.to_string(),
+            entity_type: EntityType::Inserter.to_string(),
+            position: position.clone(),
+            bounding_box: add_to_rect_turned(&Rect::from_wh(0.78, 0.78), &position, direction),
+            direction: direction.to_u8().unwrap(),
+            drop_position: Some(position.add(&Position::new(0., 1.).turn(direction))),
+            pickup_position: Some(position.add(&Position::new(0., -1.).turn(direction))),
+            ..Default::default()
+        }
+    }
     pub fn new_burner_mining_drill(position: &Position, direction: Direction) -> FactorioEntity {
         FactorioEntity {
             name: EntityName::BurnerMiningDrill.to_string(),
             entity_type: EntityType::MiningDrill.to_string(),
             position: position.clone(),
-            bounding_box: add_to_rect(&Rect::from_wh(1.8, 1.8), &position),
+            bounding_box: add_to_rect_turned(&Rect::from_wh(1.8, 1.8), &position, direction),
             direction: direction.to_u8().unwrap(),
             drop_position: Some(position.add(&Position::new(-0.5, -1.296875).turn(direction))),
+            ..Default::default()
+        }
+    }
+    pub fn new_electric_mining_drill(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: EntityName::ElectricMiningDrill.to_string(),
+            entity_type: EntityType::MiningDrill.to_string(),
+            position: position.clone(),
+            bounding_box: add_to_rect_turned(&Rect::from_wh(1.8, 1.8), &position, direction),
+            direction: direction.to_u8().unwrap(),
+            drop_position: Some(position.add(&Position::new(0., -2.).turn(direction))),
             ..Default::default()
         }
     }
@@ -481,7 +571,7 @@ impl FactorioEntity {
             name: EntityName::StoneFurnace.to_string(),
             entity_type: EntityType::Furnace.to_string(),
             position: position.clone(),
-            bounding_box: add_to_rect(&Rect::from_wh(1.8, 1.8), &position),
+            bounding_box: add_to_rect_turned(&Rect::from_wh(1.8, 1.8), &position, direction),
             direction: direction.to_u8().unwrap(),
             ..Default::default()
         }
@@ -495,6 +585,15 @@ impl FactorioEntity {
         self.entity_type == EntityType::Pipe.to_string()
             || self.entity_type == EntityType::PipeToGround.to_string()
             || self.entity_type == EntityType::Boiler.to_string()
+    }
+}
+
+impl From<factorio_blueprint::objects::Position> for Position {
+    fn from(pos: factorio_blueprint::objects::Position) -> Self {
+        Position {
+            x: Box::new(pos.x),
+            y: Box::new(pos.y),
+        }
     }
 }
 
@@ -513,14 +612,28 @@ pub struct FactorioItemPrototype {
 #[derive(EnumString, Display, Debug)]
 #[strum(serialize_all = "kebab-case")]
 pub enum EntityName {
+    // raw resources
     Wood,
     Stone,
     Coal,
     IronOre,
     CopperOre,
     UraniumOre,
+    CrudeOil,
+
+    // processed
+    StoneBrick,
+    CopperPlate,
+    IronPlate,
+    Steel,
+
+    // entities
     StoneFurnace,
+    Inserter,
     BurnerMiningDrill,
+    TransportBelt,
+    Splitter,
+    ElectricMiningDrill,
 }
 
 #[derive(EnumString, Display, Debug, PartialEq, Clone)]

@@ -169,6 +169,14 @@ pub fn add_to_rect(rect: &Rect, position: &Position) -> Rect {
         ),
     }
 }
+pub fn add_to_rect_turned(rect: &Rect, position: &Position, direction: Direction) -> Rect {
+    let rect = if direction == Direction::West || direction == Direction::East {
+        rect.rotate_clockwise()
+    } else {
+        rect.clone()
+    };
+    add_to_rect(&rect, position)
+}
 
 pub fn expand_rect(total_rect: &mut Rect, rect: &Rect) {
     if rect.left_top.x() < total_rect.left_top.x() {
