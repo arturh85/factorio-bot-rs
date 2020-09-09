@@ -34,6 +34,7 @@ export enum Entities {
  ironChest = "iron-chest",
  steamEngine = "steam-engine",
  boiler = "boiler",
+ splitter = "splitter",
  smallElectricPole = "small-electric-pole",
  pipe = "pipe",
  pipeToGround = "pipe-to-ground",

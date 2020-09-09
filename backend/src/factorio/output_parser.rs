@@ -71,6 +71,7 @@ impl OutputParser {
                 self.world.update_graphics(graphics)?;
             }
             "entity_prototypes" => {
+                info!("rest {}", rest);
                 let entity_prototypes: Vec<FactorioEntityPrototype> = rest
                     .split('$')
                     .map(|entity_prototype| {

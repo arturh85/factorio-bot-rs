@@ -1,11 +1,8 @@
-use crate::factorio::entity_graph::EntityGraph;
 use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::roll_best_seed::find_nearest_entities;
-use crate::factorio::tasks::{
-    dotgraph_entity, dotgraph_task, MineTarget, PositionRadius, Task, TaskGraph, TaskResult,
-};
+use crate::factorio::task_graph::{MineTarget, PositionRadius, TaskGraph, TaskNode, TaskResult};
 use crate::factorio::util::calculate_distance;
 use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
 use crate::factorio::ws::FactorioWebSocketServer;
@@ -19,9 +16,8 @@ use actix_taskqueue::queue::TaskQueue;
 use actix_taskqueue::worker::TaskWorker;
 use async_std::sync::Arc;
 use evmap::ReadGuard;
-use noisy_float::types::{r64, R64};
+use noisy_float::types::R64;
 use num_traits::ToPrimitive;
-use petgraph::algo::astar;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use std::collections::{BTreeMap, HashMap};
@@ -38,9 +34,11 @@ impl Planner {
     pub async fn plan(
         &mut self,
         bot_count: u32,
-    ) -> anyhow::Result<(TaskGraph, EntityGraph, Arc<FactorioWorld>)> {
+    ) -> anyhow::Result<(TaskGraph, Arc<FactorioWorld>)> {
         let player_ids = self.initiate_missing_players_with_default_inventory(bot_count);
-        let mut parent = self.graph.add_node(Task::new(None, "Process Start", None));
+        let mut parent = self
+            .graph
+            .add_node(TaskNode::new(None, "Process Start", None));
 
         // mine 1x rock-huge
         parent = self
@@ -66,15 +64,13 @@ impl Planner {
 
         // build starter base
         parent = self.add_build_starter_base(parent, &player_ids).await?;
-        self.plan_world.connect_entity_graph()?;
+        self.plan_world.world.entity_graph.connect()?;
 
-        let end = self.graph.add_node(Task::new(None, "Process End", None));
+        let end = self
+            .graph
+            .add_node(TaskNode::new(None, "Process End", None));
         self.graph.add_edge(parent, end, 0.);
-        Ok((
-            self.graph.clone(),
-            self.plan_world.entity_graph().lock().unwrap().clone(),
-            self.plan_world.world.clone(),
-        ))
+        Ok((self.graph.clone(), self.plan_world.world.clone()))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -83,7 +79,9 @@ impl Planner {
         mut parent: NodeIndex,
         player_ids: &Vec<u32>,
     ) -> anyhow::Result<NodeIndex> {
-        parent = self.add_process_start_node(parent, "Build StarterBase");
+        parent = self
+            .graph
+            .add_process_start_node(parent, "Build StarterBase");
 
         // build 2x iron minerFurnace
         parent = self
@@ -114,7 +112,7 @@ impl Planner {
         plate_name: &str,
         miner_furnace_count: u16,
     ) -> anyhow::Result<NodeIndex> {
-        let start = self.add_process_start_node(
+        let start = self.graph.add_process_start_node(
             parent,
             &format!(
                 "Build MinerFurnace for {} -> {} x {}",
@@ -156,7 +154,7 @@ impl Planner {
             if to_place_player == 0 {
                 continue;
             }
-            let player_parent = self.graph.add_node(Task::new(
+            let player_parent = self.graph.add_node(TaskNode::new(
                 Some(*player_id),
                 &*format!(
                     "Bot #{} at {}",
@@ -187,7 +185,7 @@ impl Planner {
                     .await?;
             }
             self.graph.add_edge(start, player_parent, 0.);
-            weights.insert(parent, self.weight(player_parent, parent));
+            weights.insert(parent, self.graph.weight(player_parent, parent));
         }
         // TODO: collect ingredients for (miner + furnace) * minerFurnaceCount
         // TODO: init process with coal?
@@ -202,7 +200,7 @@ impl Planner {
         ore_name: &str,
         miner_chest_count: u16,
     ) -> anyhow::Result<NodeIndex> {
-        let start = self.add_process_start_node(
+        let start = self.graph.add_process_start_node(
             parent,
             &format!("Build MinerChest for {} x {}", ore_name, miner_chest_count,),
         );
@@ -222,7 +220,7 @@ impl Planner {
         ore_name: &str,
         miner_count: u16,
     ) -> anyhow::Result<NodeIndex> {
-        let start = self.add_process_start_node(
+        let start = self.graph.add_process_start_node(
             parent,
             &format!("Build MinerLoop for {}  x {}", ore_name, miner_count,),
         );
@@ -243,7 +241,7 @@ impl Planner {
         name: Option<String>,
         entity_type: Option<String>,
     ) -> anyhow::Result<NodeIndex> {
-        let start = self.add_process_start_node(
+        let start = self.graph.add_process_start_node(
             parent,
             &format!(
                 "Mine {} with {} Bots",
@@ -264,7 +262,7 @@ impl Planner {
         let mut weights: HashMap<NodeIndex, R64> = HashMap::new();
 
         for player_id in bots {
-            let player_parent = self.graph.add_node(Task::new(
+            let player_parent = self.graph.add_node(TaskNode::new(
                 Some(*player_id),
                 &*format!(
                     "Bot #{} at {}",
@@ -281,7 +279,7 @@ impl Planner {
                     .await?
             }
             self.graph.add_edge(start, player_parent, 0.);
-            weights.insert(parent, self.weight(player_parent, parent));
+            weights.insert(parent, self.graph.weight(player_parent, parent));
         }
         Ok(self.join_using_weights(start, weights))
     }
@@ -293,7 +291,7 @@ impl Planner {
         goal: &PositionRadius,
     ) -> anyhow::Result<NodeIndex> {
         let distance = self.distance(player_id, &goal.position);
-        let task = Task::new_walk(player_id, goal.clone());
+        let task = TaskNode::new_walk(player_id, goal.clone());
         let node = self.graph.add_node(task);
         self.graph.add_edge(parent_node, node, distance);
         self.plan_world
@@ -326,7 +324,7 @@ impl Planner {
                 )
                 .await?;
         }
-        let task = Task::new_mine(
+        let task = TaskNode::new_mine(
             player_id,
             MineTarget {
                 name: name.into(),
@@ -393,7 +391,7 @@ impl Planner {
             ));
         }
         let name = entity.name.clone();
-        let task = Task::new_place(player_id, entity.clone());
+        let task = TaskNode::new_place(player_id, entity.clone());
         let node = self.graph.add_node(task);
         inventory.insert(name, inventory_item_count - 1);
 
@@ -456,36 +454,13 @@ impl Planner {
     fn distance(&self, player_id: u32, position: &Position) -> f64 {
         calculate_distance(&self.player(player_id).position, position).ceil()
     }
-    fn weight(&self, start: NodeIndex, goal: NodeIndex) -> R64 {
-        let (weight, _) = astar(
-            &self.graph,
-            start,
-            |finish| finish == goal,
-            |e| *e.weight(),
-            |_| 0.,
-        )
-        .expect("failed to find path");
-        r64(weight)
-    }
-
-    fn add_process_start_node(&mut self, parent: NodeIndex, label: &str) -> NodeIndex {
-        let start = self
-            .graph
-            .add_node(Task::new(None, &format!("Start: {}", label), None));
-        self.graph.add_edge(parent, start, 0.);
-
-        start
-    }
-    fn add_process_end_node(&mut self) -> NodeIndex {
-        self.graph.add_node(Task::new(None, "End", None))
-    }
 
     fn join_using_weights(
         &mut self,
         start: NodeIndex,
         weights: HashMap<NodeIndex, R64>,
     ) -> NodeIndex {
-        let end = self.add_process_end_node();
+        let end = self.graph.add_process_end_node();
         let max_weight = weights.values().max();
         if let Some(max_weight) = max_weight {
             for (node, weight) in weights.iter() {
@@ -537,7 +512,7 @@ pub async fn start_factorio_and_plan_graph(
     .await
     .expect("failed to start");
     let mut planner = Planner::new(world, rcon);
-    let (graph, entity_graph, world) = planner.plan(bot_count).await?;
+    let (graph, world) = planner.plan(bot_count).await?;
     if let Some(players) = &world.players.read() {
         for (player_id, player) in players {
             if let Some(player) = player.get_one() {
@@ -564,18 +539,13 @@ pub async fn start_factorio_and_plan_graph(
 
     let process_start = graph.node_indices().next().unwrap();
     let process_end = graph.node_indices().last().unwrap();
-    let (weight, _) = astar(
-        &graph,
-        process_start,
-        |finish| finish == process_end,
-        |e| *e.weight(),
-        |_| 0.,
-    )
-    .expect("no path found");
+    let (weight, _) = graph
+        .astar(process_start, process_end)
+        .expect("no path found");
     info!("shortest path: {}", weight);
 
-    println!("{}", dotgraph_task(&graph));
-    println!("{}", dotgraph_entity(&entity_graph));
+    // println!("{}", dotgraph_task(&graph));
+    // println!("{}", dotgraph_entity(&entity_graph));
 
     child.kill().expect("failed to kill child");
     info!("took <yellow>{:?}</>", started.elapsed());

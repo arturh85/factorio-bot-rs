@@ -189,6 +189,10 @@ pub async fn start_webserver(
                     .route(web::get().to(crate::web::rest_api::player_force)),
             )
             .service(
+                web::resource("/api/allForces")
+                    .route(web::get().to(crate::web::rest_api::all_forces)),
+            )
+            .service(
                 web::resource("/api/{player_id}/mine")
                     .route(web::get().to(crate::web::rest_api::mine)),
             )

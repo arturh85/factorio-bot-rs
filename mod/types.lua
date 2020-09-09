@@ -108,6 +108,30 @@ function serialize_force(force)
     return record
 end
 
+function serialize_fluidbox_connection(conn)
+    local record = table_properties(
+        conn,
+        {"positions", "type", "max_underground_distance"},
+        {type = "connectionType", max_underground_distance = "maxUndergroundDistance"}
+    )
+    return record
+end
+
+function serialize_fluidbox_prototype(fluidbox)
+    local record = table_properties(
+        fluidbox,
+        {"production_type"},
+        {production_type = "productionType"}
+    )
+
+    local pipe_connections = { }
+    for _,v in pairs(fluidbox.pipe_connections) do
+        table.insert(pipe_connections, serialize_fluidbox_connection(v))
+    end
+    record.pipeConnections = pipe_connections
+    return record
+end
+
 function serialize_technology(technology)
     local record = table_properties(
         technology,
@@ -162,12 +186,23 @@ function serialize_entity_prototype(entity)
     else
         mine_result = nil
     end
-
+    local fluidbox_prototypes = {}
+    local fluidbox_found = false
+    for _,v in pairs(entity.fluidbox_prototypes) do
+        fluidbox_found = true
+        table.insert(fluidbox_prototypes, serialize_fluidbox_prototype(v))
+    end
     local record = table_properties(entity, {"name", "type"}, {type = "entityType"})
     record.miningTime = mining_time
+    record.miningSpeed = entity.mining_speed
+    record.craftingSpeed = entity.crafting_speed
     record.mineResult = mine_result
+    if fluidbox_found then
+        record.fluidboxPrototypes = fluidbox_prototypes
+    end
     record.collisionMask = collision_mask
     record.collisionBox = table_properties(entity.collision_box, {"left_top", "right_bottom"}, {left_top = "leftTop", right_bottom = "rightBottom"})
+
     return record
 end
 

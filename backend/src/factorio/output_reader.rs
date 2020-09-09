@@ -47,7 +47,7 @@ pub async fn read_output(
                             }
                         }
                         // wait for factorio init before sending confirmation
-                        if !initialized && line.find("(100% done)").is_some() {
+                        if !initialized && line.find("initial discovery done").is_some() {
                             initialized = true;
                             rx2.recv().await.unwrap();
                             rx2.recv().await.unwrap();
@@ -124,6 +124,9 @@ pub async fn read_output(
     );
     rcon.silent_print("").await.expect("failed to silent print");
     rcon.whoami("server").await.expect("failed to whoami");
+    rcon.send("/c game.surfaces[1].always_day=true")
+        .await
+        .expect("always day");
 
     if wait_until == FactorioStartCondition::DiscoveryComplete {
         tx2.send(()).await;

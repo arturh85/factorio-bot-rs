@@ -7,7 +7,6 @@ use crate::factorio::world::FactorioWorld;
 use crate::types::{AreaFilter, FactorioEntity, Position};
 use async_std::sync::{Arc, Mutex};
 use config::Config;
-use petgraph::algo::astar;
 use std::cmp::Ordering;
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -170,19 +169,14 @@ pub async fn score_seed(
     bot_count: u32,
 ) -> anyhow::Result<f64> {
     let mut planner = Planner::new(world, rcon.clone());
-    let (graph, _entity_graph, _world) = planner.plan(bot_count).await?;
+    let (graph, _world) = planner.plan(bot_count).await?;
     let mut score = 0.0;
 
     let process_start = graph.node_indices().next().unwrap();
     let process_end = graph.node_indices().last().unwrap();
-    let (weight, _) = astar(
-        &graph,
-        process_start,
-        |finish| finish == process_end,
-        |e| *e.weight(),
-        |_| 0.,
-    )
-    .expect("no path found");
+    let (weight, _) = graph
+        .astar(process_start, process_end)
+        .expect("no path found");
     score -= weight;
     let center = Position::new(0., 0.);
     let resources = vec![

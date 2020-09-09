@@ -1,9 +1,9 @@
-use crate::factorio::flow_graph::build_flow_graph;
+use crate::error::ActixAnyhowError;
+use crate::factorio::flow_graph::FlowGraph;
 use crate::factorio::plan::{execute_plan, Planner};
 use crate::factorio::rcon::FactorioRcon;
-use crate::factorio::tasks::{dotgraph_entity, dotgraph_flow, dotgraph_task};
 use crate::factorio::util::blueprint_build_area;
-use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
+use crate::factorio::world::FactorioWorld;
 use crate::factorio::ws::FactorioWebSocketServer;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
@@ -12,42 +12,14 @@ use crate::types::{
     InventoryResponse, PlaceEntitiesResult, PlaceEntityResult, Position, RequestEntity,
 };
 use actix::Addr;
-use actix_web::http::StatusCode;
+use actix_web::web;
 use actix_web::web::{Json, Path as PathInfo};
-use actix_web::{web, HttpResponse};
 use factorio_blueprint::BlueprintCodec;
-use serde::export::Formatter;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-
-#[derive(Debug)]
-pub struct MyError {
-    err: anyhow::Error,
-}
-impl Display for MyError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.write_str("ERROR")?;
-        Ok(())
-    }
-}
-
-impl actix_web::error::ResponseError for MyError {
-    fn status_code(&self) -> StatusCode {
-        StatusCode::INTERNAL_SERVER_ERROR
-    }
-
-    fn error_response(&self) -> actix_web::HttpResponse {
-        HttpResponse::InternalServerError().body(self.err.to_string())
-    }
-}
-impl From<anyhow::Error> for MyError {
-    fn from(err: anyhow::Error) -> MyError {
-        MyError { err }
-    }
-}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,14 +35,14 @@ pub struct FindEntitiesQueryParams {
 pub async fn find_entities(
     rcon: web::Data<Arc<FactorioRcon>>,
     info: actix_web::web::Query<FindEntitiesQueryParams>,
-) -> Result<Json<Vec<FactorioEntity>>, MyError> {
+) -> Result<Json<Vec<FactorioEntity>>, ActixAnyhowError> {
     let area_filter = match &info.area {
         Some(area) => AreaFilter::Rect(area.parse()?),
         None => {
             if let Some(position) = &info.position {
                 AreaFilter::PositionRadius((position.parse()?, info.radius))
             } else {
-                return Err(MyError::from(anyhow!(
+                return Err(ActixAnyhowError::from(anyhow!(
                     "area or position + optional radius needed"
                 )));
             }
@@ -99,7 +71,7 @@ pub async fn plan_path(
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
     info: actix_web::web::Query<PlanPathQueryParams>,
-) -> Result<Json<Vec<FactorioEntity>>, MyError> {
+) -> Result<Json<Vec<FactorioEntity>>, ActixAnyhowError> {
     Ok(Json(
         rcon.plan_path(
             &world,
@@ -128,14 +100,14 @@ pub struct FindTilesQueryParams {
 pub async fn find_tiles(
     rcon: web::Data<Arc<FactorioRcon>>,
     info: actix_web::web::Query<FindTilesQueryParams>,
-) -> Result<Json<Vec<FactorioTile>>, MyError> {
+) -> Result<Json<Vec<FactorioTile>>, ActixAnyhowError> {
     let area_filter = match &info.area {
         Some(area) => AreaFilter::Rect(area.parse()?),
         None => {
             if let Some(position) = &info.position {
                 AreaFilter::PositionRadius((position.parse()?, info.radius))
             } else {
-                return Err(MyError::from(anyhow!(
+                return Err(ActixAnyhowError::from(anyhow!(
                     "area or position + optional radius needed"
                 )));
             }
@@ -156,7 +128,7 @@ pub struct InventoryContentsAtQueryParams {
 pub async fn inventory_contents_at(
     rcon: web::Data<Arc<FactorioRcon>>,
     info: actix_web::web::Query<InventoryContentsAtQueryParams>,
-) -> Result<Json<Vec<Option<InventoryResponse>>>, MyError> {
+) -> Result<Json<Vec<Option<InventoryResponse>>>, ActixAnyhowError> {
     let parts: Vec<&str> = info.query.split(';').collect();
     let entities: Vec<RequestEntity> = parts
         .iter()
@@ -183,7 +155,7 @@ pub async fn move_player(
     path: PathInfo<u32>,
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<FactorioPlayer>, MyError> {
+) -> Result<Json<FactorioPlayer>, ActixAnyhowError> {
     let player_id = *path;
     let goal: Position = info.goal.parse()?;
     rcon.move_player(&world, player_id, &goal, info.radius)
@@ -191,7 +163,7 @@ pub async fn move_player(
     let player = world.players.get_one(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -199,13 +171,13 @@ pub async fn move_player(
 pub async fn player_info(
     path: PathInfo<u32>,
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<FactorioPlayer>, MyError> {
+) -> Result<Json<FactorioPlayer>, ActixAnyhowError> {
     let player_id = *path;
 
     let player = world.players.get_one(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -223,7 +195,7 @@ pub async fn place_entity(
     info: actix_web::web::Query<PlaceEntityQueryParams>,
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<PlaceEntityResult>, MyError> {
+) -> Result<Json<PlaceEntityResult>, ActixAnyhowError> {
     let player_id = *path;
     let entity = rcon
         .place_entity(
@@ -241,7 +213,7 @@ pub async fn place_entity(
             entity,
             player: player.clone(),
         })),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -258,14 +230,14 @@ pub async fn cheat_item(
     info: actix_web::web::Query<CheatItemQueryParams>,
     world: web::Data<Arc<FactorioWorld>>,
     rcon: web::Data<Arc<FactorioRcon>>,
-) -> Result<Json<FactorioPlayer>, MyError> {
+) -> Result<Json<FactorioPlayer>, ActixAnyhowError> {
     let player_id = *path;
     rcon.cheat_item(player_id, &info.name, info.count).await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
     let player = world.players.get_one(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -279,7 +251,7 @@ pub struct CheatTechnologyQueryParams {
 pub async fn cheat_technology(
     info: actix_web::web::Query<CheatTechnologyQueryParams>,
     rcon: web::Data<Arc<FactorioRcon>>,
-) -> Result<Json<Value>, MyError> {
+) -> Result<Json<Value>, ActixAnyhowError> {
     rcon.cheat_technology(&info.tech).await?;
     Ok(Json(json!({"status": "ok"})))
 }
@@ -287,7 +259,7 @@ pub async fn cheat_technology(
 // #[get("/cheatAllTechnologies")]
 pub async fn cheat_all_technologies(
     rcon: web::Data<Arc<FactorioRcon>>,
-) -> Result<Json<Value>, MyError> {
+) -> Result<Json<Value>, ActixAnyhowError> {
     rcon.cheat_all_technologies().await?;
     Ok(Json(json!({"status": "ok"})))
 }
@@ -308,7 +280,7 @@ pub async fn insert_to_inventory(
     path: PathInfo<u32>,
     world: web::Data<Arc<FactorioWorld>>,
     rcon: web::Data<Arc<FactorioRcon>>,
-) -> Result<Json<FactorioPlayer>, MyError> {
+) -> Result<Json<FactorioPlayer>, ActixAnyhowError> {
     let player_id = *path;
     rcon.insert_to_inventory(
         player_id,
@@ -324,7 +296,7 @@ pub async fn insert_to_inventory(
     let player = world.players.get_one(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -347,7 +319,7 @@ pub async fn remove_from_inventory(
     info: actix_web::web::Query<RemoveFromInventoryQueryParams>,
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<FactorioPlayer>, MyError> {
+) -> Result<Json<FactorioPlayer>, ActixAnyhowError> {
     let player_id = *path;
     rcon.remove_from_inventory(
         player_id,
@@ -363,14 +335,14 @@ pub async fn remove_from_inventory(
     let player = world.players.get_one(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
 // #[get("/players")]
 pub async fn all_players(
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<Vec<FactorioPlayer>>, MyError> {
+) -> Result<Json<Vec<FactorioPlayer>>, ActixAnyhowError> {
     let mut all_players: Vec<FactorioPlayer> = Vec::new();
     if let Some(players) = &world.players.read() {
         for (_, player) in players {
@@ -385,7 +357,7 @@ pub async fn all_players(
 // #[get("/itemPrototypes")]
 pub async fn item_prototypes(
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<HashMap<String, FactorioItemPrototype>>, MyError> {
+) -> Result<Json<HashMap<String, FactorioItemPrototype>>, ActixAnyhowError> {
     let mut data: HashMap<String, FactorioItemPrototype> = HashMap::new();
 
     if let Some(item_prototypes) = &world.item_prototypes.read() {
@@ -400,7 +372,7 @@ pub async fn item_prototypes(
 // #[get("/entityPrototypes")]
 pub async fn entity_prototypes(
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<HashMap<String, FactorioEntityPrototype>>, MyError> {
+) -> Result<Json<HashMap<String, FactorioEntityPrototype>>, ActixAnyhowError> {
     let mut data: HashMap<String, FactorioEntityPrototype> = HashMap::new();
     if let Some(entity_prototypes) = &world.entity_prototypes.read() {
         for (key, value) in entity_prototypes {
@@ -412,7 +384,9 @@ pub async fn entity_prototypes(
 }
 
 // #[get("/serverSave")]
-pub async fn server_save(rcon: web::Data<Arc<FactorioRcon>>) -> Result<Json<Value>, MyError> {
+pub async fn server_save(
+    rcon: web::Data<Arc<FactorioRcon>>,
+) -> Result<Json<Value>, ActixAnyhowError> {
     rcon.server_save().await?;
     Ok(Json(json!({"status": "ok"})))
 }
@@ -426,7 +400,7 @@ pub struct AddResearchQueryParams {
 pub async fn add_research(
     info: actix_web::web::Query<AddResearchQueryParams>,
     rcon: web::Data<Arc<FactorioRcon>>,
-) -> Result<Json<Value>, MyError> {
+) -> Result<Json<Value>, ActixAnyhowError> {
     rcon.add_research(&info.tech).await?;
     Ok(Json(json!({"status": "ok"})))
 }
@@ -442,7 +416,7 @@ pub async fn store_map_data(
     rcon: web::Data<Arc<FactorioRcon>>,
     data: Json<Value>,
     info: actix_web::web::Query<StoreMapDataQueryParams>,
-) -> Result<Json<Value>, MyError> {
+) -> Result<Json<Value>, ActixAnyhowError> {
     rcon.store_map_data(&info.key, data.into_inner()).await?;
     Ok(Json(json!({"status": "ok"})))
 }
@@ -450,7 +424,7 @@ pub async fn store_map_data(
 pub async fn retrieve_map_data(
     rcon: web::Data<Arc<FactorioRcon>>,
     info: actix_web::web::Query<StoreMapDataQueryParams>,
-) -> Result<Json<Value>, MyError> {
+) -> Result<Json<Value>, ActixAnyhowError> {
     let res = rcon.retrieve_map_data(&info.key).await?;
     match res {
         Some(result) => Ok(Json(result)),
@@ -475,7 +449,7 @@ pub async fn place_blueprint(
     rcon: web::Data<Arc<FactorioRcon>>,
     path: PathInfo<u32>,
     info: actix_web::web::Query<PlaceBlueprintQueryParams>,
-) -> Result<Json<PlaceEntitiesResult>, MyError> {
+) -> Result<Json<PlaceEntitiesResult>, ActixAnyhowError> {
     let player_id = *path;
     let inventory_player_ids: Vec<u32> = match info.inventory_player_ids.as_ref() {
         Some(inventory_player_ids) => inventory_player_ids
@@ -503,7 +477,7 @@ pub async fn place_blueprint(
             player: player.clone(),
             entities,
         })),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -520,7 +494,7 @@ pub async fn revive_ghost(
     path: PathInfo<u32>,
     world: web::Data<Arc<FactorioWorld>>,
     rcon: web::Data<Arc<FactorioRcon>>,
-) -> Result<Json<PlaceEntityResult>, MyError> {
+) -> Result<Json<PlaceEntityResult>, ActixAnyhowError> {
     let player_id = *path;
     let entity = rcon
         .revive_ghost(player_id, &info.name, &info.position.parse()?, &world)
@@ -532,7 +506,7 @@ pub async fn revive_ghost(
             player: player.clone(),
             entity,
         })),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -550,7 +524,7 @@ pub async fn cheat_blueprint(
     rcon: web::Data<Arc<FactorioRcon>>,
     info: actix_web::web::Query<CheatBlueprintQueryParams>,
     path: PathInfo<u32>,
-) -> Result<Json<PlaceEntitiesResult>, MyError> {
+) -> Result<Json<PlaceEntitiesResult>, ActixAnyhowError> {
     let player_id = *path;
     let entities = rcon
         .cheat_blueprint(
@@ -568,7 +542,7 @@ pub async fn cheat_blueprint(
             player: player.clone(),
             entities,
         })),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -583,7 +557,7 @@ pub struct ParseBlueprintQueryParams {
 pub async fn parse_blueprint(
     world: web::Data<Arc<FactorioWorld>>,
     info: actix_web::web::Query<ParseBlueprintQueryParams>,
-) -> Result<Json<FactorioBlueprintInfo>, MyError> {
+) -> Result<Json<FactorioBlueprintInfo>, ActixAnyhowError> {
     let decoded =
         BlueprintCodec::decode_string(&info.blueprint).expect("failed to parse blueprint");
     let rect = blueprint_build_area(&world.entity_prototypes, &info.blueprint);
@@ -601,7 +575,7 @@ pub async fn parse_blueprint(
 // #[get("/recipes")]
 pub async fn all_recipes(
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<HashMap<String, FactorioRecipe>>, MyError> {
+) -> Result<Json<HashMap<String, FactorioRecipe>>, ActixAnyhowError> {
     let mut map: HashMap<String, FactorioRecipe> = HashMap::new();
     if let Some(recipes) = &world.recipes.read() {
         for (name, recipe) in recipes {
@@ -615,7 +589,7 @@ pub async fn all_recipes(
 // #[get("/playerForce")]
 pub async fn player_force(
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<FactorioForce>, MyError> {
+) -> Result<Json<FactorioForce>, ActixAnyhowError> {
     Ok(Json(
         world
             .forces
@@ -623,6 +597,20 @@ pub async fn player_force(
             .expect("player force not found")
             .clone(),
     ))
+}
+pub async fn all_forces(
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<Json<Vec<FactorioForce>>, ActixAnyhowError> {
+    let mut aforces: Vec<FactorioForce> = vec![];
+    if let Some(forces) = &world.forces.read() {
+        for (_, force) in forces {
+            if let Some(force) = force.get_one() {
+                aforces.push(force.clone());
+            }
+        }
+    }
+
+    Ok(Json(aforces))
 }
 
 // #[get("/<player_id>/mine?<name>&<position>&<count>")]
@@ -639,7 +627,7 @@ pub async fn mine(
     path: PathInfo<u32>,
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<FactorioPlayer>, MyError> {
+) -> Result<Json<FactorioPlayer>, ActixAnyhowError> {
     let player_id = *path;
     rcon.player_mine(
         &world,
@@ -653,7 +641,7 @@ pub async fn mine(
     let player = world.players.get_one(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -670,7 +658,7 @@ pub async fn craft(
     path: PathInfo<u32>,
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<FactorioPlayer>, MyError> {
+) -> Result<Json<FactorioPlayer>, ActixAnyhowError> {
     let player_id = *path;
     rcon.player_craft(&world, player_id, &info.recipe, info.count)
         .await?;
@@ -678,7 +666,7 @@ pub async fn craft(
     let player = world.players.get_one(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
-        None => Err(MyError::from(anyhow!("player not found"))),
+        None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
     }
 }
 
@@ -692,7 +680,7 @@ pub async fn find_offshore_pump_placement_options(
     info: actix_web::web::Query<FindOffshorePumpPlacementOptionsQueryParams>,
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<Json<Vec<Position>>, MyError> {
+) -> Result<Json<Vec<Position>>, ActixAnyhowError> {
     Ok(Json(
         rcon.find_offshore_pump_placement_options(
             &world,
@@ -709,40 +697,33 @@ pub async fn find_offshore_pump_placement_options(
 pub async fn web_plan_graph(
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
-) -> Result<String, MyError> {
+) -> Result<String, ActixAnyhowError> {
     let players = world.players.len() as u32;
     let mut planner = Planner::new(
         world.into_inner().as_ref().clone(),
         rcon.into_inner().as_ref().clone(),
     );
-    let (graph, _flow, _world) = planner.plan(players).await?;
-    let dot = dotgraph_task(&graph);
+    let (graph, _world) = planner.plan(players).await?;
+    let dot = graph.graphviz_dot();
     Ok(dot)
 }
 
-pub async fn web_entity_graph(world: web::Data<Arc<FactorioWorld>>) -> Result<String, MyError> {
-    let mut plan_world = FactorioWorldWriter::new();
-    plan_world
-        .import(world.as_ref().clone())
-        .expect("import failed");
-    let graph = plan_world.entity_graph().lock().unwrap().clone();
-    // use petgraph::algo::condensation;
-    // let condensed_graph = condensation(graph.into(), true);
-    // let dot = dotgraph_entity2(&condensed_graph);
-    let dot = dotgraph_entity(&graph);
+pub async fn web_entity_graph(
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<String, ActixAnyhowError> {
+    world.entity_graph.connect()?;
+    let dot = world.entity_graph.graphviz_dot();
     Ok(dot)
 }
-pub async fn web_flow_graph(world: web::Data<Arc<FactorioWorld>>) -> Result<String, MyError> {
-    let mut plan_world = FactorioWorldWriter::new();
-    plan_world
-        .import(world.as_ref().clone())
-        .expect("import failed");
-    let entity_graph = plan_world.entity_graph().lock().unwrap().clone();
-    let graph = build_flow_graph(&entity_graph);
-    // use petgraph::algo::condensation;
-    // let condensed_graph = condensation(graph.into(), true);
-    // let dot = dotgraph_entity2(&condensed_graph);
-    let dot = dotgraph_flow(&graph);
+pub async fn web_flow_graph(
+    world: web::Data<Arc<FactorioWorld>>,
+) -> Result<String, ActixAnyhowError> {
+    world.entity_graph.connect()?;
+    let flow_graph = FlowGraph::new(
+        &world.entity_prototypes,
+        &world.entity_graph.inner().deref(),
+    );
+    let dot = flow_graph.graphviz_dot();
     Ok(dot)
 }
 
@@ -750,11 +731,11 @@ pub async fn web_initiate_plan(
     rcon: web::Data<Arc<FactorioRcon>>,
     world: web::Data<Arc<FactorioWorld>>,
     websocket_server: web::Data<Addr<FactorioWebSocketServer>>,
-) -> Result<String, MyError> {
+) -> Result<String, ActixAnyhowError> {
     let players = world.players.len() as u32;
     let mut planner = Planner::new(world.as_ref().clone(), rcon.as_ref().clone());
-    let (graph, _flow, _world) = planner.plan(players).await?;
-    let dot = dotgraph_task(&graph);
+    let (graph, _world) = planner.plan(players).await?;
+    let dot = graph.graphviz_dot();
     execute_plan(
         world.as_ref().clone(),
         rcon.as_ref().clone(),

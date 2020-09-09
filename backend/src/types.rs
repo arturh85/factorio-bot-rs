@@ -396,6 +396,42 @@ pub struct FactorioGraphic {
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
+pub struct FactorioFluidBoxPrototype {
+    pub pipe_connections: Vec<FactorioFluidBoxConnection>,
+    pub production_type: FactorioFluidBoxProductionType,
+}
+
+#[derive(
+    EnumString, Display, Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy,
+)]
+#[strum(serialize_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub enum FactorioFluidBoxConnectionType {
+    Input,
+    Output,
+    InputOutput,
+}
+#[derive(
+    EnumString, Display, Debug, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, ShallowCopy,
+)]
+#[strum(serialize_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub enum FactorioFluidBoxProductionType {
+    Input,
+    Output,
+    InputOutput,
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[serde(rename_all = "camelCase")]
+pub struct FactorioFluidBoxConnection {
+    pub max_underground_distance: Option<u32>,
+    pub connection_type: FactorioFluidBoxConnectionType,
+    pub positions: Vec<Position>,
+}
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[serde(rename_all = "camelCase")]
 pub struct FactorioEntityPrototype {
     pub name: String,
     pub entity_type: String,
@@ -403,6 +439,9 @@ pub struct FactorioEntityPrototype {
     pub collision_box: Rect,
     pub mine_result: Box<Option<BTreeMap<String, u32>>>,
     pub mining_time: Box<Option<R64>>,
+    pub mining_speed: Box<Option<R64>>,
+    pub crafting_speed: Box<Option<R64>>,
+    pub fluidbox_prototypes: Box<Option<Vec<FactorioFluidBoxPrototype>>>,
 }
 
 #[derive(

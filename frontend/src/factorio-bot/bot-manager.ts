@@ -232,18 +232,22 @@ export class FactorioBotManager {
     }
 
     async testCheatStuff(): Promise<void> {
+        await FactorioApi.cheatTechnology("automation");
+        await FactorioApi.cheatTechnology("logistics");
         for(const bot of this.bots) {
             await bot.cheatItem(Entities.burnerMiningDrill, 50);
             await bot.cheatItem(Entities.stoneFurnace, 50);
             await bot.cheatItem(Entities.offshorePump, 5);
             await bot.cheatItem(Entities.steamEngine, 5);
             await bot.cheatItem(Entities.boiler, 2);
-            await bot.cheatItem(Entities.smallElectricPole, 10);
+            await bot.cheatItem(Entities.splitter, 50);
+            await bot.cheatItem(Entities.smallElectricPole, 50);
             await bot.cheatItem(Entities.pipe, 50);
             await bot.cheatItem(Entities.pipeToGround, 50);
             await bot.cheatItem(Entities.transportBelt, 50);
             await bot.cheatItem(Entities.ironChest, 10);
             await bot.cheatItem(Entities.ironPlate, 200);
+            await bot.cheatItem(Entities.ironGearWheel, 200);
             await bot.cheatItem(Entities.copperPlate, 200);
             await bot.cheatItem(Entities.coal, 200);
             await bot.cheatItem(Entities.stone, 200);
