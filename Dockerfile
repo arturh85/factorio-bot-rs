@@ -28,7 +28,7 @@ RUN sudo chown rust.rust . -R; cargo build --release --target=x86_64-unknown-lin
 
 FROM frolvlad/alpine-glibc:latest
 WORKDIR /home/factoriobot/
-COPY mod mod/
+COPY mods mods/
 COPY Settings.toml .
 COPY --from=build /home/rust/src/frontend/dist/ public/
 COPY --from=build /home/rust/src/target/x86_64-unknown-linux-musl/release/factorio-bot-backend .

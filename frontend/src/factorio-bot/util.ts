@@ -276,28 +276,30 @@ export function missingIngredients(
             delete missing[name];
         }
     };
-    for (const ingredient of recipe.ingredients) {
-        const ingredientRecipe = recipes[ingredient.name];
-        if (
-            ingredientRecipe &&
-            (ingredientRecipe.category === "crafting" || includeSmeltingOres)
-        ) {
-            const missingForIngredient = missingIngredients(
-                recipes,
-                inventory,
-                ingredient.name,
-                ingredient.amount * count,
-                includeSmeltingOres
-            );
-            for (const missingForIngredientName of Object.keys(
-                missingForIngredient
-            )) {
-                const missingForIngredientIngredient =
-                    missingForIngredient[missingForIngredientName];
-                addToMissing(missingForIngredientName, missingForIngredientIngredient);
+    if (recipe.ingredients) {
+        for (const ingredient of recipe.ingredients) {
+            const ingredientRecipe = recipes[ingredient.name];
+            if (
+                ingredientRecipe &&
+                (ingredientRecipe.category === "crafting" || includeSmeltingOres)
+            ) {
+                const missingForIngredient = missingIngredients(
+                    recipes,
+                    inventory,
+                    ingredient.name,
+                    ingredient.amount * count,
+                    includeSmeltingOres
+                );
+                for (const missingForIngredientName of Object.keys(
+                    missingForIngredient
+                )) {
+                    const missingForIngredientIngredient =
+                        missingForIngredient[missingForIngredientName];
+                    addToMissing(missingForIngredientName, missingForIngredientIngredient);
+                }
+            } else {
+                addToMissing(ingredient.name, ingredient.amount * count);
             }
-        } else {
-            addToMissing(ingredient.name, ingredient.amount * count);
         }
     }
     return missing;

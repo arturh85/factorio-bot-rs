@@ -1,10 +1,10 @@
 use crate::factorio::util::{move_position, rect_fields, rect_floor};
 use crate::num_traits::FromPrimitive;
 use crate::types::{Direction, EntityName, EntityType, FactorioEntity, Pos, Position};
-use atomic_refcell::{AtomicRef, AtomicRefCell};
+use dashmap::lock::{RwLock, RwLockReadGuard};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::stable_graph::StableGraph;
-use petgraph::visit::EdgeRef;
+use petgraph::visit::{Bfs, EdgeRef};
 use std::ops::Deref;
 use std::str::FromStr;
 
@@ -56,7 +56,7 @@ impl EntityNode {
 pub type EntityGraphInner = StableGraph<EntityNode, f64>;
 
 pub struct EntityGraph {
-    inner: AtomicRefCell<EntityGraphInner>,
+    inner: RwLock<EntityGraphInner>,
     // quad_tree: Quadtree<i32, NodeIndex>,
 }
 
@@ -64,7 +64,7 @@ impl EntityGraph {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         EntityGraph {
-            inner: AtomicRefCell::new(EntityGraphInner::new()),
+            inner: RwLock::new(EntityGraphInner::new()),
             // quad_tree: Quadtree::new(16),
         }
     }
@@ -79,14 +79,43 @@ impl EntityGraph {
         graph.connect()?;
         Ok(graph)
     }
-    pub fn inner(&self) -> AtomicRef<EntityGraphInner> {
-        self.inner.borrow()
+    pub fn inner(&self) -> RwLockReadGuard<EntityGraphInner> {
+        self.inner.read()
     }
+
     pub fn add<F>(&self, entity: &FactorioEntity, check_for_resource: F) -> anyhow::Result<()>
     where
         F: FnOnce(&str, Pos) -> bool + Copy,
     {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.write();
+        EntityGraph::_add(&mut inner, entity, check_for_resource)?;
+        Ok(())
+    }
+
+    #[allow(clippy::ptr_arg)]
+    pub fn add_multiple<F>(
+        &self,
+        entities: &Vec<FactorioEntity>,
+        check_for_resource: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnOnce(&str, Pos) -> bool + Copy,
+    {
+        let mut inner = self.inner.write();
+        for entity in entities {
+            EntityGraph::_add(&mut inner, entity, check_for_resource)?;
+        }
+        Ok(())
+    }
+
+    fn _add<F>(
+        inner: &mut EntityGraphInner,
+        entity: &FactorioEntity,
+        check_for_resource: F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnOnce(&str, Pos) -> bool + Copy,
+    {
         if let Ok(entity_type) = EntityType::from_str(&entity.entity_type) {
             match entity_type {
                 EntityType::Furnace
@@ -145,8 +174,112 @@ impl EntityGraph {
         }
         Ok(())
     }
+
+    fn incoming_nodes(graph: &EntityGraphInner, node_index: NodeIndex) -> Vec<&EntityNode> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Incoming)
+            .map(|edge| graph.node_weight(edge.source()).unwrap())
+            .collect()
+    }
+    fn incoming_weights(graph: &EntityGraphInner, node_index: NodeIndex) -> Vec<f64> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Incoming)
+            .map(|edge| *edge.weight())
+            .collect()
+    }
+    fn incoming_node_indexes(graph: &EntityGraphInner, node_index: NodeIndex) -> Vec<NodeIndex> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Incoming)
+            .map(|edge| edge.source())
+            .collect()
+    }
+    fn outgoing_nodes(graph: &EntityGraphInner, node_index: NodeIndex) -> Vec<&EntityNode> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Outgoing)
+            .map(|edge| graph.node_weight(edge.target()).unwrap())
+            .collect()
+    }
+    fn outgoing_weights(graph: &EntityGraphInner, node_index: NodeIndex) -> Vec<f64> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Outgoing)
+            .map(|edge| *edge.weight())
+            .collect()
+    }
+    fn outgoing_node_indexes(graph: &EntityGraphInner, node_index: NodeIndex) -> Vec<NodeIndex> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Outgoing)
+            .map(|edge| edge.target())
+            .collect()
+    }
+
+    pub fn condense(&self) -> EntityGraphInner {
+        let mut graph = self.inner.read().clone();
+        let mut roots: Vec<usize> = vec![];
+        loop {
+            let mut next_node: Option<NodeIndex> = None;
+            for node_index in graph.externals(petgraph::Direction::Incoming) {
+                if !roots.contains(&node_index.index()) {
+                    roots.push(node_index.index());
+                    next_node = Some(node_index);
+                    break;
+                }
+            }
+            if let Some(next_node) = next_node {
+                let mut bfs = Bfs::new(&graph, next_node);
+                while let Some(nx) = bfs.next(&graph) {
+                    self.condense_walk(&mut graph, nx);
+                }
+            } else {
+                break;
+            }
+        }
+        graph
+    }
+    pub fn condense_walk(&self, graph: &mut EntityGraphInner, node_index: NodeIndex) {
+        let node = graph.node_weight(node_index).unwrap();
+        let incoming = EntityGraph::incoming_nodes(graph, node_index);
+        let outgoing = EntityGraph::outgoing_nodes(graph, node_index);
+        if incoming.len() == 1
+            && outgoing.len() == 1
+            && node.entity.name == incoming[0].entity.name
+            && incoming[0].entity.name == outgoing[0].entity.name
+        {
+            let incoming = EntityGraph::incoming_node_indexes(graph, node_index)
+                .pop()
+                .unwrap();
+            let outgoing = EntityGraph::outgoing_node_indexes(graph, node_index)
+                .pop()
+                .unwrap();
+            let weight = EntityGraph::incoming_weights(graph, node_index)
+                .pop()
+                .unwrap()
+                + EntityGraph::outgoing_weights(graph, node_index)
+                    .pop()
+                    .unwrap();
+
+            graph.remove_edge(graph.find_edge(incoming, node_index).unwrap());
+            graph.remove_edge(graph.find_edge(node_index, outgoing).unwrap());
+            graph.add_edge(incoming, outgoing, weight);
+            graph.remove_node(node_index);
+        } else if incoming.len() == 2
+            && outgoing.len() == 2
+            && node.entity.name == incoming[0].entity.name
+            && incoming[0].entity.name == outgoing[0].entity.name
+        {
+            let incoming = EntityGraph::incoming_node_indexes(graph, node_index);
+            let weights = EntityGraph::incoming_weights(graph, node_index);
+            let weight = weights[0] + weights[1];
+            graph.add_edge(incoming[0], incoming[1], weight);
+            graph.add_edge(incoming[1], incoming[0], weight);
+            for connected_index in incoming {
+                graph.remove_edge(graph.find_edge(connected_index, node_index).unwrap());
+                graph.remove_edge(graph.find_edge(node_index, connected_index).unwrap());
+            }
+            graph.remove_node(node_index);
+        }
+    }
     pub fn remove(&self, entity: &FactorioEntity) -> anyhow::Result<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.write();
         let mut nodes_to_remove: Vec<NodeIndex> = vec![];
         let mut edges_to_remove: Vec<EdgeIndex> = vec![];
 
@@ -168,7 +301,7 @@ impl EntityGraph {
         Ok(())
     }
     pub fn connect(&self) -> anyhow::Result<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.write();
         let mut edges_to_add: Vec<(NodeIndex, NodeIndex, f64)> = vec![];
         for node_index in inner.node_indices() {
             let node_index = node_index;
@@ -384,6 +517,14 @@ impl EntityGraph {
         format!(
             "digraph {{\n{:?}}}\n",
             Dot::with_config(&self.inner().deref(), &[Config::GraphContentOnly])
+        )
+    }
+    pub fn graphviz_dot_condensed(&self) -> String {
+        use petgraph::dot::{Config, Dot};
+        let condensed = self.condense();
+        format!(
+            "digraph {{\n{:?}}}\n",
+            Dot::with_config(&condensed, &[Config::GraphContentOnly])
         )
     }
 }

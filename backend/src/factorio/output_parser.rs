@@ -71,12 +71,15 @@ impl OutputParser {
                 self.world.update_graphics(graphics)?;
             }
             "entity_prototypes" => {
-                info!("rest {}", rest);
                 let entity_prototypes: Vec<FactorioEntityPrototype> = rest
                     .split('$')
                     .map(|entity_prototype| {
-                        serde_json::from_str(entity_prototype)
-                            .expect("failed to deserialize entity prototype")
+                        serde_json::from_str(entity_prototype).unwrap_or_else(|err| {
+                            panic!(
+                                "failed to deserialize entity prototype: {:?} '{}'",
+                                err, entity_prototype
+                            )
+                        })
                     })
                     .collect();
                 self.world.update_entity_prototypes(entity_prototypes)?;
@@ -85,8 +88,12 @@ impl OutputParser {
                 let item_prototypes: Vec<FactorioItemPrototype> = rest
                     .split('$')
                     .map(|item_prototype| {
-                        serde_json::from_str(item_prototype)
-                            .expect("failed to deserialize item prototype")
+                        serde_json::from_str(item_prototype).unwrap_or_else(|err| {
+                            panic!(
+                                "failed to deserialize item prototype: {:?} '{}'",
+                                err, item_prototype
+                            )
+                        })
                     })
                     .collect();
                 self.world.update_item_prototypes(item_prototypes)?;
@@ -95,7 +102,9 @@ impl OutputParser {
                 let recipes: Vec<FactorioRecipe> = rest
                     .split('$')
                     .map(|recipe| {
-                        serde_json::from_str(recipe).expect("failed to deserialize recipe")
+                        serde_json::from_str(recipe).unwrap_or_else(|err| {
+                            panic!("failed to deserialize recipe: {:?} '{}'", err, recipe)
+                        })
                     })
                     .collect();
                 self.world.update_recipes(recipes)?;
@@ -151,18 +160,21 @@ impl OutputParser {
                 }
             }
             "force" => {
-                let force: FactorioForce =
-                    serde_json::from_str(rest).expect("failed to deserialize force");
+                let force: FactorioForce = serde_json::from_str(rest).unwrap_or_else(|err| {
+                    panic!("failed to deserialize force: {:?} '{}'", err, rest)
+                });
                 self.world.update_force(force)?;
             }
             "on_some_entity_created" => {
-                let entity: FactorioEntity =
-                    serde_json::from_str(rest).expect("failed to deserialize created entity");
+                let entity: FactorioEntity = serde_json::from_str(rest).unwrap_or_else(|err| {
+                    panic!("failed to deserialize entity: {:?} '{}'", err, rest)
+                });
                 self.world.on_some_entity_created(entity)?;
             }
             "on_some_entity_deleted" => {
-                let entity: FactorioEntity =
-                    serde_json::from_str(rest).expect("failed to deserialize created entity");
+                let entity: FactorioEntity = serde_json::from_str(rest).unwrap_or_else(|err| {
+                    panic!("failed to deserialize entity: {:?} '{}'", err, rest)
+                });
                 self.world.on_some_entity_deleted(entity)?;
             }
             "on_player_main_inventory_changed" => {

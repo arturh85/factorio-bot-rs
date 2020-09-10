@@ -19,7 +19,7 @@ pub struct FactorioRecipe {
     pub valid: bool,
     pub enabled: bool,
     pub category: String,
-    pub ingredients: Vec<FactorioIngredient>,
+    pub ingredients: Box<Option<Vec<FactorioIngredient>>>,
     pub products: Vec<FactorioProduct>,
     pub hidden: bool,
     pub energy: Box<R64>,
@@ -367,7 +367,7 @@ pub struct FactorioTechnology {
     pub researched: bool,
     pub prerequisites: Option<Vec<String>>,
     pub research_unit_ingredients: Vec<FactorioIngredient>,
-    pub research_unit_count: u32,
+    pub research_unit_count: u64,
     pub research_unit_energy: Box<R64>,
     pub order: String,
     pub level: u32,
@@ -401,7 +401,7 @@ pub struct FactorioGraphic {
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioFluidBoxPrototype {
-    pub pipe_connections: Vec<FactorioFluidBoxConnection>,
+    pub pipe_connections: Box<Option<Vec<FactorioFluidBoxConnection>>>,
     pub production_type: String,
 }
 

@@ -8,7 +8,7 @@ use evmap::ReadHandle;
 use num_traits::ToPrimitive;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
-use petgraph::visit::EdgeRef;
+use petgraph::visit::{Bfs, EdgeRef};
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -133,6 +133,43 @@ impl FlowGraph {
             }
             false
         })
+    }
+
+    fn incoming_nodes(graph: &FlowGraphInner, node_index: NodeIndex) -> Vec<&FlowNode> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Incoming)
+            .map(|edge| graph.node_weight(edge.source()).unwrap())
+            .collect()
+    }
+    fn incoming_weights(graph: &FlowGraphInner, node_index: NodeIndex) -> Vec<FlowEdge> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Incoming)
+            .map(|edge| edge.weight().clone())
+            .collect()
+    }
+    fn incoming_node_indexes(graph: &FlowGraphInner, node_index: NodeIndex) -> Vec<NodeIndex> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Incoming)
+            .map(|edge| edge.source())
+            .collect()
+    }
+    fn outgoing_nodes(graph: &FlowGraphInner, node_index: NodeIndex) -> Vec<&FlowNode> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Outgoing)
+            .map(|edge| graph.node_weight(edge.target()).unwrap())
+            .collect()
+    }
+    fn _outgoing_weights(graph: &FlowGraphInner, node_index: NodeIndex) -> Vec<FlowEdge> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Outgoing)
+            .map(|edge| edge.weight().clone())
+            .collect()
+    }
+    fn outgoing_node_indexes(graph: &FlowGraphInner, node_index: NodeIndex) -> Vec<NodeIndex> {
+        graph
+            .edges_directed(node_index, petgraph::Direction::Outgoing)
+            .map(|edge| edge.target())
+            .collect()
     }
 
     fn walk(
@@ -354,6 +391,57 @@ impl FlowGraph {
         }
     }
 
+    pub fn condense(&self) -> FlowGraphInner {
+        let mut graph = self.inner.clone();
+        let mut roots: Vec<usize> = vec![];
+        loop {
+            let mut next_node: Option<NodeIndex> = None;
+            for node_index in graph.externals(petgraph::Direction::Incoming) {
+                if !roots.contains(&node_index.index()) {
+                    roots.push(node_index.index());
+                    next_node = Some(node_index);
+                    break;
+                }
+            }
+            if let Some(next_node) = next_node {
+                let mut bfs = Bfs::new(&graph, next_node);
+                while let Some(nx) = bfs.next(&graph) {
+                    self.condense_walk(&mut graph, nx);
+                }
+            } else {
+                break;
+            }
+        }
+        graph
+    }
+    pub fn condense_walk(&self, graph: &mut FlowGraphInner, node_index: NodeIndex) {
+        let node = graph.node_weight(node_index).unwrap();
+
+        let incoming = FlowGraph::incoming_nodes(graph, node_index);
+        let outgoing = FlowGraph::outgoing_nodes(graph, node_index);
+
+        // if we have 1 incoming and 1 outgoing and all three of us have same flow name
+        if incoming.len() == 1
+            && outgoing.len() == 1
+            && node.entity.name == incoming[0].entity.name
+            && incoming[0].entity.name == outgoing[0].entity.name
+        {
+            let incoming = FlowGraph::incoming_node_indexes(graph, node_index)
+                .pop()
+                .unwrap();
+            let outgoing = FlowGraph::outgoing_node_indexes(graph, node_index)
+                .pop()
+                .unwrap();
+            let weight = FlowGraph::incoming_weights(graph, node_index)
+                .pop()
+                .unwrap();
+            graph.remove_edge(graph.find_edge(incoming, node_index).unwrap());
+            graph.remove_edge(graph.find_edge(node_index, outgoing).unwrap());
+            graph.add_edge(incoming, outgoing, weight);
+            graph.remove_node(node_index);
+        }
+    }
+
     fn outgoing_entities(
         graph: &EntityGraphInner,
         entity_node_index: NodeIndex,
@@ -553,6 +641,14 @@ impl FlowGraph {
         format!(
             "digraph {{\n{:?}}}\n",
             Dot::with_config(&self.inner, &[Config::GraphContentOnly])
+        )
+    }
+    pub fn graphviz_dot_condensed(&self) -> String {
+        use petgraph::dot::{Config, Dot};
+        let condensed = self.condense();
+        format!(
+            "digraph {{\n{:?}}}\n",
+            Dot::with_config(&condensed, &[Config::GraphContentOnly])
         )
     }
 }

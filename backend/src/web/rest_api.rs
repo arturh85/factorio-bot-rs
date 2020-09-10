@@ -712,7 +712,7 @@ pub async fn web_entity_graph(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<String, ActixAnyhowError> {
     world.entity_graph.connect()?;
-    let dot = world.entity_graph.graphviz_dot();
+    let dot = world.entity_graph.graphviz_dot_condensed();
     Ok(dot)
 }
 pub async fn web_flow_graph(
@@ -723,7 +723,7 @@ pub async fn web_flow_graph(
         &world.entity_prototypes,
         &world.entity_graph.inner().deref(),
     );
-    let dot = flow_graph.graphviz_dot();
+    let dot = flow_graph.graphviz_dot_condensed();
     Ok(dot)
 }
 

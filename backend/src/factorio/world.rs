@@ -424,11 +424,11 @@ impl FactorioWorldWriter {
 
         self.blocked_writer.refresh();
         self.chunks_writer.refresh();
-        for entity in &entities {
-            self.world
-                .entity_graph
-                .add(&entity, |name, pos| self.world.resource_contains(name, pos))?;
-        }
+        self.world
+            .entity_graph
+            .add_multiple(&entities, |name, pos| {
+                self.world.resource_contains(name, pos)
+            })?;
         Ok(())
     }
 

@@ -491,7 +491,6 @@ pub async fn start_factorio_and_plan_graph(
         instance_name,
         true,
         true,
-        true,
         map_exchange_string,
         seed,
         true,

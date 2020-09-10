@@ -9,7 +9,7 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use paris::Logger;
 use serde_json::Value;
 use std::fs;
-use std::fs::File;
+use std::fs::{read_to_string, File};
 use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -24,7 +24,6 @@ pub async fn setup_factorio_instance(
     instance_name: &str,
     is_server: bool,
     recreate_save: bool,
-    recreate_map_exchange: bool,
     map_exchange_string: Option<&str>,
     seed: Option<&str>,
     silent: bool,
@@ -178,43 +177,23 @@ pub async fn setup_factorio_instance(
             HumanDuration(started.elapsed())
         );
     }
-
+    let data_mods_path = PathBuf::from("mods");
+    if !data_mods_path.exists() {
+        panic!("missing mods/ folder from working directory");
+    }
+    let data_mods_path = std::fs::canonicalize(data_mods_path)?;
     let mods_path = instance_path.join(PathBuf::from("mods"));
     if !mods_path.exists() {
         if !silent {
-            info!("Creating <bright-blue>{:?}</>", &mods_path);
-        }
-        create_dir(&mods_path).await?;
-    }
-    let mod_info_path = mods_path.join(PathBuf::from("mod-list.json"));
-    if !mod_info_path.exists() {
-        let template_file = include_bytes!("../data/mod-list.json");
-        let mut outfile = fs::File::create(&mod_info_path)?;
-        if !silent {
-            info!("Creating <bright-blue>{:?}</>", &mod_info_path);
-        }
-        outfile.write_all(template_file)?;
-    }
-    let data_botbridge_path = PathBuf::from("mod");
-    if !data_botbridge_path.exists() {
-        panic!("missing mod/ folder from working directory");
-    }
-    let data_botbridge_path = std::fs::canonicalize(data_botbridge_path)?;
-    let mods_botbridge_path = mods_path.join(PathBuf::from("BotBridge"));
-    if !mods_botbridge_path.exists() {
-        if !silent {
-            info!(
-                "Creating Symlink for <bright-blue>{:?}</>",
-                &mods_botbridge_path
-            );
+            info!("Creating Symlink for <bright-blue>{:?}</>", &mods_path);
         }
         #[cfg(unix)]
         {
-            std::os::unix::fs::symlink(&data_botbridge_path, &mods_botbridge_path)?;
+            std::os::unix::fs::symlink(&data_mods_path, &mods_path)?;
         }
         #[cfg(windows)]
         {
-            std::os::windows::fs::symlink_dir(&data_botbridge_path, &mods_botbridge_path)?;
+            std::os::windows::fs::symlink_dir(&data_mods_path, &mods_path)?;
         }
     }
     let instance_data_path = instance_path.join(PathBuf::from("data"));
@@ -265,11 +244,11 @@ pub async fn setup_factorio_instance(
         }
 
         let saves_level_path = saves_path.join(PathBuf::from("level.zip"));
-        let map_gen_settings_path = instance_path.join(PathBuf::from("map-gen-settings.json"));
-        if (recreate_save && recreate_map_exchange)
-            || (map_exchange_string.is_some() && !map_gen_settings_path.exists())
-        {
-            if let Some(map_exchange_string) = map_exchange_string {
+        let map_exchange_string_path = instance_path.join(PathBuf::from("map-exchange-string.txt"));
+        if let Some(map_exchange_string) = map_exchange_string {
+            if !map_exchange_string_path.exists()
+                || read_to_string(&map_exchange_string_path)?.ne(map_exchange_string)
+            {
                 if !saves_level_path.exists() {
                     let binary = if cfg!(windows) {
                         "bin/x64/factorio.exe"
@@ -311,6 +290,8 @@ pub async fn setup_factorio_instance(
                     silent,
                 )
                 .await?;
+                fs::File::create(&map_exchange_string_path)?
+                    .write_all(map_exchange_string.as_ref())?;
             }
         }
 

@@ -25,10 +25,14 @@ function serialize_recipe(recipe)
     local record = table_properties(recipe, {"name", "valid", "enabled", "category", "hidden", "energy", "order"})
     -- "ingredients", "products",
     local ingredients = {}
+    local ingredients_found = false
     for _, v in pairs(recipe.ingredients) do
         table.insert(ingredients, serialize_ingredient(v))
+        ingredients_found = true
     end
-    record.ingredients = ingredients
+    if ingredients_found then
+        record.ingredients = ingredients
+    end
     local products = {}
     for _, v in pairs(recipe.products) do
         table.insert(products, serialize_product(v))
@@ -124,11 +128,15 @@ function serialize_fluidbox_prototype(fluidbox)
         {production_type = "productionType"}
     )
 
-    local pipe_connections = { }
+    local pipe_connections = {}
+    local pipe_connections_found = false
     for _,v in pairs(fluidbox.pipe_connections) do
+        pipe_connections_found = true
         table.insert(pipe_connections, serialize_fluidbox_connection(v))
     end
-    record.pipeConnections = pipe_connections
+    if pipe_connections_found then
+        record.pipeConnections = pipe_connections
+    end
     return record
 end
 

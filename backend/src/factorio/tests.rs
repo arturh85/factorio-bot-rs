@@ -26,7 +26,7 @@ pub fn fixture_entity_prototypes() -> (
     WriteHandle<String, FactorioEntityPrototype>,
 ) {
     let prototypes: HashMap<String, FactorioEntityPrototype> =
-        serde_json::from_str(include_str!("../data/entity-prototype-fixtures.json"))
+        serde_json::from_str(include_str!("../../tests/entity-prototype-fixtures.json"))
             .expect("failed to parse fixture");
     let (reader, mut writer) = evmap::new::<String, FactorioEntityPrototype>();
     for (name, p) in prototypes {
