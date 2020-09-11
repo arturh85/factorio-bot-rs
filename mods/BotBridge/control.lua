@@ -763,8 +763,8 @@ function writeout_players(tick)
 end
 
 function on_sector_scanned(event)
-	print("sector scanned")
-	print(event.radar)
+--	print("sector scanned")
+--	print(event.radar)
 end
 
 function pos_id(x,y)
@@ -962,6 +962,15 @@ function on_some_entity_created(event)
 --	print("on_some_entity_created: "..ent.name.." at "..ent.position.x..","..ent.position.y)
 end
 
+function on_some_entity_updated(event)
+	local ent = event.entity or event.created_entity or nil
+	if ent == nil then
+		complain("wtf, on_some_entity_updated has nil entity")
+		return
+	end
+	writeout(event.tick, "on_some_entity_updated", game.table_to_json(serialize_entity(ent)))
+end
+
 function on_some_entity_deleted(event)
 	local ent = event.entity
 	if ent == nil then
@@ -1127,7 +1136,7 @@ script.on_event(defines.events.on_player_mined_item, on_player_mined_item)
 script.on_event(defines.events.on_biter_base_built, on_some_entity_created) --entity
 script.on_event(defines.events.on_built_entity, on_some_entity_created) --created_entity
 script.on_event(defines.events.on_robot_built_entity, on_some_entity_created) --created_entity
-script.on_event(defines.events.on_player_rotated_entity, on_some_entity_created) --entity
+script.on_event(defines.events.on_player_rotated_entity, on_some_entity_updated) --entity
 script.on_event(defines.events.on_built_entity, on_some_entity_created) --entity
 
 script.on_event(defines.events.on_entity_died, on_some_entity_deleted) --entity

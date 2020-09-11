@@ -9,6 +9,11 @@ Features:
 - start Factorio server and/or one or multiple clients (unrestricted) 
 - read factorio recipes/entity prototypes/item prototypes/graphics
 - read map contents by chunk for leaflet based Map View
+- Build Graphs of:
+  - Entity Connections with distance based weights
+  - Flow Connections with flow rate per second for each belt side/resource
+  - Bot Task Dependencies with time estimate based weights 
+- Use whatever mods you want
 - REST Interface with:
   - retrieve all recipes/technologies/prototypes
   - read bot inventories

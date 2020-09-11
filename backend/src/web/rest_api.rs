@@ -1,5 +1,4 @@
 use crate::error::ActixAnyhowError;
-use crate::factorio::flow_graph::FlowGraph;
 use crate::factorio::plan::{execute_plan, Planner};
 use crate::factorio::rcon::FactorioRcon;
 use crate::factorio::util::blueprint_build_area;
@@ -17,7 +16,6 @@ use actix_web::web::{Json, Path as PathInfo};
 use factorio_blueprint::BlueprintCodec;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -719,11 +717,8 @@ pub async fn web_flow_graph(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<String, ActixAnyhowError> {
     world.entity_graph.connect()?;
-    let flow_graph = FlowGraph::new(
-        &world.entity_prototypes,
-        &world.entity_graph.inner().deref(),
-    );
-    let dot = flow_graph.graphviz_dot_condensed();
+    world.flow_graph.build(&world.entity_prototypes)?;
+    let dot = world.flow_graph.graphviz_dot_condensed();
     Ok(dot)
 }
 

@@ -171,6 +171,12 @@ impl OutputParser {
                 });
                 self.world.on_some_entity_created(entity)?;
             }
+            "on_some_entity_updated" => {
+                let entity: FactorioEntity = serde_json::from_str(rest).unwrap_or_else(|err| {
+                    panic!("failed to deserialize entity: {:?} '{}'", err, rest)
+                });
+                self.world.on_some_entity_updated(entity)?;
+            }
             "on_some_entity_deleted" => {
                 let entity: FactorioEntity = serde_json::from_str(rest).unwrap_or_else(|err| {
                     panic!("failed to deserialize entity: {:?} '{}'", err, rest)

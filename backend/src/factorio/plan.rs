@@ -120,7 +120,11 @@ impl Planner {
             ),
         );
         let mut weights: HashMap<NodeIndex, R64> = HashMap::new();
-        let patches = self.plan_world.world.resource_patches(ore_name);
+        let patches = self
+            .plan_world
+            .world
+            .entity_graph
+            .resource_patches(ore_name);
         if patches.is_empty() {
             return Err(anyhow!("no {} found", ore_name));
         }

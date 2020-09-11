@@ -1,5 +1,7 @@
+use crate::factorio::entity_graph::QuadTreeRect;
 use crate::factorio::util::{add_to_rect_turned, calculate_distance, rect_floor_ceil};
 use crate::num_traits::FromPrimitive;
+use euclid::{TypedPoint2D, TypedSize2D};
 use evmap::ReadHandle;
 use factorio_blueprint::objects::Entity;
 use noisy_float::prelude::*;
@@ -142,6 +144,12 @@ pub struct Pos(pub i32, pub i32);
 impl Pos {
     pub fn distance(&self, other: &Pos) -> u32 {
         (absdiff(self.0, other.0) + absdiff(self.1, other.1)) as u32
+    }
+}
+
+impl Into<TypedPoint2D<f32, Rect>> for Position {
+    fn into(self) -> TypedPoint2D<f32, Rect> {
+        TypedPoint2D::new(self.x() as f32, self.y() as f32)
     }
 }
 
@@ -303,6 +311,15 @@ impl Rect {
     }
     pub fn rotate_clockwise(&self) -> Rect {
         Rect::from_wh(self.height(), self.width())
+    }
+}
+
+impl Into<QuadTreeRect> for Rect {
+    fn into(self) -> QuadTreeRect {
+        QuadTreeRect::new(
+            self.left_top.clone().into(),
+            TypedSize2D::new(self.width() as f32, self.height() as f32),
+        )
     }
 }
 
@@ -488,6 +505,12 @@ pub struct FactorioEntity {
     pub ghost_type: Option<String>, // only type = entity-ghost
 }
 
+impl aabb_quadtree::Spatial<Rect> for FactorioEntity {
+    fn aabb(&self) -> QuadTreeRect {
+        self.bounding_box.clone().into()
+    }
+}
+
 impl FactorioEntity {
     pub fn from_blueprint_entity(
         entity: Entity,
@@ -566,6 +589,26 @@ impl FactorioEntity {
             ..Default::default()
         }
     }
+    pub fn new_iron_ore(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: EntityName::IronOre.to_string(),
+            entity_type: EntityType::Resource.to_string(),
+            position: position.clone(),
+            bounding_box: add_to_rect_turned(&Rect::from_wh(0.8, 0.8), &position, direction),
+            direction: direction.to_u8().unwrap(),
+            ..Default::default()
+        }
+    }
+    pub fn new_coal(position: &Position, direction: Direction) -> FactorioEntity {
+        FactorioEntity {
+            name: EntityName::Coal.to_string(),
+            entity_type: EntityType::Resource.to_string(),
+            position: position.clone(),
+            bounding_box: add_to_rect_turned(&Rect::from_wh(0.8, 0.8), &position, direction),
+            direction: direction.to_u8().unwrap(),
+            ..Default::default()
+        }
+    }
     pub fn new_stone_furnace(position: &Position, direction: Direction) -> FactorioEntity {
         FactorioEntity {
             name: EntityName::StoneFurnace.to_string(),
@@ -580,11 +623,6 @@ impl FactorioEntity {
     pub fn is_minable(&self) -> bool {
         self.entity_type == EntityType::Tree.to_string()
             || self.entity_type == EntityType::SimpleEntity.to_string()
-    }
-    pub fn is_fluid_input(&self) -> bool {
-        self.entity_type == EntityType::Pipe.to_string()
-            || self.entity_type == EntityType::PipeToGround.to_string()
-            || self.entity_type == EntityType::Boiler.to_string()
     }
 }
 
@@ -640,8 +678,10 @@ pub enum EntityName {
 #[strum(serialize_all = "kebab-case")]
 pub enum EntityType {
     None,
-    Assembler,
+    AssemblingMachine,
+    LogisticContainer,
     Boiler,
+    Lab,
     Container,
     Resource,
     SimpleEntity,
@@ -655,6 +695,14 @@ pub enum EntityType {
     Pipe,
     PipeToGround,
     OffshorePump,
+}
+
+impl EntityType {
+    pub fn is_fluid_input(&self) -> bool {
+        *self == EntityType::Pipe
+            || *self == EntityType::PipeToGround
+            || *self == EntityType::Boiler
+    }
 }
 
 impl Default for EntityType {

@@ -1,12 +1,11 @@
 use crate::factorio::entity_graph::EntityGraph;
-use crate::factorio::util::{
-    bounding_box, move_position, position_equal, rect_fields, rect_floor, rect_floor_ceil,
-};
+use crate::factorio::flow_graph::FlowGraph;
+use crate::factorio::util::{position_equal, rect_fields, rect_floor, rect_floor_ceil};
 use crate::types::{
-    ChunkPosition, Direction, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
+    ChunkPosition, EntityType, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
     FactorioForce, FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe,
     FactorioTile, PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent,
-    PlayerChangedPositionEvent, Pos, Position, ResourcePatch,
+    PlayerChangedPositionEvent, Pos, Position,
 };
 use async_std::sync::Mutex;
 use evmap::{ReadHandle, WriteHandle};
@@ -17,9 +16,10 @@ use std::sync::Arc;
 pub struct FactorioWorld {
     pub players: ReadHandle<u32, FactorioPlayer>,
     pub forces: ReadHandle<String, FactorioForce>,
+
     pub chunks: ReadHandle<ChunkPosition, FactorioChunk>,
     pub blocked: ReadHandle<Pos, bool>,
-    pub resources: ReadHandle<String, Vec<Position>>,
+
     pub graphics: ReadHandle<String, FactorioGraphic>,
     pub recipes: ReadHandle<String, FactorioRecipe>,
     pub entity_prototypes: ReadHandle<String, FactorioEntityPrototype>,
@@ -29,67 +29,12 @@ pub struct FactorioWorld {
     pub actions: Mutex<HashMap<u32, String>>,
     pub path_requests: Mutex<HashMap<u32, String>>,
     pub next_action_id: Mutex<u32>,
-    pub entity_graph: EntityGraph,
+
+    pub entity_graph: Arc<EntityGraph>,
+    pub flow_graph: Arc<FlowGraph>,
 }
 
-impl FactorioWorld {
-    fn walk(&self, m: &mut HashMap<Position, Option<u32>>, pos: &Position, id: u32) {
-        m.insert(pos.clone(), Some(id));
-        for direction in Direction::all() {
-            let other = move_position(pos, direction, 1.0);
-            if let Some(p) = m.get(&other) {
-                if p.is_none() {
-                    self.walk(m, &other, id);
-                }
-            }
-        }
-    }
-    pub fn resource_contains(&self, resource_name: &str, pos: Pos) -> bool {
-        let elements = self.resources.get_one(resource_name);
-        if let Some(elements) = elements {
-            let field: Vec<Pos> = elements.iter().map(|e| e.into()).collect();
-            field.contains(&pos)
-        } else {
-            false
-        }
-    }
-
-    pub fn resource_patches(&self, resource_name: &str) -> Vec<ResourcePatch> {
-        let mut patches: Vec<ResourcePatch> = vec![];
-        let mut positions_by_id: HashMap<Position, Option<u32>> = HashMap::new();
-        for point in self
-            .resources
-            .get_one(resource_name)
-            .expect("resource patch not found")
-            .iter()
-        {
-            positions_by_id.insert(point.clone(), None);
-        }
-        let mut next_id: u32 = 0;
-
-        while let Some((next_pos, _)) = positions_by_id.iter().find(|(_, value)| value.is_none()) {
-            next_id += 1;
-            let next_pos = next_pos.clone();
-            self.walk(&mut positions_by_id, &next_pos, next_id);
-        }
-        for id in 1..=next_id {
-            let mut elements: Vec<Position> = vec![];
-            for (k, v) in &positions_by_id {
-                if v.unwrap() == id {
-                    elements.push(k.clone());
-                }
-            }
-            patches.push(ResourcePatch {
-                name: resource_name.into(),
-                rect: bounding_box(&elements).unwrap(),
-                elements,
-                id,
-            });
-        }
-        patches.sort_by(|a, b| b.elements.len().cmp(&a.elements.len()));
-        patches
-    }
-}
+impl FactorioWorld {}
 
 unsafe impl Send for FactorioWorld {}
 unsafe impl Sync for FactorioWorld {}
@@ -104,7 +49,6 @@ pub struct FactorioWorldWriter {
     item_prototypes_writer: WriteHandle<String, FactorioItemPrototype>,
     players_writer: WriteHandle<u32, FactorioPlayer>,
     blocked_writer: WriteHandle<Pos, bool>,
-    resources_writer: WriteHandle<String, Vec<Position>>,
 }
 
 impl FactorioWorldWriter {
@@ -215,6 +159,11 @@ impl FactorioWorldWriter {
         Ok(())
     }
 
+    pub fn on_some_entity_updated(&mut self, _entity: FactorioEntity) -> anyhow::Result<()> {
+        // TODO: update entity direction
+        Ok(())
+    }
+
     pub fn on_some_entity_created(&mut self, entity: FactorioEntity) -> anyhow::Result<()> {
         let rect = rect_floor(&entity.bounding_box);
         for position in rect_fields(&rect) {
@@ -223,9 +172,7 @@ impl FactorioWorldWriter {
         }
         let pos: Pos = (&entity.position).into();
         let chunk_position: ChunkPosition = (&pos).into();
-        self.world
-            .entity_graph
-            .add(&entity, |name, pos| self.world.resource_contains(name, pos))?;
+        self.world.entity_graph.add(vec![entity.clone()], None)?;
         match self.world.chunks.get_one(&chunk_position) {
             Some(chunk) => {
                 let mut chunk = chunk.clone();
@@ -360,37 +307,13 @@ impl FactorioWorldWriter {
         entities: Vec<FactorioEntity>,
     ) -> anyhow::Result<()> {
         // first update blocked entities
-        let mut resources: HashMap<String, Vec<Position>> = HashMap::new();
         for entity in &entities {
             // exclude resources like iron-ore which do not block
-            match &entity.entity_type[..] {
-                "resource" => {
-                    // if entity.name == "stone" {
-                    //     warn!("stone at {}", entity.position);
-                    // }
-                    match resources.get_mut(&entity.name) {
-                        Some(vec) => {
-                            vec.push(entity.position.clone());
-                        }
-                        None => match self.world.resources.get_one(&entity.name) {
-                            Some(vec) => {
-                                let mut vec = vec.clone();
-                                vec.push(entity.position.clone());
-                                resources.insert(entity.name.clone(), vec);
-                            }
-                            None => {
-                                resources
-                                    .insert(entity.name.clone(), vec![entity.position.clone()]);
-                            }
-                        },
-                    };
-                }
-                _ => {
-                    let rect = rect_floor_ceil(&entity.bounding_box);
-                    for position in rect_fields(&rect) {
-                        self.blocked_writer
-                            .insert((&position).into(), entity.is_minable());
-                    }
+            if entity.entity_type != EntityType::Resource.to_string() {
+                let rect = rect_floor_ceil(&entity.bounding_box);
+                for position in rect_fields(&rect) {
+                    self.blocked_writer
+                        .insert((&position).into(), entity.is_minable());
                 }
             }
         }
@@ -413,22 +336,9 @@ impl FactorioWorldWriter {
                 },
             );
         }
-        for (k, v) in resources {
-            let previous_value = self.resources_writer.get_one(&k).map(|value| value.clone());
-            if let Some(previous_value) = previous_value {
-                self.resources_writer.remove(k.clone(), previous_value);
-            }
-            self.resources_writer.insert(k.clone(), v.clone());
-        }
-        self.resources_writer.refresh();
-
         self.blocked_writer.refresh();
         self.chunks_writer.refresh();
-        self.world
-            .entity_graph
-            .add_multiple(&entities, |name, pos| {
-                self.world.resource_contains(name, pos)
-            })?;
+        self.world.entity_graph.add(entities, None)?; // FIXME: add clear rect
         Ok(())
     }
 
@@ -505,17 +415,6 @@ impl FactorioWorldWriter {
         } else {
             warn!("no blocked to import");
         }
-        if let Some(resources) = &world.resources.read() {
-            for (name, positions) in resources {
-                if let Some(positions) = positions.get_one() {
-                    self.resources_writer
-                        .insert(name.clone(), positions.clone());
-                }
-            }
-            self.resources_writer.refresh();
-        } else {
-            warn!("no resources to import");
-        }
         self.world.entity_graph.connect()?;
         Ok(())
     }
@@ -533,8 +432,8 @@ impl FactorioWorldWriter {
             evmap::new::<String, FactorioEntityPrototype>();
         let (item_prototypes_reader, item_prototypes_writer) =
             evmap::new::<String, FactorioItemPrototype>();
-        let (resources_reader, resources_writer) = evmap::new::<String, Vec<Position>>();
-
+        let entity_graph = Arc::new(EntityGraph::new());
+        let flow_graph = Arc::new(FlowGraph::new(entity_graph.clone()));
         FactorioWorldWriter {
             forces_writer,
             players_writer,
@@ -544,7 +443,6 @@ impl FactorioWorldWriter {
             entity_prototypes_writer,
             item_prototypes_writer,
             blocked_writer,
-            resources_writer,
             world: Arc::new(FactorioWorld {
                 image_cache,
                 image_cache_writer: std::sync::Mutex::new(image_cache_writer),
@@ -556,11 +454,11 @@ impl FactorioWorldWriter {
                 forces: forces_reader,
                 entity_prototypes: entity_prototypes_reader,
                 item_prototypes: item_prototypes_reader,
-                resources: resources_reader,
                 actions: Mutex::new(HashMap::default()),
                 path_requests: Mutex::new(HashMap::default()),
                 next_action_id: Mutex::new(1),
-                entity_graph: EntityGraph::new(),
+                entity_graph,
+                flow_graph,
             }),
         }
     }

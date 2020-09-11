@@ -469,8 +469,8 @@ pub fn floor_position(position: &Position) -> Position {
 }
 
 pub fn position_equal(a: &Position, b: &Position) -> bool {
-    (a.x().floor() - b.x().floor()).abs() < f64::EPSILON
-        && (a.y().floor() - b.y().floor()).abs() < f64::EPSILON
+    (a.x().floor() - b.x().floor()).abs() < std::f64::EPSILON
+        && (a.y().floor() - b.y().floor()).abs() < std::f64::EPSILON
 }
 
 pub fn rect_fields(rect: &Rect) -> Vec<Position> {
