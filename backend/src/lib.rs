@@ -17,6 +17,7 @@ extern crate strum;
 #[macro_use]
 extern crate strum_macros;
 
+pub mod draw;
 pub mod error;
 pub mod factorio;
 pub mod types;

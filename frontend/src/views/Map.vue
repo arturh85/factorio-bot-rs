@@ -1,5 +1,5 @@
 <script lang="ts">
-import {LMap, LMarker, LTileLayer} from "vue2-leaflet";
+import {LMap, LMarker, LTileLayer, LControlLayers} from "vue2-leaflet";
 import {baseUrl} from "@/environment";
 import "leaflet/dist/leaflet.css";
 import L from 'leaflet';
@@ -16,6 +16,7 @@ export default Vue.extend({
     LMap,
     LTileLayer,
     LMarker,
+    LControlLayers
   },
   methods: {
     mapReady() {
@@ -54,7 +55,10 @@ export default Vue.extend({
           @click="onClickMap"
           :minZoom="3"
           :maxZoom="10">
-      <LTileLayer :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/tile.png`"></LTileLayer>
+      <LControlLayers position="topright"  ></LControlLayers>
+      <LTileLayer name="entities" :url="`${baseUrl}/api/tiles/entity-graph/{z}/{x}/{y}/tile.png`" layer-type="base"></LTileLayer>
+      <LTileLayer name="map" :url="`${baseUrl}/api/tiles/map/{z}/{x}/{y}/tile.png`" layer-type="base"></LTileLayer>
+      <LTileLayer name="flow" :url="`${baseUrl}/api/tiles/flow-graph/{z}/{x}/{y}/tile.png`" layer-type="base"></LTileLayer>
       <LMarker v-for="player in $store.state.players" v-bind:key="player.playerId" :lat-lng="position2latlng(player.position)"/>
     </LMap>
   </v-row>

@@ -46,7 +46,7 @@ impl std::fmt::Debug for EntityNode {
         f.write_str(&format!(
             "{}{} at {}",
             if let Some(miner_ore) = &self.miner_ore {
-                format!("{}: ", miner_ore)
+                format!("{} ", miner_ore)
             } else {
                 String::new()
             },
@@ -116,6 +116,10 @@ impl EntityGraph {
     }
     pub fn inner_tree(&self) -> RwLockReadGuard<EntityQuadTree> {
         self.entity_tree.read()
+    }
+
+    pub fn node_by_id(&self, id: &ItemId) -> Option<NodeIndex> {
+        self.entity_nodes.get(id).map(|e| *e.value())
     }
 
     fn walk(&self, m: &mut HashMap<Pos, Option<u32>>, pos: &Pos, id: u32) {
@@ -371,7 +375,6 @@ impl EntityGraph {
                         .map(|edge| *edge.weight())
                         .find(|_| true)
                         .unwrap();
-                self.entity_nodes.remove(&node.entity_id.unwrap());
                 graph.add_edge(incoming, outgoing, weight);
                 if let Some(edge) = graph.find_edge(incoming, node_index) {
                     graph.remove_edge(edge);
@@ -394,7 +397,6 @@ impl EntityGraph {
                     .map(|edge| *edge.weight())
                     .collect();
                 let weight = weights[0] + weights[1];
-                self.entity_nodes.remove(&node.entity_id.unwrap());
                 graph.add_edge(incoming[0], incoming[1], weight);
                 graph.add_edge(incoming[1], incoming[0], weight);
                 for connected_index in incoming {

@@ -5,13 +5,13 @@ use crate::types::{
     Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, Position, Rect,
 };
 use aabb_quadtree::{ItemId, QuadTree};
-use dashmap::lock::RwLock;
+use dashmap::lock::{RwLock, RwLockReadGuard};
 use euclid::{TypedPoint2D, TypedSize2D};
 use evmap::ReadHandle;
 use num_traits::ToPrimitive;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
-use petgraph::visit::{Bfs, EdgeRef};
+use petgraph::visit::{depth_first_search, Bfs, Control, DfsEvent, EdgeRef};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -125,33 +125,217 @@ impl FlowGraph {
         entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
     ) -> anyhow::Result<()> {
         let _started = Instant::now();
-        let mut i = 0;
         let inner = self.entity_graph.inner_graph();
-        for node_index in inner.externals(petgraph::Direction::Incoming) {
-            let node = inner.node_weight(node_index).unwrap();
-            if node.entity_type == EntityType::MiningDrill && node.miner_ore.is_some() {
-                let node_entity_id = node.entity_id.unwrap();
-                let root = self.inner.write().add_node(FlowNode::new(
-                    &self
-                        .entity_graph
-                        .entity_by_id(node_entity_id)
-                        .unwrap()
-                        .clone(),
-                    node.miner_ore.clone(),
-                    node_entity_id,
-                ));
-                let mut breadcrumb: Vec<NodeIndex> = vec![];
-                self.walk(&mut breadcrumb, entity_prototypes, node_index, root);
-                i += 1;
-                if i > 1 {
-                    // break;
-                }
+        for entity_root_index in inner.externals(petgraph::Direction::Incoming) {
+            let entity_root = inner.node_weight(entity_root_index).unwrap();
+            if entity_root.entity_type == EntityType::MiningDrill && entity_root.miner_ore.is_some()
+            {
+                let entity_graph = self.entity_graph.inner_graph();
+                depth_first_search(&*entity_graph, Some(entity_root_index), |event| {
+                    if let DfsEvent::TreeEdge(source_node_index, target_node_index) = event {
+                        let source_node = entity_graph.node_weight(source_node_index).unwrap();
+                        let target_node = entity_graph.node_weight(target_node_index).unwrap();
+                        match source_node.entity_type {
+                            EntityType::MiningDrill => {
+                                let miner_ore = entity_root.miner_ore.as_ref().unwrap();
+                                let mining_speed = entity_prototypes
+                                    .get_one(&entity_root.entity_name)
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "entity '{}' not found in prototypes",
+                                            &entity_root.entity_name
+                                        )
+                                    })
+                                    .mining_speed
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "entity '{}' has no mining_speed",
+                                            &entity_root.entity_name
+                                        )
+                                    })
+                                    .to_f64()
+                                    .unwrap();
+                                let mining_time = entity_prototypes
+                                    .get_one(miner_ore)
+                                    .unwrap_or_else(|| {
+                                        panic!("entity '{}' not found in prototypes", &miner_ore)
+                                    })
+                                    .mining_time
+                                    .unwrap_or_else(|| {
+                                        panic!("entity '{}' has no mining_time", &miner_ore)
+                                    })
+                                    .to_f64()
+                                    .unwrap();
+                                // https://wiki.factorio.com/Mining
+                                // The rate at which resources are produced is given by:
+                                // Mining speed / Mining time = Production rate (in resource/sec)
+                                let production_rate = mining_speed / mining_time;
+                                self.update_flow_edge(
+                                    FlowEdge::Single(vec![(miner_ore.clone(), production_rate)]),
+                                    source_node,
+                                    target_node,
+                                );
+                                Control::Continue
+                            }
+                            EntityType::AssemblingMachine => {
+                                // can have multiple incoming and multiple outgoing
+                                Control::Break(())
+                            }
+                            EntityType::Splitter => {
+                                // can have multiple incoming and multiple outgoing
+                                let incoming =
+                                    self.sum_incoming_edge_weights(&source_node.position);
+                                let outgoing_count = entity_graph
+                                    .edges_directed(
+                                        source_node_index,
+                                        petgraph::Direction::Outgoing,
+                                    )
+                                    .count();
+                                self.update_flow_edge(
+                                    self.divide_flowrate(&incoming, outgoing_count),
+                                    source_node,
+                                    target_node,
+                                );
+                                Control::Continue
+                            }
+                            EntityType::Furnace => {
+                                // can have multiple incoming and multiple outgoing
+                                let incoming =
+                                    self.sum_incoming_edge_weights(&source_node.position);
+                                /*
+                                Smelting iron, copper, and stone each take a base 3.2 seconds to finish.
+                                Smelting steel takes a base 16 seconds.
+                                Stone Furnaces have a crafting speed of 1.
+                                Both Steel and Electric Furnaces have a crafting speed of 2.
+                                One furnace making iron can support one furnace making steel.
+                                Stone and Steel Furnaces consume 0.0225 coal/second.
+                                             */
+
+                                let mut output: FlowRates = vec![];
+                                for (name, _rate) in &incoming {
+                                    if let Ok(name) = EntityName::from_str(&name) {
+                                        match name {
+                                            EntityName::IronOre => output.push((
+                                                EntityName::IronPlate.to_string(),
+                                                1. / 3.2,
+                                            )),
+                                            EntityName::CopperOre => output.push((
+                                                EntityName::CopperPlate.to_string(),
+                                                1. / 3.2,
+                                            )),
+                                            EntityName::Stone => output.push((
+                                                EntityName::StoneBrick.to_string(),
+                                                1. / 3.2,
+                                            )),
+                                            EntityName::IronPlate => output
+                                                .push((EntityName::Steel.to_string(), 1. / 3.2)),
+                                            EntityName::Coal => {}
+                                            _ => warn!("invalid furnace input: {}", name),
+                                        }
+                                    } else {
+                                        warn!("invalid furnace input: {}", name);
+                                    }
+                                }
+                                self.update_flow_edge(
+                                    FlowEdge::Single(output),
+                                    source_node,
+                                    target_node,
+                                );
+                                Control::Continue
+                            }
+                            EntityType::Inserter => {
+                                // can have one incoming and one outgoing
+                                let incoming =
+                                    self.sum_incoming_edge_weights(&source_node.position);
+                                self.update_flow_edge(
+                                    FlowEdge::Single(incoming),
+                                    source_node,
+                                    target_node,
+                                );
+                                Control::Continue
+                            }
+                            EntityType::TransportBelt | EntityType::UndergroundBelt => {
+                                // can have multiple incoming and multiple outgoing
+                                let entity_edge_count = entity_graph
+                                    .edges_directed(
+                                        source_node_index,
+                                        petgraph::Direction::Incoming,
+                                    )
+                                    .count();
+                                let (left, right) = self.sum_incoming_edge_weights_by_side(
+                                    entity_edge_count,
+                                    &source_node.position,
+                                );
+                                match target_node.entity_type {
+                                    EntityType::TransportBelt
+                                    | EntityType::UndergroundBelt
+                                    | EntityType::Splitter => {
+                                        self.update_flow_edge(
+                                            FlowEdge::Double(left, right),
+                                            source_node,
+                                            target_node,
+                                        );
+                                        Control::Continue
+                                    }
+                                    EntityType::Inserter => {
+                                        let mut both = left;
+                                        for e in &right {
+                                            self.add_production_rate(&mut both, e.clone());
+                                        }
+                                        self.update_flow_edge(
+                                            FlowEdge::Single(both),
+                                            source_node,
+                                            target_node,
+                                        );
+                                        Control::Continue
+                                    }
+                                    _ => Control::Break(()),
+                                }
+                            }
+                            _ => Control::Break(()),
+                        }
+                    } else {
+                        Control::Continue
+                    }
+                });
             }
         }
         // info!("flow graph build took {:?}", started.elapsed());
         Ok(())
     }
 
+    pub fn get_or_create_flow_node(&self, entity_node: &EntityNode) -> NodeIndex {
+        self.node_at(&entity_node.position).unwrap_or_else(|| {
+            let entity_id = entity_node.entity_id.unwrap();
+            let entity = self.entity_graph.entity_by_id(entity_id).unwrap();
+            let new_index = self.inner.write().add_node(FlowNode::new(
+                &entity,
+                entity_node.miner_ore.clone(),
+                entity_id,
+            ));
+            self.flow_tree
+                .write()
+                .insert_with_box(new_index, entity_node.bounding_box.clone().into());
+            new_index
+        })
+    }
+
+    pub fn update_flow_edge(
+        &self,
+        flow: FlowEdge,
+        source_entity_node: &EntityNode,
+        target_entity_node: &EntityNode,
+    ) {
+        let source_flow_idx = self.get_or_create_flow_node(source_entity_node);
+        let target_flow_idx = self.get_or_create_flow_node(target_entity_node);
+        self.inner
+            .write()
+            .update_edge(source_flow_idx, target_flow_idx, flow);
+    }
+
+    pub fn inner_graph(&self) -> RwLockReadGuard<FlowGraphInner> {
+        self.inner.read()
+    }
     pub fn node_at(&self, position: &Position) -> Option<NodeIndex> {
         let tree = self.flow_tree.read();
         let results: Vec<&NodeIndex> = tree
@@ -169,221 +353,6 @@ impl FlowGraph {
         }
     }
 
-    fn walk(
-        &self,
-        breadcrumb: &mut Vec<NodeIndex>,
-        entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
-        entity_node_index: NodeIndex,
-        flow_node_index: NodeIndex,
-    ) {
-        if breadcrumb.contains(&flow_node_index) {
-            return;
-        } else {
-            breadcrumb.push(flow_node_index);
-        }
-        let entity_node = self.entity_graph.node_weight(entity_node_index).unwrap();
-        match entity_node.entity_type {
-            EntityType::MiningDrill => {
-                // should have no incoming and exactly one outgoing
-                if let Some((next_entity_node_index, next_entity_node)) =
-                    self.outgoing_entities(entity_node_index).pop()
-                {
-                    let next_flow_node_index =
-                        self.outgoing_flow(&next_entity_node, flow_node_index);
-                    let miner_ore = entity_node.miner_ore.as_ref().unwrap();
-                    let mining_speed = entity_prototypes
-                        .get_one(&entity_node.entity_name)
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "entity '{}' not found in prototypes",
-                                &entity_node.entity_name
-                            )
-                        })
-                        .mining_speed
-                        .unwrap_or_else(|| {
-                            panic!("entity '{}' has no mining_speed", &entity_node.entity_name)
-                        })
-                        .to_f64()
-                        .unwrap();
-                    let mining_time = entity_prototypes
-                        .get_one(miner_ore)
-                        .unwrap_or_else(|| {
-                            panic!("entity '{}' not found in prototypes", &miner_ore)
-                        })
-                        .mining_time
-                        .unwrap_or_else(|| panic!("entity '{}' has no mining_time", &miner_ore))
-                        .to_f64()
-                        .unwrap();
-                    // https://wiki.factorio.com/Mining
-                    // The rate at which resources are produced is given by:
-                    // Mining speed / Mining time = Production rate (in resource/sec)
-                    let production_rate = mining_speed / mining_time;
-                    self.inner.write().add_edge(
-                        flow_node_index,
-                        next_flow_node_index,
-                        FlowEdge::Single(vec![(miner_ore.clone(), production_rate)]),
-                    );
-                    self.walk(
-                        breadcrumb,
-                        entity_prototypes,
-                        next_entity_node_index,
-                        next_flow_node_index,
-                    );
-                }
-            }
-            EntityType::AssemblingMachine => {
-                // can have multiple incoming and multiple outgoing
-            }
-            EntityType::Splitter => {
-                // can have multiple incoming and multiple outgoing
-                let incoming = self.sum_incoming_edge_weights(flow_node_index);
-                let outgoing = self.outgoing_entities(entity_node_index);
-                let outgoing_count = outgoing.len();
-                for (next_entity_node_index, next_entity_node) in outgoing {
-                    let next_flow_node_index =
-                        self.outgoing_flow(&next_entity_node, flow_node_index);
-                    let divived_flow = self.divide_flowrate(&incoming, outgoing_count);
-                    self.inner.write().update_edge(
-                        flow_node_index,
-                        next_flow_node_index,
-                        divived_flow,
-                    );
-                    self.walk(
-                        breadcrumb,
-                        entity_prototypes,
-                        next_entity_node_index,
-                        next_flow_node_index,
-                    );
-                }
-            }
-            EntityType::Furnace => {
-                // can have multiple incoming and multiple outgoing
-                let incoming = self.sum_incoming_edge_weights(flow_node_index);
-                /*
-                Smelting iron, copper, and stone each take a base 3.2 seconds to finish.
-                Smelting steel takes a base 16 seconds.
-                Stone Furnaces have a crafting speed of 1.
-                Both Steel and Electric Furnaces have a crafting speed of 2.
-                One furnace making iron can support one furnace making steel.
-                Stone and Steel Furnaces consume 0.0225 coal/second.
-                             */
-
-                let outgoing = self.outgoing_entities(entity_node_index);
-                let _outgoing_count = outgoing.len();
-                for (next_entity_node_index, next_entity_node) in outgoing {
-                    let next_flow_node_index =
-                        self.outgoing_flow(&next_entity_node, flow_node_index);
-
-                    let mut output: FlowRates = vec![];
-                    for (name, _rate) in &incoming {
-                        if let Ok(name) = EntityName::from_str(&name) {
-                            match name {
-                                EntityName::IronOre => {
-                                    output.push((EntityName::IronPlate.to_string(), 1. / 3.2))
-                                }
-                                EntityName::CopperOre => {
-                                    output.push((EntityName::CopperPlate.to_string(), 1. / 3.2))
-                                }
-                                EntityName::Stone => {
-                                    output.push((EntityName::StoneBrick.to_string(), 1. / 3.2))
-                                }
-                                EntityName::IronPlate => {
-                                    output.push((EntityName::Steel.to_string(), 1. / 3.2))
-                                }
-                                EntityName::Coal => {}
-                                _ => warn!("invalid furnace input: {}", name),
-                            }
-                        } else {
-                            warn!("invalid furnace input: {}", name);
-                        }
-                    }
-                    self.inner.write().update_edge(
-                        flow_node_index,
-                        next_flow_node_index,
-                        FlowEdge::Single(output),
-                    );
-                    self.walk(
-                        breadcrumb,
-                        entity_prototypes,
-                        next_entity_node_index,
-                        next_flow_node_index,
-                    );
-                }
-            }
-            EntityType::Inserter => {
-                // can have one incoming and one outgoing
-                let incoming = self.sum_incoming_edge_weights(flow_node_index);
-                let outgoing = self.outgoing_entities(entity_node_index);
-                let _outgoing_count = outgoing.len();
-                for (next_entity_node_index, next_entity_node) in outgoing {
-                    let next_flow_node_index =
-                        self.outgoing_flow(&next_entity_node, flow_node_index);
-                    self.inner.write().update_edge(
-                        flow_node_index,
-                        next_flow_node_index,
-                        FlowEdge::Single(incoming.clone()),
-                    );
-                    self.walk(
-                        breadcrumb,
-                        entity_prototypes,
-                        next_entity_node_index,
-                        next_flow_node_index,
-                    );
-                }
-            }
-            EntityType::TransportBelt | EntityType::UndergroundBelt => {
-                // can have multiple incoming and multiple outgoing
-                let (left, right) =
-                    self.sum_incoming_edge_weights_by_side(entity_node_index, flow_node_index);
-                for (next_entity_node_index, next_entity_node) in
-                    self.outgoing_entities(entity_node_index)
-                {
-                    match next_entity_node.entity_type {
-                        EntityType::TransportBelt
-                        | EntityType::UndergroundBelt
-                        | EntityType::Splitter => {
-                            let next_flow_node_index =
-                                self.outgoing_flow(&next_entity_node, flow_node_index);
-                            self.inner.write().update_edge(
-                                flow_node_index,
-                                next_flow_node_index,
-                                FlowEdge::Double(left.clone(), right.clone()),
-                            );
-                            self.walk(
-                                breadcrumb,
-                                entity_prototypes,
-                                next_entity_node_index,
-                                next_flow_node_index,
-                            );
-                        }
-                        EntityType::Inserter => {
-                            let next_flow_node_index =
-                                self.outgoing_flow(&next_entity_node, flow_node_index);
-
-                            let mut both = left.clone();
-                            for e in &right {
-                                self.add_production_rate(&mut both, e.clone());
-                            }
-                            self.inner.write().update_edge(
-                                flow_node_index,
-                                next_flow_node_index,
-                                FlowEdge::Single(both.clone()),
-                            );
-                            self.walk(
-                                breadcrumb,
-                                entity_prototypes,
-                                next_entity_node_index,
-                                next_flow_node_index,
-                            );
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub fn condense(&self) -> FlowGraphInner {
         let _started = Instant::now();
         let mut graph = self.inner.read().clone();
@@ -398,8 +367,51 @@ impl FlowGraph {
                     break;
                 }
             }
-            if let Some(next_node) = next_node {
-                self.condense_walk(&mut graph, next_node);
+            if let Some(node_index) = next_node {
+                let mut bfs = Bfs::new(&graph, node_index);
+                while let Some(node_index) = bfs.next(&graph) {
+                    let node = graph.node_weight(node_index).unwrap();
+
+                    let incoming: Vec<FlowNode> = graph
+                        .edges_directed(node_index, petgraph::Direction::Incoming)
+                        .map(|edge| graph.node_weight(edge.source()).unwrap().clone())
+                        .collect();
+                    let outgoing: Vec<FlowNode> = graph
+                        .edges_directed(node_index, petgraph::Direction::Outgoing)
+                        .map(|edge| graph.node_weight(edge.target()).unwrap().clone())
+                        .collect();
+
+                    // if we have 1 incoming and 1 outgoing and all three of us have same flow name
+                    if incoming.len() == 1
+                        && outgoing.len() == 1
+                        && node.entity_name == incoming[0].entity_name
+                        && incoming[0].entity_name == outgoing[0].entity_name
+                    {
+                        let incoming: NodeIndex = graph
+                            .edges_directed(node_index, petgraph::Direction::Incoming)
+                            .map(|edge| edge.source())
+                            .find(|_| true)
+                            .unwrap();
+                        let outgoing: NodeIndex = graph
+                            .edges_directed(node_index, petgraph::Direction::Outgoing)
+                            .map(|edge| edge.target())
+                            .find(|_| true)
+                            .unwrap();
+                        let weight = graph
+                            .edges_directed(node_index, petgraph::Direction::Incoming)
+                            .map(|edge| edge.weight().clone())
+                            .find(|_| true)
+                            .unwrap();
+                        if let Some(edge) = graph.find_edge(incoming, node_index) {
+                            graph.remove_edge(edge);
+                        }
+                        if let Some(edge) = graph.find_edge(node_index, outgoing) {
+                            graph.remove_edge(edge);
+                        }
+                        graph.add_edge(incoming, outgoing, weight);
+                        graph.remove_node(node_index);
+                    }
+                }
             } else {
                 break;
             }
@@ -412,100 +424,13 @@ impl FlowGraph {
         // );
         graph
     }
-    pub fn condense_walk(&self, graph: &mut FlowGraphInner, node_index: NodeIndex) {
-        let mut bfs = Bfs::new(&*graph, node_index);
-        while let Some(node_index) = bfs.next(&*graph) {
-            let node = graph.node_weight(node_index).unwrap();
-
-            let incoming: Vec<FlowNode> = graph
-                .edges_directed(node_index, petgraph::Direction::Incoming)
-                .map(|edge| graph.node_weight(edge.source()).unwrap().clone())
-                .collect();
-            let outgoing: Vec<FlowNode> = graph
-                .edges_directed(node_index, petgraph::Direction::Outgoing)
-                .map(|edge| graph.node_weight(edge.target()).unwrap().clone())
-                .collect();
-
-            // if we have 1 incoming and 1 outgoing and all three of us have same flow name
-            if incoming.len() == 1
-                && outgoing.len() == 1
-                && node.entity_name == incoming[0].entity_name
-                && incoming[0].entity_name == outgoing[0].entity_name
-            {
-                let incoming: NodeIndex = graph
-                    .edges_directed(node_index, petgraph::Direction::Incoming)
-                    .map(|edge| edge.source())
-                    .find(|_| true)
-                    .unwrap();
-                let outgoing: NodeIndex = graph
-                    .edges_directed(node_index, petgraph::Direction::Outgoing)
-                    .map(|edge| edge.target())
-                    .find(|_| true)
-                    .unwrap();
-                let weight = graph
-                    .edges_directed(node_index, petgraph::Direction::Incoming)
-                    .map(|edge| edge.weight().clone())
-                    .find(|_| true)
-                    .unwrap();
-                if let Some(edge) = graph.find_edge(incoming, node_index) {
-                    graph.remove_edge(edge);
-                }
-                if let Some(edge) = graph.find_edge(node_index, outgoing) {
-                    graph.remove_edge(edge);
-                }
-                graph.add_edge(incoming, outgoing, weight);
-                graph.remove_node(node_index);
-            }
-        }
-    }
-
-    fn outgoing_entities(&self, entity_node_index: NodeIndex) -> Vec<(NodeIndex, EntityNode)> {
-        self.entity_graph
-            .edges_directed(entity_node_index, petgraph::Direction::Outgoing)
-            .iter()
-            .map(|edge| (*edge, self.entity_graph.node_weight(*edge).unwrap()))
-            .collect()
-    }
-
-    fn outgoing_flow(&self, entity_node: &EntityNode, flow_node_index: NodeIndex) -> NodeIndex {
-        let existing: Vec<NodeIndex> = {
-            let graph = self.inner.read();
-            graph
-                .edges_directed(flow_node_index, petgraph::Direction::Outgoing)
-                .filter(|edge| {
-                    entity_node.entity_id == graph.node_weight(edge.target()).unwrap().entity_id
-                })
-                .map(|edge| edge.target())
-                .collect()
-        };
-        if existing.is_empty() {
-            match self.node_at(&entity_node.position) {
-                Some(node_index) => node_index,
-                None => {
-                    let new_index = self.inner.write().add_node(FlowNode::new(
-                        &self
-                            .entity_graph
-                            .entity_by_id(entity_node.entity_id.unwrap())
-                            .unwrap(),
-                        entity_node.miner_ore.clone(),
-                        entity_node.entity_id.unwrap(),
-                    ));
-                    self.flow_tree
-                        .write()
-                        .insert_with_box(new_index, entity_node.bounding_box.clone().into());
-                    new_index
-                }
-            }
-        } else {
-            *existing.first().unwrap()
-        }
-    }
 
     fn sum_incoming_edge_weights_by_side(
         &self,
-        entity_node_index: NodeIndex,
-        flow_node_index: NodeIndex,
+        entity_edge_count: usize,
+        position: &Position,
     ) -> (FlowRates, FlowRates) {
+        let flow_node_index = self.node_at(position).unwrap();
         let mut left: FlowRates = vec![];
         let mut right: FlowRates = vec![];
 
@@ -515,15 +440,6 @@ impl FlowGraph {
         for edge in graph.edges_directed(flow_node_index, petgraph::Direction::Incoming) {
             let weight = edge.weight();
             let prev_node = graph.node_weight(edge.source()).unwrap();
-            let entity_edge_count = self
-                .entity_graph
-                .edges_directed(entity_node_index, petgraph::Direction::Incoming)
-                // .filter(|edge| {
-                //     let entity_type = &entity_graph.node_weight(edge.source()).unwrap().entity_type;
-                //     entity_type == &EntityType::TransportBelt
-                //         || entity_type == &EntityType::UndergroundBelt
-                // })
-                .len();
 
             // info!(
             //     "sum by -> flow {} @ {} {:?} next {} @ {} {:?} -> edges {}",
@@ -634,7 +550,8 @@ impl FlowGraph {
             .collect()
     }
 
-    fn sum_incoming_edge_weights(&self, flow_node_index: NodeIndex) -> FlowRates {
+    fn sum_incoming_edge_weights(&self, position: &Position) -> FlowRates {
+        let flow_node_index = self.node_at(position).unwrap();
         let graph = self.inner.read();
         let incoming: Vec<FlowEdge> = graph
             .edges_directed(flow_node_index, petgraph::Direction::Incoming)
@@ -693,7 +610,7 @@ mod tests {
         assert_eq!(
             entity_graph.graphviz_dot(),
             r#"digraph {
-    0 [ label = "iron-ore: mining-drill at [0.5, -1.5]" ]
+    0 [ label = "iron-ore mining-drill at [0.5, -1.5]" ]
     1 [ label = "transport-belt at [0.5, 0.5]" ]
     2 [ label = "transport-belt at [1.5, 0.5]" ]
     3 [ label = "splitter at [1, 1.5]" ]
@@ -743,7 +660,7 @@ mod tests {
         assert_eq!(
             entity_graph.graphviz_dot(),
             r#"digraph {
-    0 [ label = "iron-ore: mining-drill at [0.5, -1.5]" ]
+    0 [ label = "iron-ore mining-drill at [0.5, -1.5]" ]
     1 [ label = "transport-belt at [0.5, 0.5]" ]
     2 [ label = "inserter at [0.5, 1.5]" ]
     3 [ label = "furnace at [1, 3]" ]

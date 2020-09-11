@@ -4,10 +4,12 @@ use image::imageops::FilterType;
 use image::{DynamicImage, GenericImage, ImageFormat, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_text_mut};
 use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut};
-use imageproc::rect::Rect;
 use rusttype::{Font, Scale};
 use std::sync::Arc;
 // use std::time::Instant;
+
+const TILE_WIDTH: u32 = 256;
+const TILE_HEIGHT: u32 = 256;
 
 use crate::factorio::world::FactorioWorld;
 use actix_web::{web, HttpResponse};
@@ -24,9 +26,7 @@ pub async fn map_tiles(
     // let started = Instant::now();
     let ((top_left_x, top_left_y), (bottom_right_x, _bottom_right_y)) =
         chunk_zoom(tile_z, tile_x, tile_y);
-    let img_width = 256;
-    let img_height = 256;
-    let mut buffer: RgbaImage = image::ImageBuffer::new(img_width, img_height);
+    let mut buffer: RgbaImage = image::ImageBuffer::new(TILE_WIDTH, TILE_HEIGHT);
 
     // let chunks = _script_output.chunks.lock().expect("failed to lock mutex");
     // match chunks.get(&chunk_position) {
@@ -44,7 +44,7 @@ pub async fn map_tiles(
     // let font = Vec::from(include_bytes!("../data/DejaVuSans.ttf") as &[u8]);
     let font = Vec::from(include_bytes!("../data/FiraMono-Medium.ttf") as &[u8]);
     let font = Font::try_from_vec(font).unwrap();
-    let chunk_width = img_width as f64 / chunks_in_row;
+    let chunk_width = TILE_WIDTH as f64 / chunks_in_row;
     // if a chunk is not even one pixel, no details shown
     if chunk_width > 1.0 {
         let factor = chunk_width / 32.0;
@@ -85,7 +85,8 @@ pub async fn map_tiles(
                                 };
                                 draw_filled_rect_mut(
                                     &mut buffer,
-                                    Rect::at(rect_x, rect_y).of_size(factor as u32, factor as u32),
+                                    imageproc::rect::Rect::at(rect_x, rect_y)
+                                        .of_size(factor as u32, factor as u32),
                                     match &name[..] {
                                         "sand" => image::Rgba([255u8, 249u8, 15u8, 255u8]),
                                         "desert" => image::Rgba([255u8, 229u8, 15u8, 255u8]),
@@ -109,7 +110,7 @@ pub async fn map_tiles(
                                 {
                                     draw_hollow_rect_mut(
                                         &mut buffer,
-                                        Rect::at(rect_x, rect_y)
+                                        imageproc::rect::Rect::at(rect_x, rect_y)
                                             .of_size(factor as u32, factor as u32),
                                         image::Rgba([255u8, 0u8, 0u8, 255u8]),
                                     );
@@ -141,7 +142,7 @@ pub async fn map_tiles(
                                             if graphics_path.exists() {
                                                 // draw_hollow_rect_mut(
                                                 //     &mut buffer,
-                                                //     Rect::at(rect_x, rect_y)
+                                                //     imageproc::rect::Rect::at(rect_x, rect_y)
                                                 //         .of_size(factor as u32, factor as u32),
                                                 //     red,
                                                 // );
@@ -159,67 +160,87 @@ pub async fn map_tiles(
                                                     world.image_cache.get_one(&graphic.image_path);
                                             }
                                         }
-                                        let mut img = *img.unwrap().clone();
-                                        let img = image::imageops::crop(
-                                            &mut img,
-                                            0,
-                                            0,
-                                            graphic.width,
-                                            graphic.height,
-                                        );
-                                        let mut img = image::imageops::resize(
-                                            &img,
-                                            (entitiy.bounding_box.width() * factor).ceil() as u32,
-                                            (entitiy.bounding_box.height() * factor).ceil() as u32,
-                                            FilterType::Nearest,
-                                        );
-                                        // info!(
-                                        //     "overlay {} at {}, {}",
-                                        //     object.name,
-                                        //     rect_x,
-                                        //     rect_y
-                                        // );
-                                        let mut w = img.width();
-                                        let mut h = img.height();
-                                        let mut img = if rect_x < 0 && w > (-rect_x as u32) {
-                                            w -= -rect_x as u32;
-                                            let sub_image = image::imageops::crop(
-                                                &mut img,
-                                                (-rect_x) as u32,
-                                                0,
-                                                w,
-                                                h,
-                                            );
-                                            rect_x = 0;
-                                            sub_image
-                                        } else {
-                                            img.sub_image(0, 0, w, h)
-                                        };
-                                        let img = if rect_y < 0 && h > (-rect_y as u32) {
-                                            h -= -rect_y as u32;
-                                            let sub_image = image::imageops::crop(
+                                        if img.is_some() {
+                                            let mut img = *img.unwrap().clone();
+                                            let img = image::imageops::crop(
                                                 &mut img,
                                                 0,
-                                                -rect_y as u32,
-                                                w,
-                                                h,
+                                                0,
+                                                graphic.width,
+                                                graphic.height,
                                             );
-                                            rect_y = 0;
-                                            sub_image
+                                            let mut img = image::imageops::resize(
+                                                &img,
+                                                (entitiy.bounding_box.width() * factor).ceil()
+                                                    as u32,
+                                                (entitiy.bounding_box.height() * factor).ceil()
+                                                    as u32,
+                                                FilterType::Nearest,
+                                            );
+                                            // info!(
+                                            //     "overlay {} at {}, {}",
+                                            //     object.name,
+                                            //     rect_x,
+                                            //     rect_y
+                                            // );
+                                            let mut w = img.width();
+                                            let mut h = img.height();
+                                            let mut img = if rect_x < 0 && w > (-rect_x as u32) {
+                                                w -= -rect_x as u32;
+                                                let sub_image = image::imageops::crop(
+                                                    &mut img,
+                                                    (-rect_x) as u32,
+                                                    0,
+                                                    w,
+                                                    h,
+                                                );
+                                                rect_x = 0;
+                                                sub_image
+                                            } else {
+                                                img.sub_image(0, 0, w, h)
+                                            };
+                                            let img = if rect_y < 0 && h > (-rect_y as u32) {
+                                                h -= -rect_y as u32;
+                                                let sub_image = image::imageops::crop(
+                                                    &mut img,
+                                                    0,
+                                                    -rect_y as u32,
+                                                    w,
+                                                    h,
+                                                );
+                                                rect_y = 0;
+                                                sub_image
+                                            } else {
+                                                image::imageops::crop(&mut img, 0, 0, w, h)
+                                            };
+                                            image::imageops::overlay(
+                                                &mut buffer,
+                                                &img,
+                                                rect_x as u32,
+                                                rect_y as u32,
+                                            );
+                                            draw_hollow_rect_mut(
+                                                &mut buffer,
+                                                imageproc::rect::Rect::at(rect_x, rect_y)
+                                                    .of_size(w, h),
+                                                red,
+                                            );
                                         } else {
-                                            image::imageops::crop(&mut img, 0, 0, w, h)
-                                        };
-                                        image::imageops::overlay(
-                                            &mut buffer,
-                                            &img,
-                                            rect_x as u32,
-                                            rect_y as u32,
-                                        );
-                                        draw_hollow_rect_mut(
-                                            &mut buffer,
-                                            Rect::at(rect_x, rect_y).of_size(w, h),
-                                            red,
-                                        );
+                                            let width = (entitiy.bounding_box.width() * factor)
+                                                .ceil()
+                                                as u32;
+                                            let height = (entitiy.bounding_box.height() * factor)
+                                                .ceil()
+                                                as u32;
+                                            if width > 0 && height > 0 {
+                                                draw_filled_rect_mut(
+                                                    &mut buffer,
+                                                    imageproc::rect::Rect::at(rect_x, rect_y)
+                                                        .of_size(width, height),
+                                                    red,
+                                                );
+                                            }
+                                        }
                                     }
                                     None => {
                                         let color = match &entitiy.name[..] {
@@ -245,7 +266,7 @@ pub async fn map_tiles(
                                         if let Some(color) = color {
                                             draw_hollow_rect_mut(
                                                 &mut buffer,
-                                                Rect::at(rect_x, rect_y)
+                                                imageproc::rect::Rect::at(rect_x, rect_y)
                                                     .of_size(factor as u32, factor as u32),
                                                 color,
                                             );
@@ -277,8 +298,10 @@ pub async fn map_tiles(
                                                     if width > 0 && height > 0 {
                                                         draw_filled_rect_mut(
                                                             &mut buffer,
-                                                            Rect::at(rect_x, rect_y)
-                                                                .of_size(width, height),
+                                                            imageproc::rect::Rect::at(
+                                                                rect_x, rect_y,
+                                                            )
+                                                            .of_size(width, height),
                                                             red,
                                                         );
                                                     }
@@ -291,7 +314,7 @@ pub async fn map_tiles(
                             }
                             draw_hollow_rect_mut(
                                 &mut buffer,
-                                Rect::at(chunk_px, chunk_py)
+                                imageproc::rect::Rect::at(chunk_px, chunk_py)
                                     .of_size(chunk_width as u32, chunk_width as u32),
                                 black,
                             );
@@ -313,7 +336,7 @@ pub async fn map_tiles(
                         None => {
                             draw_filled_rect_mut(
                                 &mut buffer,
-                                Rect::at(
+                                imageproc::rect::Rect::at(
                                     (chunk_ix as u32 * chunk_width.round() as u32) as i32,
                                     (chunk_iy as u32 * chunk_width.round() as u32) as i32,
                                 )
@@ -322,7 +345,7 @@ pub async fn map_tiles(
                             );
                             draw_hollow_rect_mut(
                                 &mut buffer,
-                                Rect::at(
+                                imageproc::rect::Rect::at(
                                     (chunk_ix as u32 * chunk_width.round() as u32) as i32,
                                     (chunk_iy as u32 * chunk_width.round() as u32) as i32,
                                 )
