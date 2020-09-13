@@ -233,7 +233,7 @@ impl FactorioRcon {
         }
         // TODO: move inventory players close too
 
-        let build_area = blueprint_build_area(&world.entity_prototypes, &blueprint);
+        let build_area = blueprint_build_area(world.entity_prototypes.clone(), &blueprint);
         let width_2 = build_area.width() / 2.0;
         let height_2 = build_area.height() / 2.0;
         let build_area = Rect {
@@ -1103,7 +1103,7 @@ impl FactorioRcon {
             .await?;
 
         build_entity_path(
-            &world.entity_prototypes,
+            world.entity_prototypes.clone(),
             entity_name,
             entity_type,
             underground_entity_name,
@@ -1162,8 +1162,11 @@ impl FactorioRcon {
             if tiles.is_empty() {
                 continue;
             }
-            let mapped =
-                map_blocked_tiles(&world.entity_prototypes, &vec![], &tiles.iter().collect());
+            let mapped = map_blocked_tiles(
+                world.entity_prototypes.clone(),
+                &vec![],
+                &tiles.iter().collect(),
+            );
             return Ok(tiles
                 .iter()
                 .filter(|tile| {

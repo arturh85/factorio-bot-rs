@@ -372,11 +372,8 @@ pub async fn entity_prototypes(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<HashMap<String, FactorioEntityPrototype>>, ActixAnyhowError> {
     let mut data: HashMap<String, FactorioEntityPrototype> = HashMap::new();
-    if let Some(entity_prototypes) = &world.entity_prototypes.read() {
-        for (key, value) in entity_prototypes {
-            let value = value.get_one().unwrap();
-            data.insert(key.clone(), value.clone());
-        }
+    for prototype in world.entity_prototypes.iter() {
+        data.insert(prototype.name.clone(), prototype.clone());
     }
     Ok(Json(data))
 }
@@ -558,7 +555,7 @@ pub async fn parse_blueprint(
 ) -> Result<Json<FactorioBlueprintInfo>, ActixAnyhowError> {
     let decoded =
         BlueprintCodec::decode_string(&info.blueprint).expect("failed to parse blueprint");
-    let rect = blueprint_build_area(&world.entity_prototypes, &info.blueprint);
+    let rect = blueprint_build_area(world.entity_prototypes.clone(), &info.blueprint);
     let response = FactorioBlueprintInfo {
         rect: rect.clone(),
         label: info.label.clone(),
@@ -575,12 +572,8 @@ pub async fn all_recipes(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<HashMap<String, FactorioRecipe>>, ActixAnyhowError> {
     let mut map: HashMap<String, FactorioRecipe> = HashMap::new();
-    if let Some(recipes) = &world.recipes.read() {
-        for (name, recipe) in recipes {
-            if let Some(recipe) = recipe.get_one() {
-                map.insert(name.to_string(), recipe.clone());
-            }
-        }
+    for recipe in world.recipes.iter() {
+        map.insert(recipe.name.clone(), recipe.clone());
     }
     Ok(Json(map))
 }
@@ -717,7 +710,7 @@ pub async fn web_flow_graph(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<String, ActixAnyhowError> {
     world.entity_graph.connect()?;
-    world.flow_graph.build(&world.entity_prototypes)?;
+    world.flow_graph.update()?;
     let dot = world.flow_graph.graphviz_dot_condensed();
     Ok(dot)
 }

@@ -65,7 +65,7 @@ pub async fn start_webserver(
             .service(web::resource("/ws/").route(web::get().to(ws_index)))
             .service(
                 web::resource("/api/tiles/map/{tile_z}/{tile_x}/{tile_y}/tile.png")
-                    .route(web::get().to(crate::web::map_tiles::map_tiles)),
+                    .route(web::get().to(crate::web::graph_tiles::map_tiles)),
             )
             .service(
                 web::resource("/api/tiles/entity-graph/{tile_z}/{tile_x}/{tile_y}/tile.png")

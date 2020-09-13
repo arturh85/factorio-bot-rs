@@ -340,7 +340,7 @@ impl Planner {
 
         let mut mining_time = 5.;
         let mut inventory = *self.player(player_id).main_inventory.clone();
-        if let Some(prototype) = self.plan_world.world.entity_prototypes.get_one(name) {
+        if let Some(prototype) = self.plan_world.world.entity_prototypes.get(name) {
             if let Some(result) = prototype.mine_result.as_ref() {
                 for (mine_name, mine_count) in result {
                     if let Some(inventory_count) = inventory.get(mine_name) {

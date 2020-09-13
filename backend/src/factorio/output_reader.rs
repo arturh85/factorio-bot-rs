@@ -124,7 +124,7 @@ pub async fn read_output(
     );
     rcon.silent_print("").await.expect("failed to silent print");
     rcon.whoami("server").await.expect("failed to whoami");
-    rcon.send("/c game.surfaces[1].always_day=true")
+    rcon.send("/silent-command game.surfaces[1].always_day=true")
         .await
         .expect("always day");
 

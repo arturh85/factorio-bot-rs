@@ -1,6 +1,7 @@
 use crate::factorio::entity_graph::QuadTreeRect;
 use crate::factorio::util::{add_to_rect_turned, calculate_distance, rect_floor_ceil};
 use crate::num_traits::FromPrimitive;
+use dashmap::DashMap;
 use euclid::{TypedPoint2D, TypedSize2D};
 use evmap::ReadHandle;
 use factorio_blueprint::objects::Entity;
@@ -10,6 +11,7 @@ use pathfinding::utils::absdiff;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
+use std::sync::Arc;
 use typescript_definitions::TypeScriptify;
 
 pub type FactorioInventory = HashMap<String, u32>;
@@ -340,12 +342,13 @@ impl FromStr for Rect {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioTile {
     pub name: String,
     pub player_collidable: bool,
     pub position: Position,
+    pub color: [u8; 4],
 }
 
 #[derive(
@@ -354,7 +357,7 @@ pub struct FactorioTile {
 #[serde(rename_all = "camelCase")]
 pub struct FactorioChunk {
     pub entities: Vec<FactorioEntity>,
-    pub tiles: Vec<FactorioTile>,
+    // pub tiles: Vec<FactorioTile>,
 }
 
 #[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
@@ -482,6 +485,7 @@ pub struct FactorioEntityPrototype {
     pub mining_time: Box<Option<R64>>,
     pub mining_speed: Box<Option<R64>>,
     pub crafting_speed: Box<Option<R64>>,
+    pub max_underground_distance: Box<Option<u8>>,
     pub fluidbox_prototypes: Box<Option<Vec<FactorioFluidBoxPrototype>>>,
 }
 
@@ -514,9 +518,9 @@ impl aabb_quadtree::Spatial<Rect> for FactorioEntity {
 impl FactorioEntity {
     pub fn from_blueprint_entity(
         entity: Entity,
-        prototypes: &ReadHandle<String, FactorioEntityPrototype>,
+        prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
     ) -> anyhow::Result<Self> {
-        let prototype = prototypes.get_one(&entity.name).unwrap();
+        let prototype = prototypes.get(&entity.name).unwrap();
         let position: Position = entity.position.into();
         let direction = entity.direction.map(|d| d % 8).unwrap_or(0);
         Ok(FactorioEntity {
@@ -651,6 +655,7 @@ pub struct FactorioItemPrototype {
 #[strum(serialize_all = "kebab-case")]
 pub enum EntityName {
     // raw resources
+    Water,
     Wood,
     Stone,
     Coal,
@@ -694,12 +699,14 @@ pub enum EntityType {
     UndergroundBelt,
     Pipe,
     PipeToGround,
+    StorageTank,
     OffshorePump,
 }
 
 impl EntityType {
     pub fn is_fluid_input(&self) -> bool {
         *self == EntityType::Pipe
+            || *self == EntityType::StorageTank
             || *self == EntityType::PipeToGround
             || *self == EntityType::Boiler
     }

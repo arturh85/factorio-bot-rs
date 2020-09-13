@@ -1,6 +1,6 @@
 use crate::types::{Position, Rect};
 use image::{DynamicImage, ImageFormat, RgbaImage};
-use imageproc::drawing::draw_hollow_rect_mut;
+use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut};
 use std::sync::Arc;
 // use std::time::Instant;
 
@@ -11,6 +11,42 @@ use crate::draw::draw_arrow_mut;
 use crate::factorio::world::FactorioWorld;
 use actix_web::{web, HttpResponse};
 use petgraph::visit::EdgeRef;
+
+pub async fn map_tiles(
+    world: web::Data<Arc<FactorioWorld>>,
+    info: web::Path<(i32, i32, i32)>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let mut buffer = create_tile();
+    let bounding_box = tile_boundaries(info.0, info.1, info.2);
+    let base_x = bounding_box.left_top.x();
+    let base_y = bounding_box.left_top.y();
+    let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();
+
+    for (tile, rect, _id) in world.entity_graph.tile_tree().query(bounding_box.into()) {
+        let width = (rect.size.width as f64 * scaling_factor).round() as u32;
+        let height = (rect.size.height as f64 * scaling_factor).round() as u32;
+        if width > 0 && height > 0 {
+            let draw_rect = imageproc::rect::Rect::at(
+                ((rect.origin.x as f64 - base_x) * scaling_factor).round() as i32,
+                ((rect.origin.y as f64 - base_y) * scaling_factor).round() as i32,
+            )
+            .of_size(width, height);
+            draw_filled_rect_mut(&mut buffer, draw_rect, image::Rgba(tile.color));
+            if tile.player_collidable
+                && (&tile.name[..] != "water" && &tile.name[..] != "deepwater")
+            {
+                draw_hollow_rect_mut(
+                    &mut buffer,
+                    draw_rect,
+                    image::Rgba([255u8, 0u8, 0u8, 255u8]),
+                );
+            }
+        }
+    }
+    Ok(HttpResponse::Ok()
+        .content_type("image/png")
+        .body(build_image_body(buffer)))
+}
 
 pub async fn entity_graph_tiles(
     world: web::Data<Arc<FactorioWorld>>,
@@ -213,11 +249,7 @@ mod tests {
 }
 
 pub fn create_tile() -> RgbaImage {
-    let mut buffer: RgbaImage = image::ImageBuffer::new(TILE_WIDTH, TILE_HEIGHT);
-    for (_x, _y, pixel) in buffer.enumerate_pixels_mut() {
-        *pixel = image::Rgba([255, 255, 255, 255u8]);
-    }
-    buffer
+    image::ImageBuffer::new(TILE_WIDTH, TILE_HEIGHT)
 }
 
 pub fn build_image_body(buffer: RgbaImage) -> Vec<u8> {

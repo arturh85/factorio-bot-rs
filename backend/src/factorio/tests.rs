@@ -1,37 +1,25 @@
+use crate::factorio::entity_graph::EntityGraph;
 #[cfg(test)]
 use crate::types::{FactorioEntity, FactorioEntityPrototype};
-use evmap::{ReadHandle, WriteHandle};
-use factorio_blueprint::{BlueprintCodec, Container};
+use dashmap::DashMap;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-pub fn blueprint_entities(
-    str: &str,
-    prototypes: &ReadHandle<String, FactorioEntityPrototype>,
-) -> anyhow::Result<Vec<FactorioEntity>> {
-    let decoded = BlueprintCodec::decode_string(str).expect("failed to parse blueprint");
-    let mut entities: Vec<FactorioEntity> = vec![];
-    match decoded {
-        Container::Blueprint(blueprint) => {
-            for ent in blueprint.entities {
-                entities.push(FactorioEntity::from_blueprint_entity(ent, prototypes)?);
-            }
-        }
-        _ => panic!("blueprint books not supported"),
-    }
-    Ok(entities)
+pub fn entity_graph_from(entities: Vec<FactorioEntity>) -> anyhow::Result<EntityGraph> {
+    let prototypes = fixture_entity_prototypes();
+    let graph = EntityGraph::new(Arc::new(prototypes), Arc::new(DashMap::new()));
+    graph.add(entities, None)?;
+    graph.connect()?;
+    Ok(graph)
 }
 
-pub fn fixture_entity_prototypes() -> (
-    ReadHandle<String, FactorioEntityPrototype>,
-    WriteHandle<String, FactorioEntityPrototype>,
-) {
+pub fn fixture_entity_prototypes() -> DashMap<String, FactorioEntityPrototype> {
     let prototypes: HashMap<String, FactorioEntityPrototype> =
         serde_json::from_str(include_str!("../../tests/entity-prototype-fixtures.json"))
             .expect("failed to parse fixture");
-    let (reader, mut writer) = evmap::new::<String, FactorioEntityPrototype>();
-    for (name, p) in prototypes {
-        writer.insert(name, p);
+    let dashmap: DashMap<String, FactorioEntityPrototype> = DashMap::new();
+    for foo in prototypes {
+        dashmap.insert(foo.0, foo.1);
     }
-    writer.refresh();
-    (reader, writer)
+    dashmap
 }

@@ -1,18 +1,21 @@
 use crate::factorio::util::{add_to_rect, bounding_box, move_position, rect_fields, rect_floor};
 use crate::num_traits::FromPrimitive;
 use crate::types::{
-    Direction, EntityName, EntityType, FactorioEntity, Pos, Position, Rect, ResourcePatch,
+    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, FactorioRecipe,
+    FactorioTile, Pos, Position, Rect, ResourcePatch,
 };
 use aabb_quadtree::{ItemId, QuadTree};
 use dashmap::lock::{RwLock, RwLockReadGuard};
 use dashmap::DashMap;
 use euclid::{TypedPoint2D, TypedRect, TypedSize2D};
+use factorio_blueprint::{BlueprintCodec, Container};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{Bfs, EdgeRef};
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Default, Clone)]
@@ -77,20 +80,40 @@ pub type EntityGraphInner = StableGraph<EntityNode, f64>;
 
 pub type QuadTreeRect = TypedRect<f32, Rect>;
 pub type EntityQuadTree = QuadTree<FactorioEntity, Rect, [(ItemId, QuadTreeRect); 4]>;
+pub type TileQuadTree = QuadTree<FactorioTile, Rect, [(ItemId, QuadTreeRect); 4]>;
 
 pub struct EntityGraph {
     entity_graph: RwLock<EntityGraphInner>,
     entity_tree: RwLock<EntityQuadTree>,
+    tile_tree: RwLock<TileQuadTree>,
     entity_nodes: DashMap<ItemId, NodeIndex>,
+    entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
+    recipes: Arc<DashMap<String, FactorioRecipe>>,
     resources: DashMap<String, Vec<Pos>>,
 }
 
 impl EntityGraph {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new(
+        entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
+        recipes: Arc<DashMap<String, FactorioRecipe>>,
+    ) -> Self {
         EntityGraph {
+            entity_prototypes,
+            recipes,
             entity_graph: RwLock::new(EntityGraphInner::new()),
             entity_tree: RwLock::new(QuadTree::new(
+                QuadTreeRect::new(
+                    TypedPoint2D::new(-5120., -5120.),
+                    TypedSize2D::new(10240., 10240.),
+                ),
+                true,
+                32,
+                128,
+                32,
+                8,
+            )),
+            tile_tree: RwLock::new(QuadTree::new(
                 QuadTreeRect::new(
                     TypedPoint2D::new(-5120., -5120.),
                     TypedSize2D::new(10240., 10240.),
@@ -105,17 +128,20 @@ impl EntityGraph {
             resources: DashMap::new(),
         }
     }
-    pub fn from(vec: Vec<FactorioEntity>) -> anyhow::Result<Self> {
-        let graph = EntityGraph::new();
-        graph.add(vec, None)?;
-        graph.connect()?;
-        Ok(graph)
-    }
     pub fn inner_graph(&self) -> RwLockReadGuard<EntityGraphInner> {
         self.entity_graph.read()
     }
     pub fn inner_tree(&self) -> RwLockReadGuard<EntityQuadTree> {
         self.entity_tree.read()
+    }
+    pub fn tile_tree(&self) -> RwLockReadGuard<TileQuadTree> {
+        self.tile_tree.read()
+    }
+    pub fn entity_prototypes(&self) -> Arc<DashMap<String, FactorioEntityPrototype>> {
+        self.entity_prototypes.clone()
+    }
+    pub fn recipes(&self) -> Arc<DashMap<String, FactorioRecipe>> {
+        self.recipes.clone()
     }
 
     pub fn node_by_id(&self, id: &ItemId) -> Option<NodeIndex> {
@@ -178,6 +204,36 @@ impl EntityGraph {
         patches
     }
 
+    pub fn add_tiles(
+        &self,
+        tiles: Vec<FactorioTile>,
+        _clear_rect: Option<Rect>,
+    ) -> anyhow::Result<()> {
+        let mut tree = self.tile_tree.write();
+        for tile in tiles {
+            let f = add_to_rect(&Rect::from_wh(1., 1.), &tile.position);
+            tree.insert_with_box(tile, f.into());
+        }
+        Ok(())
+    }
+
+    pub fn add_blueprint_entities(&self, str: &str) -> anyhow::Result<()> {
+        let decoded = BlueprintCodec::decode_string(str).expect("failed to parse blueprint");
+        let mut entities: Vec<FactorioEntity> = vec![];
+        match decoded {
+            Container::Blueprint(blueprint) => {
+                for ent in blueprint.entities {
+                    entities.push(FactorioEntity::from_blueprint_entity(
+                        ent,
+                        self.entity_prototypes.clone(),
+                    )?);
+                }
+            }
+            _ => panic!("blueprint books not supported"),
+        }
+        self.add(entities, None)
+    }
+
     pub fn add(
         &self,
         entities: Vec<FactorioEntity>,
@@ -196,7 +252,20 @@ impl EntityGraph {
                 }
             }
         }
-        for entity in entities {
+        for mut entity in entities {
+            if entity.name == "pumpjack" {
+                // for some reason pumpjacks report their drop position at their position so we fix it
+                entity.drop_position = Some(entity.position.add(
+                    &match Direction::from_u8(entity.direction).unwrap() {
+                        Direction::North => Position::new(1., -2.),
+                        Direction::East => Position::new(2., -1.),
+                        Direction::South => Position::new(-1., 2.),
+                        Direction::West => Position::new(-2., 1.),
+                        _ => panic!("invalid pumpjack position"),
+                    },
+                ));
+            }
+
             if let Ok(entity_type) = EntityType::from_str(&entity.entity_type) {
                 match entity_type {
                     EntityType::Furnace
@@ -205,6 +274,7 @@ impl EntityGraph {
                     | EntityType::Lab
                     | EntityType::OffshorePump
                     | EntityType::MiningDrill
+                    | EntityType::StorageTank
                     | EntityType::Container
                     | EntityType::Splitter
                     | EntityType::TransportBelt
@@ -295,7 +365,89 @@ impl EntityGraph {
                 }
             }
             if let Some(next_node) = next_node {
-                self.condense_walk(&mut graph, next_node);
+                let mut bfs = Bfs::new(&graph, next_node);
+                while let Some(node_index) = bfs.next(&graph) {
+                    let node = graph.node_weight(node_index).unwrap();
+                    let incoming: Vec<String> = graph
+                        .edges_directed(node_index, petgraph::Direction::Incoming)
+                        .map(|edge| {
+                            graph
+                                .node_weight(edge.target())
+                                .unwrap()
+                                .entity_name
+                                .clone()
+                        })
+                        .collect();
+                    let outgoing: Vec<String> = graph
+                        .edges_directed(node_index, petgraph::Direction::Outgoing)
+                        .map(|edge| {
+                            graph
+                                .node_weight(edge.target())
+                                .unwrap()
+                                .entity_name
+                                .clone()
+                        })
+                        .collect();
+                    if incoming.len() == 1
+                        && outgoing.len() == 1
+                        && node.entity_name == incoming[0]
+                        && incoming[0] == outgoing[0]
+                    {
+                        let incoming: NodeIndex = graph
+                            .edges_directed(node_index, petgraph::Direction::Incoming)
+                            .map(|edge| edge.source())
+                            .find(|_| true)
+                            .unwrap();
+                        let outgoing = graph
+                            .edges_directed(node_index, petgraph::Direction::Outgoing)
+                            .map(|edge| edge.target())
+                            .find(|_| true)
+                            .unwrap();
+                        let weight = graph
+                            .edges_directed(node_index, petgraph::Direction::Incoming)
+                            .map(|edge| *edge.weight())
+                            .find(|_| true)
+                            .unwrap()
+                            + graph
+                                .edges_directed(node_index, petgraph::Direction::Outgoing)
+                                .map(|edge| *edge.weight())
+                                .find(|_| true)
+                                .unwrap();
+                        graph.add_edge(incoming, outgoing, weight);
+                        if let Some(edge) = graph.find_edge(incoming, node_index) {
+                            graph.remove_edge(edge);
+                        }
+                        if let Some(edge) = graph.find_edge(node_index, outgoing) {
+                            graph.remove_edge(edge);
+                        }
+                        graph.remove_node(node_index);
+                    } else if incoming.len() == 2
+                        && outgoing.len() == 2
+                        && node.entity_name == incoming[0]
+                        && incoming[0] == outgoing[0]
+                    {
+                        let incoming: Vec<NodeIndex> = graph
+                            .edges_directed(node_index, petgraph::Direction::Incoming)
+                            .map(|edge| edge.source())
+                            .collect();
+                        let weights: Vec<f64> = graph
+                            .edges_directed(node_index, petgraph::Direction::Incoming)
+                            .map(|edge| *edge.weight())
+                            .collect();
+                        let weight = weights[0] + weights[1];
+                        graph.add_edge(incoming[0], incoming[1], weight);
+                        graph.add_edge(incoming[1], incoming[0], weight);
+                        for connected_index in incoming {
+                            if let Some(edge) = graph.find_edge(connected_index, node_index) {
+                                graph.remove_edge(edge);
+                            }
+                            if let Some(edge) = graph.find_edge(node_index, connected_index) {
+                                graph.remove_edge(edge);
+                            }
+                        }
+                        graph.remove_node(node_index);
+                    }
+                }
             } else {
                 break;
             }
@@ -326,91 +478,7 @@ impl EntityGraph {
         // );
         graph
     }
-    pub fn condense_walk(&self, graph: &mut EntityGraphInner, node_index: NodeIndex) {
-        let mut bfs = Bfs::new(&*graph, node_index);
-        while let Some(node_index) = bfs.next(&*graph) {
-            let node = graph.node_weight(node_index).unwrap();
-            let incoming: Vec<String> = graph
-                .edges_directed(node_index, petgraph::Direction::Incoming)
-                .map(|edge| {
-                    graph
-                        .node_weight(edge.target())
-                        .unwrap()
-                        .entity_name
-                        .clone()
-                })
-                .collect();
-            let outgoing: Vec<String> = graph
-                .edges_directed(node_index, petgraph::Direction::Outgoing)
-                .map(|edge| {
-                    graph
-                        .node_weight(edge.target())
-                        .unwrap()
-                        .entity_name
-                        .clone()
-                })
-                .collect();
-            if incoming.len() == 1
-                && outgoing.len() == 1
-                && node.entity_name == incoming[0]
-                && incoming[0] == outgoing[0]
-            {
-                let incoming: NodeIndex = graph
-                    .edges_directed(node_index, petgraph::Direction::Incoming)
-                    .map(|edge| edge.source())
-                    .find(|_| true)
-                    .unwrap();
-                let outgoing = graph
-                    .edges_directed(node_index, petgraph::Direction::Outgoing)
-                    .map(|edge| edge.target())
-                    .find(|_| true)
-                    .unwrap();
-                let weight = graph
-                    .edges_directed(node_index, petgraph::Direction::Incoming)
-                    .map(|edge| *edge.weight())
-                    .find(|_| true)
-                    .unwrap()
-                    + graph
-                        .edges_directed(node_index, petgraph::Direction::Outgoing)
-                        .map(|edge| *edge.weight())
-                        .find(|_| true)
-                        .unwrap();
-                graph.add_edge(incoming, outgoing, weight);
-                if let Some(edge) = graph.find_edge(incoming, node_index) {
-                    graph.remove_edge(edge);
-                }
-                if let Some(edge) = graph.find_edge(node_index, outgoing) {
-                    graph.remove_edge(edge);
-                }
-                graph.remove_node(node_index);
-            } else if incoming.len() == 2
-                && outgoing.len() == 2
-                && node.entity_name == incoming[0]
-                && incoming[0] == outgoing[0]
-            {
-                let incoming: Vec<NodeIndex> = graph
-                    .edges_directed(node_index, petgraph::Direction::Incoming)
-                    .map(|edge| edge.source())
-                    .collect();
-                let weights: Vec<f64> = graph
-                    .edges_directed(node_index, petgraph::Direction::Incoming)
-                    .map(|edge| *edge.weight())
-                    .collect();
-                let weight = weights[0] + weights[1];
-                graph.add_edge(incoming[0], incoming[1], weight);
-                graph.add_edge(incoming[1], incoming[0], weight);
-                for connected_index in incoming {
-                    if let Some(edge) = graph.find_edge(connected_index, node_index) {
-                        graph.remove_edge(edge);
-                    }
-                    if let Some(edge) = graph.find_edge(node_index, connected_index) {
-                        graph.remove_edge(edge);
-                    }
-                }
-                graph.remove_node(node_index);
-            }
-        }
-    }
+
     pub fn remove(&self, entity: &FactorioEntity) -> anyhow::Result<()> {
         let mut nodes_to_remove: Vec<NodeIndex> = vec![];
         let mut edges_to_remove: Vec<EdgeIndex> = vec![];
@@ -453,8 +521,20 @@ impl EntityGraph {
             if let Some(node) = inner.node_weight(node_index) {
                 let node_entity = tree.get(node.entity_id.unwrap()).unwrap();
                 if let Some(drop_position) = node_entity.drop_position.as_ref() {
+                    // if node_entity.entity_type == "mining-drill" {
+                    //     info!(
+                    //         "drop position for {} -> {} @ {}",
+                    //         node_entity.name, node_entity.position, drop_position
+                    //     );
+                    // }
                     match self.node_at(drop_position) {
                         Some(drop_index) => {
+                            // if node_entity.name == "pumpjack" {
+                            //     info!(
+                            //         "found pipe?",
+                            //     );
+                            // }
+
                             if !inner.contains_edge(node_index, drop_index) {
                                 edges_to_add.push((node_index, drop_index, 1.));
                             }
@@ -467,16 +547,16 @@ impl EntityGraph {
                 }
                 if let Some(pickup_position) = node_entity.pickup_position.as_ref() {
                     match self.node_at(pickup_position) {
-                    Some(pickup_index) => {
-                        if !inner.contains_edge(pickup_index, node_index) {
-                            edges_to_add.push((pickup_index, node_index, 1.));
+                        Some(pickup_index) => {
+                            if !inner.contains_edge(pickup_index, node_index) {
+                                edges_to_add.push((pickup_index, node_index, 1.));
+                            }
                         }
+                        None => error!(
+                            "connect entity graph could not find entity at Pickup position {} for {} @ {}",
+                            pickup_position, node_entity.name, node_entity.position
+                        ),
                     }
-                    None => error!(
-                        "connect entity graph could not find entity at Pickup position {} for {} @ {}",
-                        pickup_position, node_entity.name, node_entity.position
-                    ),
-                }
                 }
                 match node.entity_type {
                     EntityType::Splitter => {
@@ -561,24 +641,66 @@ impl EntityGraph {
                             }
                         }
                     }
-                    EntityType::UndergroundBelt => {
-                        let mut found = false;
-                        for length in 1..5 {
-                            // todo: lookup in EntityPrototypes for real belt length
-                            if let Some(next_index) = self.node_at(&move_position(
-                                &node.position,
-                                node.direction.opposite(),
-                                length as f64,
-                            )) {
+                    EntityType::StorageTank => {
+                        for position in &match node.direction {
+                            Direction::North => [
+                                node.position.add(&Position::new(-1., -2.)),
+                                node.position.add(&Position::new(-2., -1.)),
+                                node.position.add(&Position::new(2., 1.)),
+                                node.position.add(&Position::new(1., 2.)),
+                            ],
+                            _ => [
+                                node.position.add(&Position::new(2., -1.)),
+                                node.position.add(&Position::new(1., -2.)),
+                                node.position.add(&Position::new(-2., 1.)),
+                                node.position.add(&Position::new(-1., 2.)),
+                            ],
+                        } {
+                            if let Some(next_index) = self.node_at(&position) {
                                 let next = inner.node_weight(next_index).unwrap();
-                                if next.entity_type == EntityType::UndergroundBelt {
-                                    if !inner.contains_edge(next_index, node_index) {
-                                        edges_to_add.push((next_index, node_index, length as f64));
+                                if next.entity_type.is_fluid_input() {
+                                    if !inner.contains_edge(node_index, next_index) {
+                                        edges_to_add.push((node_index, next_index, 1.));
                                     }
-                                    found = true;
-                                    break;
+                                    if !inner.contains_edge(next_index, node_index) {
+                                        edges_to_add.push((next_index, node_index, 1.));
+                                    }
                                 }
                             }
+                        }
+                    }
+                    EntityType::UndergroundBelt => {
+                        let mut found = false;
+                        if let Some(prototype) = self.entity_prototypes.get(&node.entity_name) {
+                            if let Some(max_distance) = prototype.max_underground_distance.as_ref()
+                            {
+                                for length in 1..=*max_distance {
+                                    if let Some(next_index) = self.node_at(&move_position(
+                                        &node.position,
+                                        node.direction.opposite(),
+                                        length as f64,
+                                    )) {
+                                        let next = inner.node_weight(next_index).unwrap();
+                                        if next.entity_type == EntityType::UndergroundBelt
+                                            && next.direction == node.direction
+                                        {
+                                            if !inner.contains_edge(next_index, node_index) {
+                                                edges_to_add.push((
+                                                    next_index,
+                                                    node_index,
+                                                    length as f64,
+                                                ));
+                                            }
+                                            found = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else {
+                                warn!("underground belt without max distance?!");
+                            }
+                        } else {
+                            warn!("underground belt prototype not found");
                         }
                         if found {
                             if let Some(next_index) =
@@ -595,25 +717,43 @@ impl EntityGraph {
                     }
                     EntityType::PipeToGround => {
                         let mut found = false;
-                        for length in 1..12 {
-                            // todo: lookup in EntityPrototypes for real pipe length
-                            if let Some(next_index) = self.node_at(&move_position(
-                                &node.position,
-                                node.direction,
-                                -length as f64,
-                            )) {
-                                let next = inner.node_weight(next_index).unwrap();
-                                if next.entity_type == EntityType::PipeToGround {
-                                    if !inner.contains_edge(next_index, node_index) {
-                                        edges_to_add.push((next_index, node_index, length as f64));
+                        if let Some(prototype) = self.entity_prototypes.get(&node.entity_name) {
+                            if let Some(max_distance) = prototype.max_underground_distance.as_ref()
+                            {
+                                for length in 1..=*max_distance {
+                                    if let Some(next_index) = self.node_at(&move_position(
+                                        &node.position,
+                                        node.direction,
+                                        -(length as f64),
+                                    )) {
+                                        let next = inner.node_weight(next_index).unwrap();
+                                        if next.entity_type == EntityType::PipeToGround
+                                            && next.direction == node.direction.opposite()
+                                        {
+                                            if !inner.contains_edge(next_index, node_index) {
+                                                edges_to_add.push((
+                                                    next_index,
+                                                    node_index,
+                                                    length as f64,
+                                                ));
+                                            }
+                                            if !inner.contains_edge(node_index, next_index) {
+                                                edges_to_add.push((
+                                                    node_index,
+                                                    next_index,
+                                                    length as f64,
+                                                ));
+                                            }
+                                            found = true;
+                                            break;
+                                        }
                                     }
-                                    if !inner.contains_edge(node_index, next_index) {
-                                        edges_to_add.push((node_index, next_index, length as f64));
-                                    }
-                                    found = true;
-                                    break;
                                 }
+                            } else {
+                                warn!("underground pipe without max distance?!");
                             }
+                        } else {
+                            warn!("underground pipe prototype not found");
                         }
                         if found {
                             if let Some(next_index) =
@@ -723,19 +863,20 @@ impl EntityGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::factorio::tests::{blueprint_entities, fixture_entity_prototypes};
+    use crate::factorio::tests::entity_graph_from;
 
     #[test]
     fn test_splitters() {
-        let entities: Vec<FactorioEntity> = vec![
+        let graph = entity_graph_from(vec![
             FactorioEntity::new_transport_belt(&Position::new(0.5, 0.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(1.5, 0.5), Direction::South),
             FactorioEntity::new_splitter(&Position::new(1., 1.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 2.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(1.5, 2.5), Direction::South),
-        ];
+        ])
+        .unwrap();
         assert_eq!(
-            EntityGraph::from(entities).unwrap().graphviz_dot(),
+            graph.graphviz_dot(),
             r#"digraph {
     0 [ label = "transport-belt at [0.5, 0.5]" ]
     1 [ label = "transport-belt at [1.5, 0.5]" ]
@@ -752,17 +893,16 @@ mod tests {
     }
     #[test]
     fn test_condense() {
-        let entities: Vec<FactorioEntity> = vec![
+        let graph = entity_graph_from(vec![
             FactorioEntity::new_transport_belt(&Position::new(0.5, 0.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 1.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 2.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 3.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 4.5), Direction::South),
-        ];
+        ])
+        .unwrap();
         assert_eq!(
-            EntityGraph::from(entities)
-                .unwrap()
-                .graphviz_dot_condensed(),
+            graph.graphviz_dot_condensed(),
             r#"digraph {
     0 [ label = "transport-belt at [0.5, 0.5]" ]
     4 [ label = "transport-belt at [0.5, 4.5]" ]
@@ -774,10 +914,11 @@ mod tests {
 
     #[test]
     fn test_splitters2() {
-        let (prototypes, _writer) = fixture_entity_prototypes();
-        let entities: Vec<FactorioEntity> = blueprint_entities("0eNqd0u+KwyAMAPB3yWd3TK/q5quM42i3MITWimbHleK7n64clK1lf74ZMb8kkhGa9oI+WEdgRrDH3kUwhxGiPbu6LXc0eAQDlrADBq7uShR9a4kwQGJg3Ql/wfDEHqZRqF30faBNgy3NkkX6YoCOLFmcGrgGw7e7dE0uY/iawcD3Maf1rlTN1EbxD8lgAKPzIZc42YDH6YEoPd7I4n6oBXP7b4rH4uczotytiGpBrJ6fXu7n0y9Y8h1L3P5ktSCrF2S9KquyCte1MbPlZPCDIU5fvuOVrvZaab5VUqX0B2ef55s=", &prototypes).expect("failed to read blueprint");
+        let graph = entity_graph_from(vec![]).unwrap();
+        graph.add_blueprint_entities("0eNqd0u+KwyAMAPB3yWd3TK/q5quM42i3MITWimbHleK7n64clK1lf74ZMb8kkhGa9oI+WEdgRrDH3kUwhxGiPbu6LXc0eAQDlrADBq7uShR9a4kwQGJg3Ql/wfDEHqZRqF30faBNgy3NkkX6YoCOLFmcGrgGw7e7dE0uY/iawcD3Maf1rlTN1EbxD8lgAKPzIZc42YDH6YEoPd7I4n6oBXP7b4rH4uczotytiGpBrJ6fXu7n0y9Y8h1L3P5ktSCrF2S9KquyCte1MbPlZPCDIU5fvuOVrvZaab5VUqX0B2ef55s=").expect("failed to read blueprint");
+        graph.connect().unwrap();
         assert_eq!(
-            EntityGraph::from(entities).unwrap().graphviz_dot(),
+            graph.graphviz_dot(),
             r#"digraph {
     0 [ label = "transport-belt at [-61.5, 71.5]" ]
     1 [ label = "splitter at [-60.5, 72]" ]

@@ -53,12 +53,13 @@ export default Vue.extend({
     <LMap ref="lmap" @ready="mapReady()"
           style="height: 80vh; width: 100vw;"
           @click="onClickMap"
-          :minZoom="3"
-          :maxZoom="10">
+          :minZoom="2"
+          :maxZoom="12">
       <LControlLayers position="topright"  ></LControlLayers>
-      <LTileLayer name="entities" :url="`${baseUrl}/api/tiles/entity-graph/{z}/{x}/{y}/tile.png`" layer-type="base"></LTileLayer>
       <LTileLayer name="map" :url="`${baseUrl}/api/tiles/map/{z}/{x}/{y}/tile.png`" layer-type="base"></LTileLayer>
-      <LTileLayer name="flow" :url="`${baseUrl}/api/tiles/flow-graph/{z}/{x}/{y}/tile.png`" layer-type="base"></LTileLayer>
+      <LTileLayer name="entities" :url="`${baseUrl}/api/tiles/entity-graph/{z}/{x}/{y}/tile.png`" layer-type="overlay"></LTileLayer>
+      <LTileLayer name="flow" :url="`${baseUrl}/api/tiles/flow-graph/{z}/{x}/{y}/tile.png`" layer-type="overlay"></LTileLayer>
+
       <LMarker v-for="player in $store.state.players" v-bind:key="player.playerId" :lat-lng="position2latlng(player.position)"/>
     </LMap>
   </v-row>

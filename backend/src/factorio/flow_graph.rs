@@ -2,12 +2,13 @@ use crate::factorio::entity_graph::{EntityGraph, EntityNode, QuadTreeRect};
 use crate::factorio::util::add_to_rect;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
-    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, Position, Rect,
+    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, FactorioRecipe,
+    Position, Rect,
 };
 use aabb_quadtree::{ItemId, QuadTree};
 use dashmap::lock::{RwLock, RwLockReadGuard};
+use dashmap::DashMap;
 use euclid::{TypedPoint2D, TypedSize2D};
-use evmap::ReadHandle;
 use num_traits::ToPrimitive;
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
@@ -98,6 +99,8 @@ pub type FlowQuadTree = QuadTree<NodeIndex, Rect, [(ItemId, QuadTreeRect); 4]>;
 
 pub struct FlowGraph {
     entity_graph: Arc<EntityGraph>,
+    entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
+    recipes: Arc<DashMap<String, FactorioRecipe>>,
     flow_tree: RwLock<FlowQuadTree>,
     inner: RwLock<FlowGraphInner>,
 }
@@ -105,6 +108,8 @@ pub struct FlowGraph {
 impl FlowGraph {
     pub fn new(entity_graph: Arc<EntityGraph>) -> Self {
         FlowGraph {
+            entity_prototypes: entity_graph.entity_prototypes(),
+            recipes: entity_graph.recipes(),
             entity_graph,
             flow_tree: RwLock::new(FlowQuadTree::new(
                 QuadTreeRect::new(
@@ -120,15 +125,15 @@ impl FlowGraph {
             inner: RwLock::new(FlowGraphInner::new()),
         }
     }
-    pub fn build(
-        &self,
-        entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
-    ) -> anyhow::Result<()> {
+
+    pub fn update(&self) -> anyhow::Result<()> {
         let _started = Instant::now();
         let inner = self.entity_graph.inner_graph();
         for entity_root_index in inner.externals(petgraph::Direction::Incoming) {
             let entity_root = inner.node_weight(entity_root_index).unwrap();
-            if entity_root.entity_type == EntityType::MiningDrill && entity_root.miner_ore.is_some()
+            if entity_root.entity_type == EntityType::OffshorePump
+                || (entity_root.entity_type == EntityType::MiningDrill
+                    && entity_root.miner_ore.is_some())
             {
                 let entity_graph = self.entity_graph.inner_graph();
                 depth_first_search(&*entity_graph, Some(entity_root_index), |event| {
@@ -138,8 +143,9 @@ impl FlowGraph {
                         match source_node.entity_type {
                             EntityType::MiningDrill => {
                                 let miner_ore = entity_root.miner_ore.as_ref().unwrap();
-                                let mining_speed = entity_prototypes
-                                    .get_one(&entity_root.entity_name)
+                                let mining_speed = self
+                                    .entity_prototypes
+                                    .get(&entity_root.entity_name)
                                     .unwrap_or_else(|| {
                                         panic!(
                                             "entity '{}' not found in prototypes",
@@ -155,8 +161,9 @@ impl FlowGraph {
                                     })
                                     .to_f64()
                                     .unwrap();
-                                let mining_time = entity_prototypes
-                                    .get_one(miner_ore)
+                                let mining_time = self
+                                    .entity_prototypes
+                                    .get(miner_ore)
                                     .unwrap_or_else(|| {
                                         panic!("entity '{}' not found in prototypes", &miner_ore)
                                     })
@@ -177,9 +184,42 @@ impl FlowGraph {
                                 );
                                 Control::Continue
                             }
+                            EntityType::OffshorePump => {
+                                self.update_flow_edge(
+                                    FlowEdge::Single(vec![(EntityName::Water.to_string(), 1.)]),
+                                    source_node,
+                                    target_node,
+                                );
+                                Control::Continue
+                            }
                             EntityType::AssemblingMachine => {
                                 // can have multiple incoming and multiple outgoing
-                                Control::Break(())
+                                let tree = self.entity_graph.inner_tree();
+                                let entity = tree.get(source_node.entity_id.unwrap()).unwrap();
+
+                                if let Some(recipe) = entity.recipe.as_ref() {
+                                    if let Some(recipe) = self.recipes.get(recipe) {
+                                        let mut output: FlowRates = vec![];
+                                        for product in recipe.products.iter() {
+                                            // FIXME: only if enough input?
+                                            output.push((
+                                                product.name.clone(),
+                                                product.amount as f64 / 3.2, // FIXME: correct amount based on assembler speed
+                                            ));
+                                        }
+                                        self.update_flow_edge(
+                                            FlowEdge::Single(output),
+                                            source_node,
+                                            target_node,
+                                        );
+                                        Control::Continue
+                                    } else {
+                                        warn!("recipe not found: {}", recipe);
+                                        Control::Prune
+                                    }
+                                } else {
+                                    Control::Prune
+                                }
                             }
                             EntityType::Splitter => {
                                 // can have multiple incoming and multiple outgoing
@@ -243,7 +283,12 @@ impl FlowGraph {
                                 );
                                 Control::Continue
                             }
-                            EntityType::Inserter => {
+                            EntityType::Container
+                            | EntityType::LogisticContainer
+                            | EntityType::PipeToGround
+                            | EntityType::StorageTank
+                            | EntityType::Pipe
+                            | EntityType::Inserter => {
                                 // can have one incoming and one outgoing
                                 let incoming =
                                     self.sum_incoming_edge_weights(&source_node.position);
@@ -289,10 +334,10 @@ impl FlowGraph {
                                         );
                                         Control::Continue
                                     }
-                                    _ => Control::Break(()),
+                                    _ => Control::Prune,
                                 }
                             }
-                            _ => Control::Break(()),
+                            _ => Control::<()>::Prune,
                         }
                     } else {
                         Control::Continue
@@ -591,13 +636,11 @@ impl FlowGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::factorio::entity_graph::EntityGraph;
-    use crate::factorio::tests::fixture_entity_prototypes;
+    use crate::factorio::tests::entity_graph_from;
 
     #[test]
     fn test_splitters() {
-        let (prototypes, _writer) = fixture_entity_prototypes();
-        let entities: Vec<FactorioEntity> = vec![
+        let entity_graph = entity_graph_from(vec![
             FactorioEntity::new_iron_ore(&Position::new(0.5, -1.5), Direction::South),
             FactorioEntity::new_electric_mining_drill(&Position::new(0.5, -1.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 0.5), Direction::South),
@@ -605,8 +648,8 @@ mod tests {
             FactorioEntity::new_splitter(&Position::new(1., 1.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 2.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(1.5, 2.5), Direction::South),
-        ];
-        let entity_graph = EntityGraph::from(entities).unwrap();
+        ])
+        .unwrap();
         assert_eq!(
             entity_graph.graphviz_dot(),
             r#"digraph {
@@ -625,7 +668,7 @@ mod tests {
 "#,
         );
         let flow_graph = FlowGraph::new(Arc::new(entity_graph));
-        flow_graph.build(&prototypes).unwrap();
+        flow_graph.update().unwrap();
         assert_eq!(
             flow_graph.graphviz_dot(),
             r#"digraph {
@@ -644,8 +687,7 @@ mod tests {
     }
     #[test]
     fn test_furnace() {
-        let (prototypes, _writer) = fixture_entity_prototypes();
-        let entities: Vec<FactorioEntity> = vec![
+        let entity_graph = entity_graph_from(vec![
             FactorioEntity::new_iron_ore(&Position::new(0.5, -1.5), Direction::South),
             FactorioEntity::new_electric_mining_drill(&Position::new(0.5, -1.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 0.5), Direction::South),
@@ -655,8 +697,8 @@ mod tests {
             FactorioEntity::new_transport_belt(&Position::new(0.5, 5.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 6.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 7.5), Direction::South),
-        ];
-        let entity_graph = EntityGraph::from(entities).unwrap();
+        ])
+        .unwrap();
         assert_eq!(
             entity_graph.graphviz_dot(),
             r#"digraph {
@@ -679,7 +721,7 @@ mod tests {
 "#,
         );
         let flow_graph = FlowGraph::new(Arc::new(entity_graph));
-        flow_graph.build(&prototypes).unwrap();
+        flow_graph.update().unwrap();
         assert_eq!(
             flow_graph.graphviz_dot_condensed(),
             r#"digraph {

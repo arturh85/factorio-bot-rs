@@ -3,7 +3,6 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use evmap::ReadHandle;
 use factorio_blueprint::BlueprintCodec;
 use factorio_blueprint::Container::{Blueprint, BlueprintBook};
 use num_traits::ToPrimitive;
@@ -13,6 +12,8 @@ use serde_json::Value;
 use crate::types::{
     Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Pos, Position, Rect,
 };
+use dashmap::DashMap;
+use std::sync::Arc;
 
 pub fn hashmap_to_lua(map: HashMap<String, String>) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -194,7 +195,7 @@ pub fn expand_rect(total_rect: &mut Rect, rect: &Rect) {
 }
 
 pub fn blueprint_build_area(
-    entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
+    entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
     blueprint: &str,
 ) -> Rect {
     let decoded = BlueprintCodec::decode_string(&blueprint).expect("failed to decode blueprint");
@@ -205,7 +206,7 @@ pub fn blueprint_build_area(
         }
         Blueprint(blueprint) => {
             for entity in blueprint.entities {
-                let prototype = entity_prototypes.get_one(&entity.name);
+                let prototype = entity_prototypes.get(&entity.name);
                 if let Some(prototype) = prototype {
                     let entity_position = Position::new(
                         entity.position.x.to_f64().unwrap(),
@@ -275,7 +276,7 @@ pub fn bounding_box(elements: &Vec<Position>) -> Option<Rect> {
 
 #[allow(clippy::ptr_arg)]
 pub fn map_blocked_tiles(
-    entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
+    entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
     block_entities: &Vec<&FactorioEntity>,
     block_tiles: &Vec<&FactorioTile>,
 ) -> HashMap<Pos, ()> {
@@ -290,7 +291,7 @@ pub fn map_blocked_tiles(
         if entity.entity_type == "character" || entity.entity_type == "resource" {
             continue;
         }
-        match entity_prototypes.get_one(&entity.name) {
+        match entity_prototypes.get(&entity.name) {
             Some(entity_prototype) => {
                 let collision_box = add_to_rect(&entity_prototype.collision_box, &entity.position);
                 let rect = rect_floor(&collision_box);
@@ -338,7 +339,7 @@ pub fn map_blocked_tiles(
 
 #[allow(clippy::too_many_arguments)]
 pub fn build_entity_path(
-    entity_prototypes: &ReadHandle<String, FactorioEntityPrototype>,
+    entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
     entity_name: &str,
     entity_type: &str,
     underground_entity_name: &str,

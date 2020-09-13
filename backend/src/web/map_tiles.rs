@@ -65,57 +65,57 @@ pub async fn map_tiles(
                             if !chunk.entities.is_empty() {
                                 // info!("chunk found at {:?}: {:?}", &chunk_position, _chunk);
                             }
-                            for (tile_idx, tile) in chunk.tiles.iter().enumerate() {
-                                let x_mod: f64 = (tile_idx % 32) as f64;
-                                let y_mod: f64 = (tile_idx / 32) as f64;
-                                let rect_x = (chunk_px + (x_mod * factor).round() as i32) as i32;
-                                let rect_y = (chunk_py + (y_mod * factor).round() as i32) as i32;
-                                let name = match tile.name.find('-') {
-                                    Some(pos) => {
-                                        if &tile.name[0..pos] == "red" {
-                                            match tile.name[pos + 1..].find('-') {
-                                                Some(pos2) => &tile.name[pos + 1..pos + pos2 + 1],
-                                                None => &tile.name[pos + 1..],
-                                            }
-                                        } else {
-                                            &tile.name[0..pos]
-                                        }
-                                    }
-                                    None => &tile.name,
-                                };
-                                draw_filled_rect_mut(
-                                    &mut buffer,
-                                    imageproc::rect::Rect::at(rect_x, rect_y)
-                                        .of_size(factor as u32, factor as u32),
-                                    match &name[..] {
-                                        "sand" => image::Rgba([255u8, 249u8, 15u8, 255u8]),
-                                        "desert" => image::Rgba([255u8, 229u8, 15u8, 255u8]),
-                                        "dry" => image::Rgba([255u8, 255u8, 128u8, 255u8]),
-                                        "dirt" => image::Rgba([172u8, 255u8, 0u8, 255u8]),
-                                        "grass" => image::Rgba([0u8, 255u8, 64u8, 255u8]),
-                                        "water" => image::Rgba([0u8, 162u8, 232u8, 255u8]),
-                                        "deepwater" => image::Rgba([18u8, 16u8, 254u8, 255u8]),
-                                        _ => {
-                                            warn!(
-                                                "<red>unhandled tile type</>: <yellow>{}</> to <bright-blue>'{}'</>",
-                                                &tile.name,
-                                                name
-                                            );
-                                            image::Rgba([255u8, 0u8, 255u8, 255u8])
-                                        }
-                                    },
-                                );
-                                if tile.player_collidable
-                                    && (&name[..] != "water" && &name[..] != "deepwater")
-                                {
-                                    draw_hollow_rect_mut(
-                                        &mut buffer,
-                                        imageproc::rect::Rect::at(rect_x, rect_y)
-                                            .of_size(factor as u32, factor as u32),
-                                        image::Rgba([255u8, 0u8, 0u8, 255u8]),
-                                    );
-                                }
-                            }
+                            // for (tile_idx, tile) in chunk.tiles.iter().enumerate() {
+                            //     let x_mod: f64 = (tile_idx % 32) as f64;
+                            //     let y_mod: f64 = (tile_idx / 32) as f64;
+                            //     let rect_x = (chunk_px + (x_mod * factor).round() as i32) as i32;
+                            //     let rect_y = (chunk_py + (y_mod * factor).round() as i32) as i32;
+                            //     let name = match tile.name.find('-') {
+                            //         Some(pos) => {
+                            //             if &tile.name[0..pos] == "red" {
+                            //                 match tile.name[pos + 1..].find('-') {
+                            //                     Some(pos2) => &tile.name[pos + 1..pos + pos2 + 1],
+                            //                     None => &tile.name[pos + 1..],
+                            //                 }
+                            //             } else {
+                            //                 &tile.name[0..pos]
+                            //             }
+                            //         }
+                            //         None => &tile.name,
+                            //     };
+                            //     draw_filled_rect_mut(
+                            //         &mut buffer,
+                            //         imageproc::rect::Rect::at(rect_x, rect_y)
+                            //             .of_size(factor as u32, factor as u32),
+                            //         match &name[..] {
+                            //             "sand" => image::Rgba([255u8, 249u8, 15u8, 255u8]),
+                            //             "desert" => image::Rgba([255u8, 229u8, 15u8, 255u8]),
+                            //             "dry" => image::Rgba([255u8, 255u8, 128u8, 255u8]),
+                            //             "dirt" => image::Rgba([172u8, 255u8, 0u8, 255u8]),
+                            //             "grass" => image::Rgba([0u8, 255u8, 64u8, 255u8]),
+                            //             "water" => image::Rgba([0u8, 162u8, 232u8, 255u8]),
+                            //             "deepwater" => image::Rgba([18u8, 16u8, 254u8, 255u8]),
+                            //             _ => {
+                            //                 warn!(
+                            //                     "<red>unhandled tile type</>: <yellow>{}</> to <bright-blue>'{}'</>",
+                            //                     &tile.name,
+                            //                     name
+                            //                 );
+                            //                 image::Rgba([255u8, 0u8, 255u8, 255u8])
+                            //             }
+                            //         },
+                            //     );
+                            //     if tile.player_collidable
+                            //         && (&name[..] != "water" && &name[..] != "deepwater")
+                            //     {
+                            //         draw_hollow_rect_mut(
+                            //             &mut buffer,
+                            //             imageproc::rect::Rect::at(rect_x, rect_y)
+                            //                 .of_size(factor as u32, factor as u32),
+                            //             image::Rgba([255u8, 0u8, 0u8, 255u8]),
+                            //         );
+                            //     }
+                            // }
                             for entitiy in &chunk.entities {
                                 let (x_mod, y_mod) =
                                     chunk_offset(&chunk_position, &entitiy.bounding_box.left_top);

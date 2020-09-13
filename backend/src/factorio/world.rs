@@ -8,6 +8,7 @@ use crate::types::{
     PlayerChangedPositionEvent, Pos, Position,
 };
 use async_std::sync::Mutex;
+use dashmap::DashMap;
 use evmap::{ReadHandle, WriteHandle};
 use image::RgbaImage;
 use std::collections::{BTreeMap, HashMap};
@@ -21,8 +22,8 @@ pub struct FactorioWorld {
     pub blocked: ReadHandle<Pos, bool>,
 
     pub graphics: ReadHandle<String, FactorioGraphic>,
-    pub recipes: ReadHandle<String, FactorioRecipe>,
-    pub entity_prototypes: ReadHandle<String, FactorioEntityPrototype>,
+    pub recipes: Arc<DashMap<String, FactorioRecipe>>,
+    pub entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
     pub item_prototypes: ReadHandle<String, FactorioItemPrototype>,
     pub image_cache: ReadHandle<String, Box<RgbaImage>>,
     pub image_cache_writer: std::sync::Mutex<WriteHandle<String, Box<RgbaImage>>>,
@@ -44,8 +45,6 @@ pub struct FactorioWorldWriter {
     forces_writer: WriteHandle<String, FactorioForce>,
     chunks_writer: WriteHandle<ChunkPosition, FactorioChunk>,
     graphics_writer: WriteHandle<String, FactorioGraphic>,
-    recipes_writer: WriteHandle<String, FactorioRecipe>,
-    entity_prototypes_writer: WriteHandle<String, FactorioEntityPrototype>,
     item_prototypes_writer: WriteHandle<String, FactorioItemPrototype>,
     players_writer: WriteHandle<u32, FactorioPlayer>,
     blocked_writer: WriteHandle<Pos, bool>,
@@ -57,10 +56,10 @@ impl FactorioWorldWriter {
         entity_prototypes: Vec<FactorioEntityPrototype>,
     ) -> anyhow::Result<()> {
         for entity_prototype in entity_prototypes {
-            self.entity_prototypes_writer
+            self.world
+                .entity_prototypes
                 .insert(entity_prototype.name.clone(), entity_prototype);
         }
-        self.entity_prototypes_writer.refresh();
         Ok(())
     }
 
@@ -184,7 +183,6 @@ impl FactorioWorldWriter {
                     chunk_position,
                     FactorioChunk {
                         entities: vec![entity],
-                        ..Default::default()
                     },
                 );
             }
@@ -252,9 +250,8 @@ impl FactorioWorldWriter {
 
     pub fn update_recipes(&mut self, recipes: Vec<FactorioRecipe>) -> anyhow::Result<()> {
         for recipe in recipes {
-            self.recipes_writer.insert(recipe.name.clone(), recipe);
+            self.world.recipes.insert(recipe.name.clone(), recipe);
         }
-        self.recipes_writer.refresh();
         Ok(())
     }
 
@@ -269,7 +266,7 @@ impl FactorioWorldWriter {
 
     pub fn update_chunk_tiles(
         &mut self,
-        chunk_position: ChunkPosition,
+        _chunk_position: ChunkPosition,
         tiles: Vec<FactorioTile>,
     ) -> anyhow::Result<()> {
         for tile in &tiles {
@@ -278,25 +275,7 @@ impl FactorioWorldWriter {
             }
         }
         self.blocked_writer.refresh();
-        if self.chunks_writer.contains_key(&chunk_position) {
-            let existing_chunk = self.chunks_writer.get_one(&chunk_position).unwrap(); // unwrap OK because of contains_key
-            let chunk = FactorioChunk {
-                entities: existing_chunk.entities.clone(),
-                tiles,
-            };
-            drop(existing_chunk);
-            self.chunks_writer.empty(chunk_position.clone());
-            self.chunks_writer.insert(chunk_position, chunk);
-        } else {
-            self.chunks_writer.insert(
-                chunk_position,
-                FactorioChunk {
-                    tiles,
-                    ..Default::default()
-                },
-            );
-        }
-        self.chunks_writer.refresh();
+        self.world.entity_graph.add_tiles(tiles, None)?; // FIXME: add clear rect
         Ok(())
     }
 
@@ -322,7 +301,6 @@ impl FactorioWorldWriter {
             let existing_chunk = self.chunks_writer.get_one(&chunk_position).unwrap(); // unwrap OK because of contains_key
             let chunk = FactorioChunk {
                 entities: entities.clone(),
-                tiles: existing_chunk.tiles.clone(),
             };
             drop(existing_chunk);
             self.chunks_writer.empty(chunk_position.clone());
@@ -332,7 +310,6 @@ impl FactorioWorldWriter {
                 chunk_position,
                 FactorioChunk {
                     entities: entities.clone(),
-                    ..Default::default()
                 },
             );
         }
@@ -351,16 +328,10 @@ impl FactorioWorldWriter {
             }
             self.players_writer.refresh();
         }
-        if let Some(entity_prototypes) = &world.entity_prototypes.read() {
-            for (name, entity_prototype) in entity_prototypes {
-                if let Some(entity_prototype) = entity_prototype.get_one() {
-                    self.entity_prototypes_writer
-                        .insert(name.clone(), entity_prototype.clone());
-                }
-            }
-            self.entity_prototypes_writer.refresh();
-        } else {
-            warn!("no entity_prototypes to import");
+        for entity_prototype in world.entity_prototypes.iter() {
+            self.world
+                .entity_prototypes
+                .insert(entity_prototype.name.clone(), entity_prototype.clone());
         }
         if let Some(item_prototypes) = &world.item_prototypes.read() {
             for (name, item_prototype) in item_prototypes {
@@ -373,15 +344,10 @@ impl FactorioWorldWriter {
         } else {
             warn!("no item_prototypes to import");
         }
-        if let Some(recipes) = &world.recipes.read() {
-            for (name, recipe) in recipes {
-                if let Some(recipe) = recipe.get_one() {
-                    self.recipes_writer.insert(name.clone(), recipe.clone());
-                }
-            }
-            self.recipes_writer.refresh();
-        } else {
-            warn!("no recipes to import");
+        for recipe in world.recipes.iter() {
+            self.world
+                .recipes
+                .insert(recipe.name.clone(), recipe.clone());
         }
         if let Some(forces) = &world.forces.read() {
             for (name, force) in forces {
@@ -396,9 +362,8 @@ impl FactorioWorldWriter {
         if let Some(chunks) = &world.chunks.read() {
             for (chunk_position, chunk) in chunks {
                 if let Some(chunk) = chunk.get_one() {
-                    let FactorioChunk { entities, tiles } = chunk;
+                    let FactorioChunk { entities } = chunk;
                     self.update_chunk_entities(chunk_position.clone(), entities.clone())?;
-                    self.update_chunk_tiles(chunk_position.clone(), tiles.clone())?;
                 }
             }
             self.chunks_writer.refresh();
@@ -426,21 +391,19 @@ impl FactorioWorldWriter {
         let (blocked_reader, blocked_writer) = evmap::new::<Pos, bool>();
         let (chunks_reader, chunks_writer) = evmap::new::<ChunkPosition, FactorioChunk>();
         let (graphics_reader, graphics_writer) = evmap::new::<String, FactorioGraphic>();
-        let (recipes_reader, recipes_writer) = evmap::new::<String, FactorioRecipe>();
         let (image_cache, image_cache_writer) = evmap::new::<String, Box<RgbaImage>>();
-        let (entity_prototypes_reader, entity_prototypes_writer) =
-            evmap::new::<String, FactorioEntityPrototype>();
         let (item_prototypes_reader, item_prototypes_writer) =
             evmap::new::<String, FactorioItemPrototype>();
-        let entity_graph = Arc::new(EntityGraph::new());
+        let recipes: Arc<DashMap<String, FactorioRecipe>> = Arc::new(DashMap::new());
+        let entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>> =
+            Arc::new(DashMap::new());
+        let entity_graph = Arc::new(EntityGraph::new(entity_prototypes.clone(), recipes.clone()));
         let flow_graph = Arc::new(FlowGraph::new(entity_graph.clone()));
         FactorioWorldWriter {
             forces_writer,
             players_writer,
             chunks_writer,
             graphics_writer,
-            recipes_writer,
-            entity_prototypes_writer,
             item_prototypes_writer,
             blocked_writer,
             world: Arc::new(FactorioWorld {
@@ -450,9 +413,9 @@ impl FactorioWorldWriter {
                 players: players_reader,
                 chunks: chunks_reader,
                 graphics: graphics_reader,
-                recipes: recipes_reader,
                 forces: forces_reader,
-                entity_prototypes: entity_prototypes_reader,
+                entity_prototypes,
+                recipes,
                 item_prototypes: item_prototypes_reader,
                 actions: Mutex::new(HashMap::default()),
                 path_requests: Mutex::new(HashMap::default()),

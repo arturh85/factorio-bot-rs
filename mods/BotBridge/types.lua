@@ -202,6 +202,7 @@ function serialize_entity_prototype(entity)
     end
     local record = table_properties(entity, {"name", "type"}, {type = "entityType"})
     record.miningTime = mining_time
+    record.maxUndergroundDistance = entity.max_underground_distance
     record.miningSpeed = entity.mining_speed
     record.craftingSpeed = entity.crafting_speed
     record.mineResult = mine_result

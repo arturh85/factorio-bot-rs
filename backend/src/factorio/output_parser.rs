@@ -41,8 +41,39 @@ impl OutputParser {
                     .enumerate()
                     .map(|(index, tile)| {
                         let parts: Vec<&str> = tile.split(':').collect();
+                        let name: String = parts[0].trim().into();
+                        let color_name = match name.find('-') {
+                            Some(pos) => {
+                                if &name[0..pos] == "red" {
+                                    match name[pos + 1..].find('-') {
+                                        Some(pos2) => &name[pos + 1..pos + pos2 + 1],
+                                        None => &name[pos + 1..],
+                                    }
+                                } else {
+                                    &name[0..pos]
+                                }
+                            }
+                            None => &name,
+                        };
                         FactorioTile {
-                            name: parts[0].trim().into(),
+                            color: match &color_name[..] {
+                                "out" => [0u8, 0u8, 0u8, 255u8],
+                                "sand" => [255u8, 249u8, 15u8, 255u8],
+                                "desert" => [255u8, 229u8, 15u8, 255u8],
+                                "dry" => [255u8, 255u8, 128u8, 255u8],
+                                "dirt" => [172u8, 255u8, 0u8, 255u8],
+                                "grass" => [0u8, 255u8, 64u8, 255u8],
+                                "water" => [0u8, 162u8, 232u8, 255u8],
+                                "deepwater" => [18u8, 16u8, 254u8, 255u8],
+                                _ => {
+                                    warn!(
+                                        "<red>unhandled tile type</>: <yellow>{}</> to <bright-blue>'{}'</>",
+                                        name, color_name
+                                    );
+                                    [255u8, 0u8, 255u8, 255u8]
+                                }
+                            },
+                            name,
                             player_collidable: parts[1].parse::<u8>().unwrap() == 1,
                             position: Position::new(
                                 (chunk_position.x * 32 + (index % 32) as i32) as f64,
