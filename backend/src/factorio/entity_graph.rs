@@ -18,7 +18,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct EntityNode {
     pub bounding_box: Rect,
     pub position: Position,
@@ -107,7 +107,7 @@ impl EntityGraph {
                     TypedPoint2D::new(-5120., -5120.),
                     TypedSize2D::new(10240., 10240.),
                 ),
-                true,
+                false,
                 32,
                 128,
                 32,
@@ -118,7 +118,7 @@ impl EntityGraph {
                     TypedPoint2D::new(-5120., -5120.),
                     TypedSize2D::new(10240., 10240.),
                 ),
-                true,
+                false,
                 32,
                 128,
                 32,
@@ -808,7 +808,12 @@ impl EntityGraph {
         } else if results.len() == 1 {
             Some(results[0])
         } else {
-            panic!("multiple entity quad tree results for {}", position);
+            warn!(
+                "multiple entity quad tree results for {}: {:?}",
+                position,
+                tree.query(add_to_rect(&Rect::from_wh(0.1, 0.1), position).into())
+            );
+            Some(results[0])
         }
     }
     pub fn entity_at_aabb(&self, rect: &Rect) -> Option<ItemId> {

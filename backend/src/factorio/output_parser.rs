@@ -57,21 +57,23 @@ impl OutputParser {
                         };
                         FactorioTile {
                             color: match &color_name[..] {
-                                "out" => [0u8, 0u8, 0u8, 255u8],
-                                "sand" => [255u8, 249u8, 15u8, 255u8],
-                                "desert" => [255u8, 229u8, 15u8, 255u8],
-                                "dry" => [255u8, 255u8, 128u8, 255u8],
-                                "dirt" => [172u8, 255u8, 0u8, 255u8],
-                                "grass" => [0u8, 255u8, 64u8, 255u8],
-                                "water" => [0u8, 162u8, 232u8, 255u8],
-                                "deepwater" => [18u8, 16u8, 254u8, 255u8],
-                                _ => {
-                                    warn!(
-                                        "<red>unhandled tile type</>: <yellow>{}</> to <bright-blue>'{}'</>",
-                                        name, color_name
-                                    );
-                                    [255u8, 0u8, 255u8, 255u8]
-                                }
+                                "water" => Some([0u8, 162u8, 232u8, 255u8]),
+                                "deepwater" => Some([18u8, 16u8, 254u8, 255u8]),
+                                _ => None, // "out" => [0u8, 0u8, 0u8, 255u8],
+                                           // "sand" => [255u8, 249u8, 15u8, 255u8],
+                                           // "desert" => [255u8, 229u8, 15u8, 255u8],
+                                           // "dry" => [255u8, 255u8, 128u8, 255u8],
+                                           // "dirt" => [172u8, 255u8, 0u8, 255u8],
+                                           // "grass" => [0u8, 255u8, 64u8, 255u8],
+                                           // "water" => [0u8, 162u8, 232u8, 255u8],
+                                           // "deepwater" => [18u8, 16u8, 254u8, 255u8],
+                                           // _ => {
+                                           //     warn!(
+                                           //         "<red>unhandled tile type</>: <yellow>{}</> to <bright-blue>'{}'</>",
+                                           //         name, color_name
+                                           //     );
+                                           //     [255u8, 0u8, 255u8, 255u8]
+                                           // }
                             },
                             name,
                             player_collidable: parts[1].parse::<u8>().unwrap() == 1,
@@ -260,6 +262,12 @@ impl OutputParser {
                 error!("<red>unexpected action</>: <bright-blue>{}</>", action);
             }
         };
+        Ok(())
+    }
+
+    pub fn on_init(&self) -> anyhow::Result<()> {
+        self.world.world.entity_graph.connect()?;
+        self.world.world.flow_graph.update()?;
         Ok(())
     }
 

@@ -27,5 +27,11 @@ pub fn draw_arrow_mut<C>(
         let v2 = vector_substract(&vv, &vw);
         draw_line_segment_mut(canvas, end, (v1.x() as f32, v1.y() as f32), color.clone());
         draw_line_segment_mut(canvas, end, (v2.x() as f32, v2.y() as f32), color.clone());
+        draw_line_segment_mut(
+            canvas,
+            (v1.x() as f32, v1.y() as f32),
+            (v2.x() as f32, v2.y() as f32),
+            color.clone(),
+        );
     }
 }

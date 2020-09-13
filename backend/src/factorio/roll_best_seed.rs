@@ -112,29 +112,34 @@ pub async fn roll_seed(
                     //     seed,
                     //     roll_started.elapsed()
                     // );
-                    let score = score_seed(rcon, world, seed, bot_count)
-                        .await
-                        .expect("failed to score seed");
-                    child.kill().expect("failed to kill child");
-
-                    let mut best_seed_with_score = best_seed_with_score.lock().await;
-                    if let Some((_, previous_score)) = *best_seed_with_score {
-                        if score > previous_score {
-                            (*best_seed_with_score) = Some((seed, score));
+                    match score_seed(rcon, world, seed, bot_count)
+                        .await {
+                        Ok(score) => {
+                            let mut best_seed_with_score = best_seed_with_score.lock().await;
+                            if let Some((_, previous_score)) = *best_seed_with_score {
+                                if score > previous_score {
+                                    (*best_seed_with_score) = Some((seed, score));
+                                }
+                            } else {
+                                (*best_seed_with_score) = Some((seed, score));
+                            }
+                            info!(
+                                "instance #{} rolled #{}: seed {}{}</> scored {}{}</> in <yellow>{:?}</>",
+                                p + 1,
+                                roll,
+                                if score > -10000. { "<bold><blue>" } else { "" },
+                                seed,
+                                if score > -10000. { "<bold><green>" } else { "" },
+                                score,
+                                roll_started.elapsed()
+                            );
+                        },
+                        Err(err) => {
+                            warn!("instance #{} rolled #{} with seed {} but failed: {}", p + 1,
+                                  roll,seed, err);
                         }
-                    } else {
-                        (*best_seed_with_score) = Some((seed, score));
                     }
-                    info!(
-                        "instance #{} rolled #{}: seed {}{}</> scored {}{}</> in <yellow>{:?}</>",
-                        p + 1,
-                        roll,
-                        if score > -10000. { "<bold><blue>" } else { "" },
-                        seed,
-                        if score > -10000. { "<bold><green>" } else { "" },
-                        score,
-                        roll_started.elapsed()
-                    );
+                    child.kill().expect("failed to kill child");
                 }
             })
             .unwrap();

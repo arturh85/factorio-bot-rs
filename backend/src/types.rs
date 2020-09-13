@@ -348,7 +348,7 @@ pub struct FactorioTile {
     pub name: String,
     pub player_collidable: bool,
     pub position: Position,
-    pub color: [u8; 4],
+    pub color: Option<[u8; 4]>,
 }
 
 #[derive(
@@ -682,7 +682,6 @@ pub enum EntityName {
 #[derive(EnumString, Display, Debug, PartialEq, Clone)]
 #[strum(serialize_all = "kebab-case")]
 pub enum EntityType {
-    None,
     AssemblingMachine,
     LogisticContainer,
     Boiler,
@@ -709,12 +708,6 @@ impl EntityType {
             || *self == EntityType::StorageTank
             || *self == EntityType::PipeToGround
             || *self == EntityType::Boiler
-    }
-}
-
-impl Default for EntityType {
-    fn default() -> Self {
-        EntityType::None
     }
 }
 

@@ -18,7 +18,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct FlowNode {
     pub position: Position,
     pub direction: Direction,
@@ -214,7 +214,7 @@ impl FlowGraph {
                                         );
                                         Control::Continue
                                     } else {
-                                        warn!("recipe not found: {}", recipe);
+                                        // warn!("recipe not found: {}", recipe);
                                         Control::Prune
                                     }
                                 } else {
@@ -394,7 +394,12 @@ impl FlowGraph {
         } else if results.len() == 1 {
             Some(*results[0])
         } else {
-            panic!("multiple entity quad tree results for {}", position);
+            warn!(
+                "multiple entity quad tree results for {}: {:?}",
+                position,
+                tree.query(add_to_rect(&Rect::from_wh(0.1, 0.1), position).into())
+            );
+            Some(*results[0])
         }
     }
 

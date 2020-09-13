@@ -49,6 +49,7 @@ pub async fn read_output(
                         // wait for factorio init before sending confirmation
                         if !initialized && (line.find("initial discovery done").is_some() || line.find("(100% done)").is_some()) {
                             initialized = true;
+                            parser.on_init().unwrap();
                             rx2.recv().await.unwrap();
                             rx2.recv().await.unwrap();
                         }
