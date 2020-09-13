@@ -1,8 +1,5 @@
 use crate::num_traits::FromPrimitive;
 use crate::types::{Direction, FactorioEntity, Position};
-use actix::{Addr, SystemService};
-use actix_taskqueue::queue::TaskQueue;
-use actix_taskqueue::worker::*;
 use noisy_float::types::{r64, R64};
 use petgraph::algo::astar;
 use petgraph::graph::{DefaultIx, EdgeIndex, NodeIndex};
@@ -240,46 +237,46 @@ pub struct MineTarget {
     pub count: u32,
 }
 
-#[async_trait]
-impl QueueConsumer<NodeIndex, TaskResult> for TaskWorker<NodeIndex, TaskResult> {
-    async fn execute(&self, _task: NodeIndex) -> Result<TaskResult, WorkerExecuteError> {
-        // if let Some(data) = task.data {
-        //     match data {
-        //         TaskData::Craft((item_name, item_count)) => {}
-        //         TaskData::Walk(position) => {}
-        //     }
-        // }
-
-        // let Task(n) = task;
-        // if n >= 5 {
-        //     Ok(TaskResult(n + 5))
-        // } else if n > 0 {
-        //     Err(WorkerExecuteError::Retryable)
-        // } else {
-        //     Err(WorkerExecuteError::NonRetryable)
-        // }
-        Err(WorkerExecuteError::NonRetryable)
-    }
-
-    fn get_queue(&self) -> Addr<TaskQueue<NodeIndex>> {
-        TaskQueue::<NodeIndex>::from_registry()
-    }
-
-    fn retry(&self, _task: NodeIndex) -> NodeIndex {
-        // let Task(n) = task;
-        // println!("RETRYING VALUE = {}", n);
-        // Task(n + 1)
-
-        _task
-    }
-
-    fn drop(&self, _task: NodeIndex) {
-        // let Task(n) = task;
-        // println!("DROPPED TASK WITH VALUE = {}", n);
-    }
-
-    fn result(&self, _result: TaskResult) {
-        // let TaskResult(n) = result;
-        // println!("RESULT = {}", n);
-    }
-}
+// #[async_trait]
+// impl QueueConsumer<NodeIndex, TaskResult> for TaskWorker<NodeIndex, TaskResult> {
+//     async fn execute(&self, _task: NodeIndex) -> Result<TaskResult, WorkerExecuteError> {
+//         // if let Some(data) = task.data {
+//         //     match data {
+//         //         TaskData::Craft((item_name, item_count)) => {}
+//         //         TaskData::Walk(position) => {}
+//         //     }
+//         // }
+//
+//         // let Task(n) = task;
+//         // if n >= 5 {
+//         //     Ok(TaskResult(n + 5))
+//         // } else if n > 0 {
+//         //     Err(WorkerExecuteError::Retryable)
+//         // } else {
+//         //     Err(WorkerExecuteError::NonRetryable)
+//         // }
+//         Err(WorkerExecuteError::NonRetryable)
+//     }
+//
+//     fn get_queue(&self) -> Addr<TaskQueue<NodeIndex>> {
+//         TaskQueue::<NodeIndex>::from_registry()
+//     }
+//
+//     fn retry(&self, _task: NodeIndex) -> NodeIndex {
+//         // let Task(n) = task;
+//         // println!("RETRYING VALUE = {}", n);
+//         // Task(n + 1)
+//
+//         _task
+//     }
+//
+//     fn drop(&self, _task: NodeIndex) {
+//         // let Task(n) = task;
+//         // println!("DROPPED TASK WITH VALUE = {}", n);
+//     }
+//
+//     fn result(&self, _result: TaskResult) {
+//         // let TaskResult(n) = result;
+//         // println!("RESULT = {}", n);
+//     }
+// }

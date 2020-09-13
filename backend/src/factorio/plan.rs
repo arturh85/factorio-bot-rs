@@ -2,7 +2,7 @@ use crate::factorio::instance_setup::setup_factorio_instance;
 use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::roll_best_seed::find_nearest_entities;
-use crate::factorio::task_graph::{MineTarget, PositionRadius, TaskGraph, TaskNode, TaskResult};
+use crate::factorio::task_graph::{MineTarget, PositionRadius, TaskGraph, TaskNode};
 use crate::factorio::util::calculate_distance;
 use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
 use crate::factorio::ws::FactorioWebSocketServer;
@@ -10,16 +10,12 @@ use crate::types::{
     Direction, EntityName, FactorioEntity, FactorioPlayer, PlayerChangedMainInventoryEvent,
     PlayerChangedPositionEvent, Position,
 };
-use actix::{Addr, SystemService};
-use actix_taskqueue::messages::Push;
-use actix_taskqueue::queue::TaskQueue;
-use actix_taskqueue::worker::TaskWorker;
+use actix::Addr;
 use async_std::sync::Arc;
 use evmap::ReadGuard;
 use noisy_float::types::R64;
 use num_traits::ToPrimitive;
 use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
@@ -547,8 +543,12 @@ pub async fn start_factorio_and_plan_graph(
         .expect("no path found");
     info!("shortest path: {}", weight);
 
-    // println!("{}", dotgraph_task(&graph));
-    // println!("{}", dotgraph_entity(&entity_graph));
+    world.entity_graph.connect().unwrap();
+    world.flow_graph.update().unwrap();
+
+    println!("{}", graph.graphviz_dot());
+    println!("{}", world.entity_graph.graphviz_dot());
+    println!("{}", world.flow_graph.graphviz_dot());
 
     child.kill().expect("failed to kill child");
     info!("took <yellow>{:?}</>", started.elapsed());
@@ -563,8 +563,8 @@ pub fn execute_plan(
     _websocket_server: Option<Addr<FactorioWebSocketServer>>,
     plan: TaskGraph,
 ) {
-    let queue = TaskQueue::<NodeIndex>::from_registry();
-    let _worker = TaskWorker::<NodeIndex, TaskResult>::new();
+    // let queue = TaskQueue::<NodeIndex>::from_registry();
+    // let _worker = TaskWorker::<NodeIndex, TaskResult>::new();
 
     let root = plan.node_indices().next().unwrap();
 
@@ -585,8 +585,8 @@ pub fn execute_plan(
         //     let target = edge.target();
         // }
         let outgoing = plan.edges_directed(pointer, petgraph::Direction::Outgoing);
-        for edge in outgoing {
-            queue.do_send(Push::new(edge.target()));
+        for _edge in outgoing {
+            // queue.do_send(Push::new(edge.target()));
         }
 
         // let foo = worker.next().await;

@@ -20,7 +20,8 @@ pub async fn map_tiles(
     for (_x, _y, pixel) in buffer.enumerate_pixels_mut() {
         *pixel = image::Rgba([255, 255, 255, 255u8]);
     }
-    let bounding_box = tile_boundaries(info.0, info.1, info.2);
+    let (tile_z, tile_x, tile_y) = info.into_inner();
+    let bounding_box = tile_boundaries(tile_z, tile_x, tile_y);
     let base_x = bounding_box.left_top.x();
     let base_y = bounding_box.left_top.y();
     let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();
@@ -58,7 +59,8 @@ pub async fn entity_graph_tiles(
     info: web::Path<(i32, i32, i32)>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let mut buffer = create_tile();
-    let bounding_box = tile_boundaries(info.0, info.1, info.2);
+    let (tile_z, tile_x, tile_y) = info.into_inner();
+    let bounding_box = tile_boundaries(tile_z, tile_x, tile_y);
     let base_x = bounding_box.left_top.x();
     let base_y = bounding_box.left_top.y();
     let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();
@@ -135,7 +137,8 @@ pub async fn flow_graph_tiles(
     info: web::Path<(i32, i32, i32)>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let mut buffer = create_tile();
-    let bounding_box = tile_boundaries(info.0, info.1, info.2);
+    let (tile_z, tile_x, tile_y) = info.into_inner();
+    let bounding_box = tile_boundaries(tile_z, tile_x, tile_y);
     let base_x = bounding_box.left_top.x();
     let base_y = bounding_box.left_top.y();
     let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();

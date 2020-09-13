@@ -19,9 +19,7 @@ pub async fn map_tiles(
     world: web::Data<Arc<FactorioWorld>>,
     info: web::Path<(i32, i32, i32)>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let tile_z = info.0;
-    let tile_x = info.1;
-    let tile_y = info.2;
+    let (tile_z, tile_x, tile_y) = info.into_inner();
 
     // let started = Instant::now();
     let ((top_left_x, top_left_y), (bottom_right_x, _bottom_right_y)) =
