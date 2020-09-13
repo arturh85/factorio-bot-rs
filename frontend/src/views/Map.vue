@@ -53,8 +53,8 @@ export default Vue.extend({
     <LMap ref="lmap" @ready="mapReady()"
           style="height: 80vh; width: 100vw;"
           @click="onClickMap"
-          :minZoom="2"
-          :maxZoom="12">
+          :minZoom="3"
+          :maxZoom="5">
       <LControlLayers position="topright"  ></LControlLayers>
       <LTileLayer name="map" :url="`${baseUrl}/api/tiles/map/{z}/{x}/{y}/tile.png`" layer-type="base"></LTileLayer>
       <LTileLayer name="entities" :url="`${baseUrl}/api/tiles/entity-graph/{z}/{x}/{y}/tile.png`" layer-type="overlay"></LTileLayer>

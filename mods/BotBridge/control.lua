@@ -209,6 +209,7 @@ function products_to_dict(products) -- input: array of products, output: dict["i
 end
 
 function on_init()
+	print("on_init!")
 	global.resources = {}
 	global.resources.last_index = 0
 	global.resources.list = {} -- might be sparse, so the #-operator won't work
@@ -800,6 +801,11 @@ function on_chunk_generated(event)
 		return
 	end
 
+	if chunk_x < -224 then return end
+	if chunk_y < -224 then return end
+	if chunk_xend > 224 then return end
+	if chunk_yend > 224 then return end
+
 	if chunk_x < global.map_area.x1 then global.map_area.x1 = chunk_x end
 	if chunk_y < global.map_area.y1 then global.map_area.y1 = chunk_y end
 	if chunk_xend > global.map_area.x2 then global.map_area.x2 = chunk_xend end
@@ -811,6 +817,25 @@ function on_chunk_generated(event)
 		tile_chunks[chunk_id] = true
 		writeout_tiles(event.tick, surface, area)
 	end
+
+	if global.n_clients > 1 and client_local_data.whoami ~= "server" then
+		chunk_screenshot(chunk_x, chunk_y)
+	end
+end
+
+function chunk_screenshot(chunk_x, chunk_y)
+	local tpath = "tiles/tile" .. tostring(chunk_x) .. "_" .. tostring(chunk_y) .. ".png"
+	game.take_screenshot({
+		player = game.players[1],
+		by_player = game.players[1],
+		surface = game.surfaces[1],
+		position = {chunk_x + 16,chunk_y + 16},
+		resolution = {512,512},
+		zoom = 0.5,
+		path = tpath,
+		show_entity_info = true
+	})
+	--game.set_wait_for_screenshots_to_finish()
 end
 
 function writeout_tiles(tick, surface, area) -- SLOW! beastie can do ~2.8 per tick
@@ -892,6 +917,14 @@ function on_player_joined_game(event)
 --	game.write_file("players_connected.txt", game.players[event.player_index].name..'\n', true, 0) -- only on server
 	global.n_clients = global.n_clients + 1
 	wait_for_player_inventory(event)
+
+	if client_local_data.whoami == "client1" then
+		for chunk_y=-224,224,32 do
+			for chunk_x=-224,224,32 do
+				chunk_screenshot(chunk_x, chunk_y)
+			end
+		end
+	end
 end
 
 function wait_for_player_inventory(event)

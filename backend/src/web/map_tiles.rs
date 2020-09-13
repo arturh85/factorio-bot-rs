@@ -1,10 +1,6 @@
-use crate::types::{ChunkPosition, FactorioGraphic, Position};
-use evmap::ReadGuard;
+use crate::types::ChunkPosition;
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImage, ImageFormat, RgbaImage};
-use imageproc::drawing::{draw_filled_circle_mut, draw_text_mut};
-use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut};
-use rusttype::{Font, Scale};
+use image::{DynamicImage, ImageFormat, RgbaImage};
 use std::sync::Arc;
 // use std::time::Instant;
 
@@ -35,323 +31,63 @@ pub async fn map_tiles(
         *pixel = image::Rgba([255, 255, 255, 255u8]);
     }
 
-    let trees = image::Rgba([34u8, 177u8, 76u8, 255u8]);
-    let red = image::Rgba([255u8, 0u8, 0u8, 255u8]);
-    let black = image::Rgba([0u8, 0u8, 0u8, 255u8]);
+    // let trees = image::Rgba([34u8, 177u8, 76u8, 255u8]);
+    // let red = image::Rgba([255u8, 0u8, 0u8, 255u8]);
+    // let black = image::Rgba([0u8, 0u8, 0u8, 255u8]);
     let chunks_in_row: f64 = bottom_right_x - top_left_x;
     // let font = Vec::from(include_bytes!("../data/DejaVuSans.ttf") as &[u8]);
-    let font = Vec::from(include_bytes!("../data/FiraMono-Medium.ttf") as &[u8]);
-    let font = Font::try_from_vec(font).unwrap();
+    // let font = Vec::from(include_bytes!("../data/FiraMono-Medium.ttf") as &[u8]);
+    // let font = Font::try_from_vec(font).unwrap();
     let chunk_width = TILE_WIDTH as f64 / chunks_in_row;
     // if a chunk is not even one pixel, no details shown
     if chunk_width > 1.0 {
-        let factor = chunk_width / 32.0;
-        // if a position is not even one pixel, no details shown
-        if factor > 1.0 {
-            for chunk_ix in 0..(chunks_in_row.ceil() as u32) {
-                for chunk_iy in 0..(chunks_in_row.ceil() as u32) {
-                    let chunk_position = ChunkPosition {
-                        x: top_left_x.floor() as i32 + chunk_ix as i32,
-                        y: top_left_y.floor() as i32 + chunk_iy as i32,
-                    };
-                    let chunk_ix: f64 = chunk_position.x as f64 - top_left_x;
-                    let chunk_iy: f64 = chunk_position.y as f64 - top_left_y;
-                    let chunk_px = (chunk_ix * chunk_width).floor() as i32;
-                    let chunk_py = (chunk_iy * chunk_width).floor() as i32;
-                    match world.chunks.get_one(&chunk_position) {
-                        Some(chunk) => {
-                            if !chunk.entities.is_empty() {
-                                // info!("chunk found at {:?}: {:?}", &chunk_position, _chunk);
-                            }
-                            // for (tile_idx, tile) in chunk.tiles.iter().enumerate() {
-                            //     let x_mod: f64 = (tile_idx % 32) as f64;
-                            //     let y_mod: f64 = (tile_idx / 32) as f64;
-                            //     let rect_x = (chunk_px + (x_mod * factor).round() as i32) as i32;
-                            //     let rect_y = (chunk_py + (y_mod * factor).round() as i32) as i32;
-                            //     let name = match tile.name.find('-') {
-                            //         Some(pos) => {
-                            //             if &tile.name[0..pos] == "red" {
-                            //                 match tile.name[pos + 1..].find('-') {
-                            //                     Some(pos2) => &tile.name[pos + 1..pos + pos2 + 1],
-                            //                     None => &tile.name[pos + 1..],
-                            //                 }
-                            //             } else {
-                            //                 &tile.name[0..pos]
-                            //             }
-                            //         }
-                            //         None => &tile.name,
-                            //     };
-                            //     draw_filled_rect_mut(
-                            //         &mut buffer,
-                            //         imageproc::rect::Rect::at(rect_x, rect_y)
-                            //             .of_size(factor as u32, factor as u32),
-                            //         match &name[..] {
-                            //             "sand" => image::Rgba([255u8, 249u8, 15u8, 255u8]),
-                            //             "desert" => image::Rgba([255u8, 229u8, 15u8, 255u8]),
-                            //             "dry" => image::Rgba([255u8, 255u8, 128u8, 255u8]),
-                            //             "dirt" => image::Rgba([172u8, 255u8, 0u8, 255u8]),
-                            //             "grass" => image::Rgba([0u8, 255u8, 64u8, 255u8]),
-                            //             "water" => image::Rgba([0u8, 162u8, 232u8, 255u8]),
-                            //             "deepwater" => image::Rgba([18u8, 16u8, 254u8, 255u8]),
-                            //             _ => {
-                            //                 warn!(
-                            //                     "<red>unhandled tile type</>: <yellow>{}</> to <bright-blue>'{}'</>",
-                            //                     &tile.name,
-                            //                     name
-                            //                 );
-                            //                 image::Rgba([255u8, 0u8, 255u8, 255u8])
-                            //             }
-                            //         },
-                            //     );
-                            //     if tile.player_collidable
-                            //         && (&name[..] != "water" && &name[..] != "deepwater")
-                            //     {
-                            //         draw_hollow_rect_mut(
-                            //             &mut buffer,
-                            //             imageproc::rect::Rect::at(rect_x, rect_y)
-                            //                 .of_size(factor as u32, factor as u32),
-                            //             image::Rgba([255u8, 0u8, 0u8, 255u8]),
-                            //         );
-                            //     }
-                            // }
-                            for entitiy in &chunk.entities {
-                                let (x_mod, y_mod) =
-                                    chunk_offset(&chunk_position, &entitiy.bounding_box.left_top);
-                                let mut rect_x =
-                                    (chunk_px + (x_mod * factor).round() as i32) as i32;
-                                let mut rect_y =
-                                    (chunk_py + (y_mod * factor).round() as i32) as i32;
+        for chunk_ix in 0..(chunks_in_row.ceil() as u32) {
+            for chunk_iy in 0..(chunks_in_row.ceil() as u32) {
+                let chunk_position = ChunkPosition {
+                    x: top_left_x.floor() as i32 + chunk_ix as i32,
+                    y: top_left_y.floor() as i32 + chunk_iy as i32,
+                };
+                let chunk_px = (chunk_ix as f64 * chunk_width).floor() as i32;
+                let chunk_py = (chunk_iy as f64 * chunk_width).floor() as i32;
 
-                                let graphic: Option<ReadGuard<FactorioGraphic>> =
-                                    world.graphics.get_one(&entitiy.name);
-                                match graphic {
-                                    Some(graphic) => {
-                                        // let mut image_cache = image_cache.lock().unwrap();
-                                        let mut img =
-                                            world.image_cache.get_one(&graphic.image_path);
-                                        if img.is_none() {
-                                            // __base__/graphics/decorative/rock-huge/hr-rock-huge-05.png
-                                            let prefix_pos = graphic.image_path.find('/').unwrap();
-                                            let graphics_path = format!(
-                                                "workspace/server/data/base/{}",
-                                                &graphic.image_path[prefix_pos + 1..]
-                                            );
-                                            let graphics_path = Path::new(&graphics_path);
-                                            if graphics_path.exists() {
-                                                // draw_hollow_rect_mut(
-                                                //     &mut buffer,
-                                                //     imageproc::rect::Rect::at(rect_x, rect_y)
-                                                //         .of_size(factor as u32, factor as u32),
-                                                //     red,
-                                                // );
-                                                let loaded_img =
-                                                    image::open(graphics_path).unwrap().into_rgba();
-                                                let mut writer =
-                                                    world.image_cache_writer.lock().unwrap();
-                                                writer.insert(
-                                                    graphic.image_path.clone(),
-                                                    Box::new(loaded_img),
-                                                );
-                                                writer.refresh();
-                                                drop(writer);
-                                                img =
-                                                    world.image_cache.get_one(&graphic.image_path);
-                                            }
-                                        }
-                                        if img.is_some() {
-                                            let mut img = *img.unwrap().clone();
-                                            let img = image::imageops::crop(
-                                                &mut img,
-                                                0,
-                                                0,
-                                                graphic.width,
-                                                graphic.height,
-                                            );
-                                            let mut img = image::imageops::resize(
-                                                &img,
-                                                (entitiy.bounding_box.width() * factor).ceil()
-                                                    as u32,
-                                                (entitiy.bounding_box.height() * factor).ceil()
-                                                    as u32,
-                                                FilterType::Nearest,
-                                            );
-                                            // info!(
-                                            //     "overlay {} at {}, {}",
-                                            //     object.name,
-                                            //     rect_x,
-                                            //     rect_y
-                                            // );
-                                            let mut w = img.width();
-                                            let mut h = img.height();
-                                            let mut img = if rect_x < 0 && w > (-rect_x as u32) {
-                                                w -= -rect_x as u32;
-                                                let sub_image = image::imageops::crop(
-                                                    &mut img,
-                                                    (-rect_x) as u32,
-                                                    0,
-                                                    w,
-                                                    h,
-                                                );
-                                                rect_x = 0;
-                                                sub_image
-                                            } else {
-                                                img.sub_image(0, 0, w, h)
-                                            };
-                                            let img = if rect_y < 0 && h > (-rect_y as u32) {
-                                                h -= -rect_y as u32;
-                                                let sub_image = image::imageops::crop(
-                                                    &mut img,
-                                                    0,
-                                                    -rect_y as u32,
-                                                    w,
-                                                    h,
-                                                );
-                                                rect_y = 0;
-                                                sub_image
-                                            } else {
-                                                image::imageops::crop(&mut img, 0, 0, w, h)
-                                            };
-                                            image::imageops::overlay(
-                                                &mut buffer,
-                                                &img,
-                                                rect_x as u32,
-                                                rect_y as u32,
-                                            );
-                                            draw_hollow_rect_mut(
-                                                &mut buffer,
-                                                imageproc::rect::Rect::at(rect_x, rect_y)
-                                                    .of_size(w, h),
-                                                red,
-                                            );
-                                        } else {
-                                            let width = (entitiy.bounding_box.width() * factor)
-                                                .ceil()
-                                                as u32;
-                                            let height = (entitiy.bounding_box.height() * factor)
-                                                .ceil()
-                                                as u32;
-                                            if width > 0 && height > 0 {
-                                                draw_filled_rect_mut(
-                                                    &mut buffer,
-                                                    imageproc::rect::Rect::at(rect_x, rect_y)
-                                                        .of_size(width, height),
-                                                    red,
-                                                );
-                                            }
-                                        }
-                                    }
-                                    None => {
-                                        let color = match &entitiy.name[..] {
-                                            "uranium-ore" => {
-                                                Some(image::Rgba([169u8, 241u8, 18u8, 255u8]))
-                                            }
-                                            "iron-ore" => {
-                                                Some(image::Rgba([79u8, 119u8, 174u8, 255u8]))
-                                            }
-                                            "copper-ore" => {
-                                                Some(image::Rgba([232u8, 105u8, 21u8, 255u8]))
-                                            }
-                                            "coal" => Some(image::Rgba([22u8, 22u8, 22u8, 255u8])),
-                                            "stone" => {
-                                                Some(image::Rgba([162u8, 122u8, 32u8, 255u8]))
-                                            }
-                                            "crude-oil" => {
-                                                Some(image::Rgba([0u8, 0u8, 0u8, 255u8]))
-                                            }
-                                            _ => None,
-                                        };
-
-                                        if let Some(color) = color {
-                                            draw_hollow_rect_mut(
-                                                &mut buffer,
-                                                imageproc::rect::Rect::at(rect_x, rect_y)
-                                                    .of_size(factor as u32, factor as u32),
-                                                color,
-                                            );
-                                        } else {
-                                            let name = match entitiy.name.find('-') {
-                                                Some(pos) => &entitiy.name[0..pos],
-                                                None => &entitiy.name,
-                                            };
-                                            match &name[..] {
-                                                "tree" => {
-                                                    if factor > 1.0 {
-                                                        draw_filled_circle_mut(
-                                                            &mut buffer,
-                                                            (rect_x, rect_y),
-                                                            factor as i32,
-                                                            trees,
-                                                        );
-                                                    }
-                                                }
-                                                _ => {
-                                                    let width = (entitiy.bounding_box.width()
-                                                        * factor)
-                                                        .ceil()
-                                                        as u32;
-                                                    let height = (entitiy.bounding_box.height()
-                                                        * factor)
-                                                        .ceil()
-                                                        as u32;
-                                                    if width > 0 && height > 0 {
-                                                        draw_filled_rect_mut(
-                                                            &mut buffer,
-                                                            imageproc::rect::Rect::at(
-                                                                rect_x, rect_y,
-                                                            )
-                                                            .of_size(width, height),
-                                                            red,
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                            // log::info!("no graphic for {:?}", &object);
-                                        }
-                                    }
-                                }
-                            }
-                            draw_hollow_rect_mut(
-                                &mut buffer,
-                                imageproc::rect::Rect::at(chunk_px, chunk_py)
-                                    .of_size(chunk_width as u32, chunk_width as u32),
-                                black,
-                            );
-                            let height = 4.0 * factor as f32;
-                            let scale = Scale {
-                                x: height * 2.0,
-                                y: height,
-                            };
-                            draw_text_mut(
-                                &mut buffer,
-                                black,
-                                chunk_px as u32,
-                                chunk_py as u32,
-                                scale,
-                                &font,
-                                &format!("{}/{}", chunk_position.x, chunk_position.y),
-                            );
+                let graphics_path_str = format!(
+                    "workspace/client1/script-output/tiles/tile{}_{}.png",
+                    chunk_position.x * 32,
+                    chunk_position.y * 32
+                );
+                let img = match world.image_cache.get_one(&graphics_path_str) {
+                    Some(img) => Some(img),
+                    None => {
+                        let mut writer = world.image_cache_writer.lock().unwrap();
+                        // if let Some(img) = writer.get_one(&graphics_path_str) {
+                        //     drop(writer);
+                        //     world.image_cache.get_one(&graphics_path_str)
+                        // } else {
+                        let graphics_path = Path::new(&graphics_path_str);
+                        if graphics_path.exists() {
+                            let img = image::open(graphics_path).unwrap().into_rgba();
+                            writer.insert(graphics_path_str.clone(), Box::new(img));
+                            writer.refresh();
+                            drop(writer);
+                            world.image_cache.get_one(&graphics_path_str)
+                        } else {
+                            None
                         }
-                        None => {
-                            draw_filled_rect_mut(
-                                &mut buffer,
-                                imageproc::rect::Rect::at(
-                                    (chunk_ix as u32 * chunk_width.round() as u32) as i32,
-                                    (chunk_iy as u32 * chunk_width.round() as u32) as i32,
-                                )
-                                .of_size(chunk_width as u32, chunk_width as u32),
-                                black,
-                            );
-                            draw_hollow_rect_mut(
-                                &mut buffer,
-                                imageproc::rect::Rect::at(
-                                    (chunk_ix as u32 * chunk_width.round() as u32) as i32,
-                                    (chunk_iy as u32 * chunk_width.round() as u32) as i32,
-                                )
-                                .of_size(chunk_width as u32, chunk_width as u32),
-                                black,
-                            );
-                        }
+                        // }
                     }
+                };
+
+                if let Some(img) = img {
+                    // let img =
+                    //     image::imageops::crop(&mut img, 0, 0, graphic.width, graphic.height);
+
+                    let img = image::imageops::resize(
+                        &**img,
+                        chunk_width as u32,
+                        chunk_width as u32,
+                        FilterType::Nearest,
+                    );
+                    image::imageops::overlay(&mut buffer, &img, chunk_px as u32, chunk_py as u32);
                 }
             }
         }
@@ -414,21 +150,3 @@ mod tests {
         assert_eq!(zoom_world_bottom_right, (0.0, 0.0));
     }
 }
-
-fn chunk_offset(chunk_position: &ChunkPosition, position: &Position) -> (f64, f64) {
-    let mut x_mod: f64 = position.x() - (chunk_position.x * 32) as f64;
-    let mut y_mod: f64 = position.y() - (chunk_position.y * 32) as f64;
-    if x_mod < 0.0 {
-        x_mod = 32.0 - x_mod.abs()
-    }
-    if y_mod < 0.0 {
-        y_mod = 32.0 - y_mod.abs()
-    }
-    (x_mod, y_mod)
-}
-
-// fn paint_single_color(&mut imgbuf: RgbImage, color: Rgb) {
-//     for (_x, _y, pixel) in imgbuf.enumerate_pixels_mut() {
-//         *pixel = color
-//     }
-// }
