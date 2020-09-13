@@ -67,7 +67,6 @@ pub async fn roll_seed(
         let workspace_path = workspace_path.clone();
         let map_exchange_string = map_exchange_string.clone();
         let roll = roll.clone();
-
         join_handles.push(std::thread::spawn(move || {
             actix::run(async move {
                 while match limit {

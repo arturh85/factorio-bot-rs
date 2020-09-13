@@ -148,17 +148,6 @@ impl EntityGraph {
         self.entity_nodes.get(id).map(|e| *e.value())
     }
 
-    fn walk(&self, m: &mut HashMap<Pos, Option<u32>>, pos: &Pos, id: u32) {
-        m.insert(pos.clone(), Some(id));
-        for direction in Direction::all() {
-            let other: Pos = (&move_position(&pos.into(), direction, 1.0)).into();
-            if let Some(p) = m.get(&other) {
-                if p.is_none() {
-                    self.walk(m, &other, id);
-                }
-            }
-        }
-    }
     pub fn resource_contains(&self, resource_name: &str, pos: Pos) -> bool {
         let elements = self.resources.get(resource_name);
         if let Some(elements) = elements {
@@ -184,7 +173,19 @@ impl EntityGraph {
         while let Some((next_pos, _)) = positions_by_id.iter().find(|(_, value)| value.is_none()) {
             next_id += 1;
             let next_pos = next_pos.clone();
-            self.walk(&mut positions_by_id, &next_pos, next_id);
+            let mut stack: Vec<Pos> = vec![next_pos.clone()];
+            positions_by_id.insert(next_pos.clone(), Some(next_id));
+            while let Some(pos) = stack.pop() {
+                for direction in Direction::all() {
+                    let other: Pos = (&move_position(&(&pos).into(), direction, 1.0)).into();
+                    if let Some(p) = positions_by_id.get(&other) {
+                        if p.is_none() {
+                            positions_by_id.insert(pos.clone(), Some(next_id));
+                            stack.push(other);
+                        }
+                    }
+                }
+            }
         }
         for id in 1..=next_id {
             let mut elements: Vec<Position> = vec![];

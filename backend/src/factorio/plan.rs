@@ -65,7 +65,6 @@ impl Planner {
         // build starter base
         parent = self.add_build_starter_base(parent, &player_ids).await?;
         self.plan_world.world.entity_graph.connect()?;
-
         let end = self
             .graph
             .add_node(TaskNode::new(None, "Process End", None));
@@ -514,6 +513,7 @@ pub async fn start_factorio_and_plan_graph(
     )
     .await
     .expect("failed to start");
+
     let mut planner = Planner::new(world, rcon);
     let (graph, world) = planner.plan(bot_count).await?;
     if let Some(players) = &world.players.read() {

@@ -259,7 +259,6 @@ pub async fn start_factorio_server(
     let stdout = child.stdout.take().unwrap();
     let reader = BufReader::new(stdout);
     let log_path = workspace_path.join(PathBuf::from_str(&"server-log.txt").unwrap());
-
     let (world, rcon) = read_output(
         reader,
         rcon_settings,
