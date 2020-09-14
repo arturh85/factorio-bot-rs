@@ -53,12 +53,14 @@ export default Vue.extend({
     <LMap ref="lmap" @ready="mapReady()"
           style="height: 80vh; width: 100vw;"
           @click="onClickMap"
-          :minZoom="3"
-          :maxZoom="5">
+          :minZoom="1"
+          :maxZoom="8">
       <LControlLayers position="topright"  ></LControlLayers>
-      <LTileLayer name="map" :url="`${baseUrl}/api/tiles/map/{z}/{x}/{y}/tile.png`" layer-type="base"></LTileLayer>
-      <LTileLayer name="entities" :url="`${baseUrl}/api/tiles/entity-graph/{z}/{x}/{y}/tile.png`" layer-type="overlay"></LTileLayer>
-      <LTileLayer name="flow" :url="`${baseUrl}/api/tiles/flow-graph/{z}/{x}/{y}/tile.png`" layer-type="overlay"></LTileLayer>
+      <LTileLayer name="map" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/map_tile.png`" :noWrap="true" layer-type="base"></LTileLayer>
+      <LTileLayer name="blocked" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/blocked_tile.png`" :noWrap="true" layer-type="overlay" :visible="false"></LTileLayer>
+      <LTileLayer name="resources" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/resource_tile.png`" :noWrap="true" layer-type="overlay" :visible="false"></LTileLayer>
+      <LTileLayer name="entities" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/entity_graph_tile.png`" :noWrap="true" layer-type="overlay" :visible="false"></LTileLayer>
+      <LTileLayer name="flow" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/flow_graph_tile.png`" :noWrap="true" layer-type="overlay" :visible="false"></LTileLayer>
 
       <LMarker v-for="player in $store.state.players" v-bind:key="player.playerId" :lat-lng="position2latlng(player.position)"/>
     </LMap>

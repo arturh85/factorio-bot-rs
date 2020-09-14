@@ -16,6 +16,7 @@ extern crate num_traits;
 extern crate strum;
 #[macro_use]
 extern crate strum_macros;
+extern crate rlua_serde;
 
 pub mod draw;
 pub mod error;

@@ -18,78 +18,16 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
-#[derive(Clone)]
-pub struct EntityNode {
-    pub bounding_box: Rect,
-    pub position: Position,
-    pub direction: Direction,
-    pub entity_name: String,
-    pub entity_type: EntityType,
-    pub entity_id: Option<ItemId>,
-    pub miner_ore: Option<String>,
-}
-
-impl std::fmt::Display for EntityNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!(
-            "{}{} at {}",
-            if let Some(miner_ore) = &self.miner_ore {
-                format!("{}: ", miner_ore)
-            } else {
-                String::new()
-            },
-            self.entity_type,
-            self.position
-        ))?;
-        Ok(())
-    }
-}
-impl std::fmt::Debug for EntityNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!(
-            "{}{} at {}",
-            if let Some(miner_ore) = &self.miner_ore {
-                format!("{} ", miner_ore)
-            } else {
-                String::new()
-            },
-            self.entity_type,
-            self.position
-        ))?;
-        Ok(())
-    }
-}
-
-impl EntityNode {
-    pub fn new(entity: FactorioEntity, miner_ore: Option<String>, entity_id: ItemId) -> EntityNode {
-        let direction = Direction::from_u8(entity.direction).unwrap();
-        let entity_type = EntityType::from_str(&entity.entity_type).unwrap();
-        EntityNode {
-            position: entity.position.clone(),
-            bounding_box: entity.bounding_box.clone(),
-            direction,
-            miner_ore,
-            entity_id: Some(entity_id),
-            entity_name: entity.name,
-            entity_type,
-        }
-    }
-}
-
-pub type EntityGraphInner = StableGraph<EntityNode, f64>;
-
-pub type QuadTreeRect = TypedRect<f32, Rect>;
-pub type EntityQuadTree = QuadTree<FactorioEntity, Rect, [(ItemId, QuadTreeRect); 4]>;
-pub type TileQuadTree = QuadTree<FactorioTile, Rect, [(ItemId, QuadTreeRect); 4]>;
-
 pub struct EntityGraph {
     entity_graph: RwLock<EntityGraphInner>,
+    blocked_tree: RwLock<BlockedQuadTree>,
     entity_tree: RwLock<EntityQuadTree>,
     tile_tree: RwLock<TileQuadTree>,
     entity_nodes: DashMap<ItemId, NodeIndex>,
     entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
     recipes: Arc<DashMap<String, FactorioRecipe>>,
     resources: DashMap<String, Vec<Pos>>,
+    resource_tree: RwLock<ResourceQuadTree>,
 }
 
 impl EntityGraph {
@@ -98,32 +36,18 @@ impl EntityGraph {
         entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
         recipes: Arc<DashMap<String, FactorioRecipe>>,
     ) -> Self {
+        let max_area = QuadTreeRect::new(
+            TypedPoint2D::new(-5120., -5120.),
+            TypedSize2D::new(10240., 10240.),
+        );
         EntityGraph {
             entity_prototypes,
             recipes,
             entity_graph: RwLock::new(EntityGraphInner::new()),
-            entity_tree: RwLock::new(QuadTree::new(
-                QuadTreeRect::new(
-                    TypedPoint2D::new(-5120., -5120.),
-                    TypedSize2D::new(10240., 10240.),
-                ),
-                false,
-                32,
-                128,
-                32,
-                8,
-            )),
-            tile_tree: RwLock::new(QuadTree::new(
-                QuadTreeRect::new(
-                    TypedPoint2D::new(-5120., -5120.),
-                    TypedSize2D::new(10240., 10240.),
-                ),
-                false,
-                32,
-                128,
-                32,
-                8,
-            )),
+            entity_tree: RwLock::new(QuadTree::new(max_area, false, 32, 128, 128, 8)),
+            blocked_tree: RwLock::new(QuadTree::new(max_area, true, 8, 64, 1024, 8)),
+            resource_tree: RwLock::new(QuadTree::new(max_area, true, 8, 64, 1024, 8)),
+            tile_tree: RwLock::new(QuadTree::new(max_area, false, 32, 128, 128, 8)),
             entity_nodes: DashMap::new(),
             resources: DashMap::new(),
         }
@@ -136,6 +60,12 @@ impl EntityGraph {
     }
     pub fn tile_tree(&self) -> RwLockReadGuard<TileQuadTree> {
         self.tile_tree.read()
+    }
+    pub fn blocked_tree(&self) -> RwLockReadGuard<BlockedQuadTree> {
+        self.blocked_tree.read()
+    }
+    pub fn resource_tree(&self) -> RwLockReadGuard<ResourceQuadTree> {
+        self.resource_tree.read()
     }
     pub fn entity_prototypes(&self) -> Arc<DashMap<String, FactorioEntityPrototype>> {
         self.entity_prototypes.clone()
@@ -211,9 +141,18 @@ impl EntityGraph {
         _clear_rect: Option<Rect>,
     ) -> anyhow::Result<()> {
         let mut tree = self.tile_tree.write();
+        let mut blocked = self.blocked_tree.write();
         for tile in tiles {
-            let f = add_to_rect(&Rect::from_wh(1., 1.), &tile.position);
-            tree.insert_with_box(tile, f.into());
+            let rect: QuadTreeRect = add_to_rect(
+                &Rect::from_wh(1., 1.),
+                &Position::new(tile.position.x() + 0.5, tile.position.y() + 0.5),
+            )
+            .into();
+            if tile.player_collidable {
+                let minable = false; // player_collidable tiles like water are not minable
+                blocked.insert_with_box(minable, rect);
+            }
+            tree.insert_with_box(tile, rect);
         }
         Ok(())
     }
@@ -240,6 +179,7 @@ impl EntityGraph {
         entities: Vec<FactorioEntity>,
         _clear_rect: Option<Rect>,
     ) -> anyhow::Result<()> {
+        let mut resource_tree = self.resource_tree.write();
         for entity in &entities {
             if entity.entity_type == EntityType::Resource.to_string() {
                 match self.resources.get_mut(&entity.name) {
@@ -251,10 +191,33 @@ impl EntityGraph {
                             .insert(entity.name.clone(), vec![(&entity.position).into()]);
                     }
                 }
+                let rect: QuadTreeRect = add_to_rect(
+                    &Rect::from_wh(1., 1.),
+                    &Position::new(
+                        entity.position.x().floor() + 0.5,
+                        entity.position.y().floor() + 0.5,
+                    ),
+                )
+                .into();
+                resource_tree.insert_with_box(entity.name.clone(), rect);
             }
         }
+        let mut blocked = self.blocked_tree.write();
+        // println!("inserted {}", blocked.len());
         for mut entity in entities {
-            if entity.name == "pumpjack" {
+            if entity.entity_type == EntityType::FlyingText.to_string()
+                || entity.entity_type == EntityType::Fish.to_string()
+                || entity.bounding_box.width() == 0.
+            {
+                continue;
+            }
+            if entity.entity_type != EntityType::Resource.to_string()
+                && entity.entity_type != EntityType::StraightRail.to_string()
+                && entity.entity_type != EntityType::CurvedRail.to_string()
+            {
+                blocked.insert_with_box(entity.is_minable(), entity.bounding_box.clone().into());
+            }
+            if entity.name == EntityName::Pumpjack.to_string() {
                 // for some reason pumpjacks report their drop position at their position so we fix it
                 entity.drop_position = Some(entity.position.add(
                     &match Direction::from_u8(entity.direction).unwrap() {
@@ -508,6 +471,52 @@ impl EntityGraph {
         for node in nodes_to_remove {
             inner.remove_node(node);
         }
+
+        let mut blocked_item_ids_to_remove: Vec<ItemId> = vec![];
+        let blocked_tree = self.blocked_tree.read();
+        for (_, _, item_id) in blocked_tree.query(entity.bounding_box.clone().into()) {
+            blocked_item_ids_to_remove.push(item_id);
+        }
+        drop(blocked_tree);
+        let mut blocked_tree = self.blocked_tree.write();
+        for item_id in blocked_item_ids_to_remove {
+            blocked_tree.remove(item_id);
+        }
+        drop(blocked_tree);
+        let mut entity_item_ids_to_remove: Vec<ItemId> = vec![];
+        let entity_tree = self.entity_tree.read();
+        for (other_entity, _, item_id) in entity_tree.query(entity.bounding_box.clone().into()) {
+            if entity.name == other_entity.name {
+                entity_item_ids_to_remove.push(item_id);
+            }
+        }
+        drop(entity_tree);
+        let mut entity_tree = self.entity_tree.write();
+        for item_id in entity_item_ids_to_remove {
+            entity_tree.remove(item_id);
+        }
+        drop(entity_tree);
+
+        if entity.entity_type == EntityType::Resource.to_string() {
+            let mut resource_item_ids_to_remove: Vec<ItemId> = vec![];
+            let resource_tree = self.resource_tree.read();
+            for (_, _, item_id) in resource_tree.query(entity.bounding_box.clone().into()) {
+                resource_item_ids_to_remove.push(item_id);
+            }
+            drop(resource_tree);
+            let mut resource_tree = self.resource_tree.write();
+            for item_id in resource_item_ids_to_remove {
+                resource_tree.remove(item_id);
+            }
+            drop(resource_tree);
+            if let Some(mut positions) = self.resources.get_mut(&entity.name) {
+                let entity_pos: Pos = (&entity.position).into();
+                if let Some(i) = positions.iter().position(|pos| *pos == entity_pos) {
+                    positions.remove(i);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -816,22 +825,6 @@ impl EntityGraph {
             Some(results[0])
         }
     }
-    pub fn entity_at_aabb(&self, rect: &Rect) -> Option<ItemId> {
-        let tree = self.entity_tree.read();
-        let rect: QuadTreeRect = rect.clone().into();
-        let results: Vec<ItemId> = tree
-            .query(rect)
-            .iter()
-            .map(|(_entity, _rect, item_id)| *item_id)
-            .collect();
-        if results.is_empty() {
-            None
-        } else if results.len() == 1 {
-            Some(results[0])
-        } else {
-            panic!("multiple entity quad tree results for {:?}", rect);
-        }
-    }
     fn is_entity_belt_connectable(&self, node: &EntityNode, next: &EntityNode) -> bool {
         (next.entity_type == EntityType::TransportBelt
             || next.entity_type == EntityType::UndergroundBelt
@@ -865,6 +858,72 @@ impl EntityGraph {
             .collect()
     }
 }
+
+#[derive(Clone)]
+pub struct EntityNode {
+    pub bounding_box: Rect,
+    pub position: Position,
+    pub direction: Direction,
+    pub entity_name: String,
+    pub entity_type: EntityType,
+    pub entity_id: Option<ItemId>,
+    pub miner_ore: Option<String>,
+}
+
+impl std::fmt::Display for EntityNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "{}{} at {}",
+            if let Some(miner_ore) = &self.miner_ore {
+                format!("{}: ", miner_ore)
+            } else {
+                String::new()
+            },
+            self.entity_type,
+            self.position
+        ))?;
+        Ok(())
+    }
+}
+impl std::fmt::Debug for EntityNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "{}{} at {}",
+            if let Some(miner_ore) = &self.miner_ore {
+                format!("{} ", miner_ore)
+            } else {
+                String::new()
+            },
+            self.entity_type,
+            self.position
+        ))?;
+        Ok(())
+    }
+}
+
+impl EntityNode {
+    pub fn new(entity: FactorioEntity, miner_ore: Option<String>, entity_id: ItemId) -> EntityNode {
+        let direction = Direction::from_u8(entity.direction).unwrap();
+        let entity_type = EntityType::from_str(&entity.entity_type).unwrap();
+        EntityNode {
+            position: entity.position.clone(),
+            bounding_box: entity.bounding_box.clone(),
+            direction,
+            miner_ore,
+            entity_id: Some(entity_id),
+            entity_name: entity.name,
+            entity_type,
+        }
+    }
+}
+
+pub type EntityGraphInner = StableGraph<EntityNode, f64>;
+
+pub type QuadTreeRect = TypedRect<f32, Rect>;
+pub type BlockedQuadTree = QuadTree<bool, Rect, [(ItemId, QuadTreeRect); 4]>;
+pub type EntityQuadTree = QuadTree<FactorioEntity, Rect, [(ItemId, QuadTreeRect); 4]>;
+pub type TileQuadTree = QuadTree<FactorioTile, Rect, [(ItemId, QuadTreeRect); 4]>;
+pub type ResourceQuadTree = QuadTree<String, Rect, [(ItemId, QuadTreeRect); 4]>;
 
 #[cfg(test)]
 mod tests {

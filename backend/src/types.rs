@@ -677,6 +677,7 @@ pub enum EntityName {
     TransportBelt,
     Splitter,
     ElectricMiningDrill,
+    Pumpjack,
 }
 
 #[derive(EnumString, Display, Debug, PartialEq, Clone)]
@@ -700,6 +701,10 @@ pub enum EntityType {
     PipeToGround,
     StorageTank,
     OffshorePump,
+    FlyingText,
+    StraightRail,
+    CurvedRail,
+    Fish,
 }
 
 impl EntityType {

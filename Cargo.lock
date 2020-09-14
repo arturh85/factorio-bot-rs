@@ -836,6 +836,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bstr"
+version = "0.2.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31accafdb70df7871592c058eca3985b71104e15ac32f64706022c58867da931"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "buf-min"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1392,6 +1401,8 @@ dependencies = [
  "petgraph",
  "rand 0.7.3",
  "rcon",
+ "rlua",
+ "rlua_serde",
  "rusttype",
  "serde 1.0.115",
  "serde_derive",
@@ -2907,6 +2918,29 @@ checksum = "11834e137f3b14e309437a8276714eed3a80d1ef894869e510f2c0c0b98b9f4a"
 dependencies = [
  "hostname",
  "quick-error",
+]
+
+[[package]]
+name = "rlua"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25fa5b2c667bae0b6218361e96d365e414fe4a0fa80f476b9631aa2dea2c6881"
+dependencies = [
+ "bitflags",
+ "bstr",
+ "cc",
+ "libc",
+ "num-traits 0.2.12",
+]
+
+[[package]]
+name = "rlua_serde"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46e57c8c7bfcc5f18a46ddaf0c6a0d6a5c083ce9e6d185d4093bf98e640d256b"
+dependencies = [
+ "rlua",
+ "serde 1.0.115",
 ]
 
 [[package]]

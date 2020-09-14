@@ -18,85 +18,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
-#[derive(Clone)]
-pub struct FlowNode {
-    pub position: Position,
-    pub direction: Direction,
-    pub entity_name: String,
-    pub entity_type: EntityType,
-    pub entity_id: Option<ItemId>,
-    pub miner_ore: Option<String>,
-}
-
-impl FlowNode {
-    pub fn new(entity: &FactorioEntity, miner_ore: Option<String>, entity_id: ItemId) -> FlowNode {
-        let direction = Direction::from_u8(entity.direction).unwrap();
-        let entity_type = EntityType::from_str(&entity.entity_type).unwrap();
-        FlowNode {
-            position: entity.position.clone(),
-            entity_id: Some(entity_id),
-            entity_name: entity.name.clone(),
-            direction,
-            miner_ore,
-            entity_type,
-        }
-    }
-}
-
-impl std::fmt::Debug for FlowNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!(
-            "{}{} at {}",
-            if let Some(miner_ore) = &self.miner_ore {
-                format!("{} ", miner_ore)
-            } else {
-                String::new()
-            },
-            self.entity_name,
-            self.position
-        ))?;
-        Ok(())
-    }
-}
-#[derive(Clone, Debug)]
-pub enum FlowEdge {
-    Single(Vec<(String, f64)>),
-    Double(Vec<(String, f64)>, Vec<(String, f64)>),
-}
-
-impl FlowEdge {
-    pub fn split(&self) -> FlowEdge {
-        match self {
-            FlowEdge::Single(vec) => FlowEdge::Single(
-                vec.iter()
-                    .map(|(name, production_rate)| (name.clone(), production_rate / 2.))
-                    .collect(),
-            ),
-            FlowEdge::Double(left, right) => FlowEdge::Double(
-                left.iter()
-                    .map(|(name, production_rate)| (name.clone(), production_rate / 2.))
-                    .collect(),
-                right
-                    .iter()
-                    .map(|(name, production_rate)| (name.clone(), production_rate / 2.))
-                    .collect(),
-            ),
-        }
-    }
-}
-
-impl Default for FlowEdge {
-    fn default() -> Self {
-        FlowEdge::Single(vec![])
-    }
-}
-
-pub type FlowGraphInner = StableGraph<FlowNode, FlowEdge>;
-pub type FlowRate = (String, f64);
-pub type FlowRates = Vec<FlowRate>;
-
-pub type FlowQuadTree = QuadTree<NodeIndex, Rect, [(ItemId, QuadTreeRect); 4]>;
-
 pub struct FlowGraph {
     entity_graph: Arc<EntityGraph>,
     entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
@@ -637,6 +558,86 @@ impl FlowGraph {
         )
     }
 }
+
+#[derive(Clone)]
+pub struct FlowNode {
+    pub position: Position,
+    pub direction: Direction,
+    pub entity_name: String,
+    pub entity_type: EntityType,
+    pub entity_id: Option<ItemId>,
+    pub miner_ore: Option<String>,
+}
+
+impl FlowNode {
+    pub fn new(entity: &FactorioEntity, miner_ore: Option<String>, entity_id: ItemId) -> FlowNode {
+        let direction = Direction::from_u8(entity.direction).unwrap();
+        let entity_type = EntityType::from_str(&entity.entity_type).unwrap();
+        FlowNode {
+            position: entity.position.clone(),
+            entity_id: Some(entity_id),
+            entity_name: entity.name.clone(),
+            direction,
+            miner_ore,
+            entity_type,
+        }
+    }
+}
+
+impl std::fmt::Debug for FlowNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "{}{} at {}",
+            if let Some(miner_ore) = &self.miner_ore {
+                format!("{} ", miner_ore)
+            } else {
+                String::new()
+            },
+            self.entity_name,
+            self.position
+        ))?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum FlowEdge {
+    Single(Vec<(String, f64)>),
+    Double(Vec<(String, f64)>, Vec<(String, f64)>),
+}
+
+impl FlowEdge {
+    pub fn split(&self) -> FlowEdge {
+        match self {
+            FlowEdge::Single(vec) => FlowEdge::Single(
+                vec.iter()
+                    .map(|(name, production_rate)| (name.clone(), production_rate / 2.))
+                    .collect(),
+            ),
+            FlowEdge::Double(left, right) => FlowEdge::Double(
+                left.iter()
+                    .map(|(name, production_rate)| (name.clone(), production_rate / 2.))
+                    .collect(),
+                right
+                    .iter()
+                    .map(|(name, production_rate)| (name.clone(), production_rate / 2.))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl Default for FlowEdge {
+    fn default() -> Self {
+        FlowEdge::Single(vec![])
+    }
+}
+
+pub type FlowGraphInner = StableGraph<FlowNode, FlowEdge>;
+pub type FlowRate = (String, f64);
+pub type FlowRates = Vec<FlowRate>;
+
+pub type FlowQuadTree = QuadTree<NodeIndex, Rect, [(ItemId, QuadTreeRect); 4]>;
 
 #[cfg(test)]
 mod tests {

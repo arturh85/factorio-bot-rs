@@ -64,15 +64,23 @@ pub async fn start_webserver(
             // websocket route
             .service(web::resource("/ws/").route(web::get().to(ws_index)))
             .service(
-                web::resource("/api/tiles/map/{tile_z}/{tile_x}/{tile_y}/tile.png")
+                web::resource("/api/tiles/{tile_z}/{tile_x}/{tile_y}/map_tile.png")
                     .route(web::get().to(crate::web::map_tiles::map_tiles)),
             )
             .service(
-                web::resource("/api/tiles/entity-graph/{tile_z}/{tile_x}/{tile_y}/tile.png")
+                web::resource("/api/tiles/{tile_z}/{tile_x}/{tile_y}/blocked_tile.png")
+                    .route(web::get().to(crate::web::graph_tiles::blocked_tiles)),
+            )
+            .service(
+                web::resource("/api/tiles/{tile_z}/{tile_x}/{tile_y}/resource_tile.png")
+                    .route(web::get().to(crate::web::graph_tiles::resource_tiles)),
+            )
+            .service(
+                web::resource("/api/tiles/{tile_z}/{tile_x}/{tile_y}/entity_graph_tile.png")
                     .route(web::get().to(crate::web::graph_tiles::entity_graph_tiles)),
             )
             .service(
-                web::resource("/api/tiles/flow-graph/{tile_z}/{tile_x}/{tile_y}/tile.png")
+                web::resource("/api/tiles/{tile_z}/{tile_x}/{tile_y}/flow_graph_tile.png")
                     .route(web::get().to(crate::web::graph_tiles::flow_graph_tiles)),
             )
             .service(

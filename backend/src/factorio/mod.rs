@@ -12,6 +12,7 @@ pub mod task_graph;
 pub mod tests;
 
 pub mod factorio_planner;
+pub mod lua;
 pub mod util;
 pub mod world;
 pub mod ws;
