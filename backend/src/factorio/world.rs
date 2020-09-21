@@ -1,9 +1,3 @@
-use std::sync::Arc;
-
-use async_std::sync::Mutex;
-use dashmap::DashMap;
-use image::RgbaImage;
-
 use crate::factorio::entity_graph::EntityGraph;
 use crate::factorio::flow_graph::FlowGraph;
 use crate::types::{
@@ -11,6 +5,11 @@ use crate::types::{
     FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
     PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent,
 };
+use async_std::sync::Mutex;
+use dashmap::DashMap;
+use image::RgbaImage;
+use rlua::{Context, Table};
+use std::sync::Arc;
 
 pub struct FactorioWorld {
     pub players: DashMap<u32, FactorioPlayer>,
@@ -246,3 +245,43 @@ impl FactorioWorld {
 
 unsafe impl Send for FactorioWorld {}
 unsafe impl Sync for FactorioWorld {}
+
+pub fn create_lua_world(ctx: Context, _world: Arc<FactorioWorld>) -> rlua::Result<Table> {
+    let map_table = ctx.create_table()?;
+
+    let world = _world.clone();
+    map_table.set(
+        "recipe",
+        ctx.create_function(move |ctx, name: String| match world.recipes.get(&name) {
+            Some(recipe) => Ok(rlua_serde::to_value(ctx, recipe.clone())),
+            None => Err(rlua::Error::RuntimeError("recipe not found".into())),
+        })?,
+    )?;
+
+    let world = _world.clone();
+    map_table.set(
+        "player",
+        ctx.create_function(
+            move |ctx, player_id: u32| match world.players.get(&player_id) {
+                Some(player) => Ok(rlua_serde::to_value(ctx, player.clone())),
+                None => Err(rlua::Error::RuntimeError("player not found".into())),
+            },
+        )?,
+    )?;
+
+    let world = _world;
+    map_table.set(
+        "inventory",
+        ctx.create_function(move |_ctx, (player_id, item_name): (u32, String)| {
+            match world.players.get(&player_id) {
+                Some(player) => match player.main_inventory.get(&item_name) {
+                    Some(cnt) => Ok(*cnt),
+                    None => Ok(0),
+                },
+                None => Err(rlua::Error::RuntimeError("player not found".into())),
+            }
+        })?,
+    )?;
+
+    Ok(map_table)
+}

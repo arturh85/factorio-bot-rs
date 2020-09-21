@@ -1,8 +1,10 @@
-use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Instant;
-
+use crate::factorio::entity_graph::{EntityGraph, EntityNode, QuadTreeRect};
+use crate::factorio::util::{add_to_rect, format_dotgraph};
+use crate::num_traits::FromPrimitive;
+use crate::types::{
+    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, FactorioRecipe,
+    Position, Rect,
+};
 use aabb_quadtree::{ItemId, QuadTree};
 use dashmap::lock::{RwLock, RwLockReadGuard};
 use dashmap::DashMap;
@@ -12,14 +14,10 @@ use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{depth_first_search, Bfs, Control, DfsEvent, EdgeRef};
-
-use crate::factorio::entity_graph::{EntityGraph, EntityNode, QuadTreeRect};
-use crate::factorio::util::{add_to_rect, format_dotgraph};
-use crate::num_traits::FromPrimitive;
-use crate::types::{
-    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, FactorioRecipe,
-    Position, Rect,
-};
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Instant;
 
 pub struct FlowGraph {
     entity_graph: Arc<EntityGraph>,

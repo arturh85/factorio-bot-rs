@@ -1,11 +1,11 @@
+use config::Config;
+use rcon::Connection;
+use rlua::{Context, Table};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::ops::Add;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-use config::Config;
-use rcon::Connection;
-use serde_json::Value;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::factorio::util::{
@@ -1178,4 +1178,23 @@ impl FactorioRcon {
         }
         Err(anyhow!("could not find water"))
     }
+}
+
+pub fn create_lua_rcon(ctx: Context, _rcon: Arc<FactorioRcon>) -> rlua::Result<Table> {
+    let map_table = ctx.create_table()?;
+    // use rlua_async::ContextExt;
+    // map_table.set(
+    //     "findByNameInRadius",
+    //     ctx.create_async_function(
+    //         |_ctx, (_player_id, name, search_center, radius): (u32, String, String, f64)| async move {
+    //             let filter = AreaFilter::PositionRadius((search_center.parse().unwrap(), Some(radius)));
+    //             let x = _rcon
+    //                 .find_entities_filtered(&filter, Some(name), None)
+    //                 .await.unwrap();
+    //             println!("find results {}", x.len());
+    //             Ok(())
+    //         },
+    //     )?,
+    // )?;
+    Ok(map_table)
 }

@@ -1,13 +1,3 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
-
-use actix_web::web;
-use actix_web::web::{Json, Path as PathInfo};
-use dashmap::lock::RwLock;
-use factorio_blueprint::BlueprintCodec;
-use serde_json::Value;
-
 use crate::error::ActixAnyhowError;
 use crate::factorio::planner::Planner;
 use crate::factorio::rcon::FactorioRcon;
@@ -19,6 +9,16 @@ use crate::types::{
     FactorioForce, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
     InventoryResponse, PlaceEntitiesResult, PlaceEntityResult, Position, RequestEntity,
 };
+use actix_web::web;
+use actix_web::web::{Json, Path as PathInfo};
+use dashmap::lock::RwLock;
+use factorio_blueprint::BlueprintCodec;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::fs::read_to_string;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -683,7 +683,17 @@ pub async fn run_plan(
     info: actix_web::web::Query<PlanQueryParams>,
     planner: web::Data<Arc<RwLock<Planner>>>,
 ) -> Result<String, ActixAnyhowError> {
-    planner.write().plan(&info.name, info.bot_count).await?;
+    let lua_path_str = format!("plans/{}.lua", info.name);
+    let lua_path = Path::new(&lua_path_str);
+    let lua_path = std::fs::canonicalize(lua_path).unwrap();
+    if !lua_path.exists() {
+        panic!("plan {} not found at {}", info.name, lua_path_str);
+    }
+    let lua_code = read_to_string(lua_path).unwrap();
+    planner
+        .write()
+        .plan(lua_code.as_str(), info.bot_count)
+        .await?;
     Ok("ok".into())
 }
 
@@ -697,9 +707,16 @@ pub async fn execute_taskgraph(
     planner: web::Data<Arc<RwLock<Planner>>>,
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<String, ActixAnyhowError> {
+    let lua_path_str = format!("plans/{}.lua", info.name);
+    let lua_path = Path::new(&lua_path_str);
+    let lua_path = std::fs::canonicalize(lua_path).unwrap();
+    if !lua_path.exists() {
+        panic!("plan {} not found at {}", info.name, lua_path_str);
+    }
+    let lua_code = read_to_string(lua_path).unwrap();
     planner
         .write()
-        .plan(&info.name, world.players.len() as u32)
+        .plan(lua_code.as_str(), world.players.len() as u32)
         .await?;
     // let dot = planner.graph().graphviz_dot();
     // execute_plan(

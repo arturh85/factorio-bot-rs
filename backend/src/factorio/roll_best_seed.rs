@@ -12,6 +12,8 @@ use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::util::calculate_distance;
 use crate::factorio::world::FactorioWorld;
 use crate::types::{AreaFilter, FactorioEntity, Position};
+use std::fs::read_to_string;
+use std::path::Path;
 
 #[derive(Debug, Copy, Clone)]
 pub enum RollSeedLimit {
@@ -71,6 +73,13 @@ pub async fn roll_seed(
         let map_exchange_string = map_exchange_string.clone();
         let plan_name = plan_name.clone();
         let roll = roll.clone();
+        let lua_path_str = format!("plans/{}.lua", plan_name);
+        let lua_path = Path::new(&lua_path_str);
+        let lua_path = std::fs::canonicalize(lua_path)?;
+        if !lua_path.exists() {
+            anyhow::bail!("plan {} not found at {}", plan_name, lua_path_str);
+        }
+        let lua_code = read_to_string(lua_path)?;
         join_handles.push(std::thread::spawn(move || {
             actix::run(async move {
                 while match limit {
@@ -116,7 +125,7 @@ pub async fn roll_seed(
                     //     seed,
                     //     roll_started.elapsed()
                     // );
-                    match score_seed(rcon, world, seed, &plan_name, bot_count)
+                    match score_seed(rcon, world, seed, lua_code.as_str(), bot_count)
                         .await {
                         Ok(score) => {
                             let mut best_seed_with_score = best_seed_with_score.lock().await;
@@ -172,11 +181,11 @@ pub async fn score_seed(
     rcon: Arc<FactorioRcon>,
     world: Arc<FactorioWorld>,
     _seed: u32,
-    plan_name: &str,
+    lua_code: &str,
     bot_count: u32,
 ) -> anyhow::Result<f64> {
     let mut planner = Planner::new(world, rcon.clone());
-    planner.plan(plan_name, bot_count).await?;
+    planner.plan(lua_code, bot_count).await?;
     let mut score = 0.0;
 
     let weight = planner.graph().shortest_path();

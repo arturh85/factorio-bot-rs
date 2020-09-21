@@ -1,210 +1,55 @@
+use crate::factorio::instance_setup::setup_factorio_instance;
+use crate::factorio::plan_builder::create_lua_plan_builder;
+use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
+use crate::factorio::rcon::{create_lua_rcon, FactorioRcon, RconSettings};
+use crate::factorio::task_graph::TaskGraph;
+use crate::factorio::world::{create_lua_world, FactorioWorld};
+use crate::factorio::ws::FactorioWebSocketServer;
+use crate::types::{EntityName, PlayerChangedMainInventoryEvent};
+use actix::Addr;
+use async_std::sync::Arc;
+use dashmap::lock::RwLock;
+use rlua::Lua;
 use std::collections::BTreeMap;
 use std::fs::read_to_string;
 use std::path::Path;
 use std::time::Instant;
 
-use actix::Addr;
-use async_std::sync::Arc;
-use dashmap::lock::RwLock;
-use rlua::Lua;
-
-use crate::factorio::instance_setup::setup_factorio_instance;
-use crate::factorio::lua::{LuaFactorioWorld, LuaPlanBuilder, PlanBuilder};
-use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
-use crate::factorio::rcon::{FactorioRcon, RconSettings};
-use crate::factorio::task_graph::TaskGraph;
-use crate::factorio::world::FactorioWorld;
-use crate::factorio::ws::FactorioWebSocketServer;
-use crate::types::{EntityName, PlayerChangedMainInventoryEvent};
-
 pub struct Planner {
-    // rcon: Arc<FactorioRcon>,
+    rcon: Arc<FactorioRcon>,
     real_world: Arc<FactorioWorld>,
     plan_world: Arc<FactorioWorld>,
     graph: Arc<RwLock<TaskGraph>>,
 }
 
-// impl UserData for Planner {
-//     fn add_methods<'lua, M: UserDataMethods<'lua, Self>>(methods: &mut M) {
-//         methods.add_method_mut(
-//             "mine",
-//             |ctx, planner, args: (u32, Position, String, u32)| {
-//                 let (player_id, position, name, count) = args;
-//                 planner.add_mine(planner.graph.start_node, player_id, &position, &name, count);
-//                 Ok(())
-//             },
-//         );
-//     }
-// }
-
 impl Planner {
-    pub fn new(world: Arc<FactorioWorld>, _rcon: Arc<FactorioRcon>) -> Planner {
+    pub fn new(world: Arc<FactorioWorld>, rcon: Arc<FactorioRcon>) -> Planner {
         let plan_world = FactorioWorld::new();
         plan_world.import(world.clone()).unwrap();
         Planner {
             graph: Arc::new(RwLock::new(TaskGraph::new())),
-            // rcon,
+            rcon,
             real_world: world,
             plan_world: Arc::new(plan_world),
         }
     }
 
-    /*
-
-           // let find_entities = lua_ctx
-           //     .create_async_function(|_, (name, position): (String, Position)| async {
-           //         let posrad = AreaFilter::PositionRadius((Position::default(), Some(300.)));
-           //         let x = rcon
-           //             .find_entities_filtered(&posrad, Some(name), None)
-           //             .await
-           //             .unwrap();
-           //         Ok(rlua_serde::to_value(lua_ctx, x.clone()))
-           //     })
-           //     .unwrap();
-
-           // let rcon = self.rcon.clone();
-           //
-           // info!("ab");
-           // map_table
-           //     .set(
-           //         "findEntitiesInRadius",
-           //         lua_ctx
-           //             .create_async_function(
-           //                 |ctx,
-           //                  (search_center, radius, name, max_results): (
-           //                     String,
-           //                     f64,
-           //                     String,
-           //                     u32,
-           //                 )| async move {
-           //                     info!("abc");
-           //                     let rcon = FactorioRcon::new(
-           //                         &RconSettings {
-           //                             port: 1234,
-           //                             pass: "1234".into(),
-           //                             host: None,
-           //                         },
-           //                         false,
-           //                     )
-           //                     .await
-           //                     .unwrap();
-           //                     let filter = AreaFilter::PositionRadius((
-           //                         search_center.parse().unwrap(),
-           //                         Some(radius),
-           //                     ));
-           //                     info!("find start");
-           //                     let entities = rcon
-           //                         .find_entities_filtered(&filter, Some(name), None)
-           //                         .await
-           //                         .unwrap();
-           //                     info!("find done");
-           //                     let entities: Vec<FactorioEntity> =
-           //                         entities[0..max_results as usize].iter().cloned().collect();
-           //                     // let val = rlua_serde::to_value(ctx, entities).unwrap();
-           //                     // Ok(val)
-           //                     Ok(())
-           //                 },
-           //             )
-           //             .unwrap(),
-           //     )
-           //     .unwrap();
-           // let rcon = self.rcon.clone();
-           // map_table
-           //     .set(
-           //         "findEntitiesInRadius",
-           //         lua_ctx
-           //             .create_function(
-           //                 move |ctx,
-           //                       (search_center, radius, name, max_results): (
-           //                     String,
-           //                     f64,
-           //                     String,
-           //                     u32,
-           //                 )| {
-           //                     info!(
-           //                         "findEntitiesInRadius called with {} {} {} {}",
-           //                         search_center, radius, name, max_results
-           //                     );
-           //                     let rcon = rcon.clone();
-           //
-           //                     info!("start:");
-           //                     let results = std::thread::spawn(move || {
-           //                         info!("thread spawned");
-           //                         let x = System::new("Default").block_on(async move {
-           //                             info!("async spawned");
-           //                             let filter = AreaFilter::PositionRadius((
-           //                                 search_center.parse().unwrap(),
-           //                                 Some(radius),
-           //                             ));
-           //                             info!("find start");
-           //                             let entities = rcon
-           //                                 .find_entities_filtered(&filter, Some(name), None)
-           //                                 .await
-           //                                 .unwrap();
-           //                             info!("find done");
-           //                             let entities: Vec<FactorioEntity> = entities
-           //                                 [0..max_results as usize]
-           //                                 .iter()
-           //                                 .cloned()
-           //                                 .collect();
-           //                             info!("async done");
-           //                             entities
-           //                         });
-           //                         info!("thread done");
-           //                         x
-           //                     })
-           //                     .join()
-           //                     .unwrap();
-           //                     info!("end!");
-           //                     Ok(rlua_serde::to_value(ctx, results).unwrap())
-           //                 },
-           //             )
-           //             .unwrap(),
-           //     )
-           //     .unwrap();
-           // globals.set("rcon", map_table).unwrap();
-    */
-
-    pub async fn plan(&mut self, plan_name: &str, bot_count: u32) -> anyhow::Result<()> {
-        let player_ids = self.initiate_missing_players_with_default_inventory(bot_count);
-        self.plan_world.import(self.real_world.clone()).unwrap();
-        let lua_path_str = format!("plans/{}.lua", plan_name);
-        let lua_path = Path::new(&lua_path_str);
-        let lua_path = std::fs::canonicalize(lua_path).unwrap();
-        if !lua_path.exists() {
-            anyhow::bail!("plan {} not found at {}", plan_name, lua_path_str);
-        }
-        let lua_code = read_to_string(lua_path).unwrap();
-        info!("aaa");
+    pub async fn plan(&mut self, lua_code: &str, bot_count: u32) -> anyhow::Result<()> {
+        let all_bots = self.initiate_missing_players_with_default_inventory(bot_count);
+        self.plan_world.import(self.real_world.clone())?;
         let lua = Lua::new();
-        lua.context(|lua_ctx| {
-            let globals = lua_ctx.globals();
-            globals.set("all_bots", player_ids).unwrap();
-            globals
-                .set(
-                    "world",
-                    LuaFactorioWorld::create(lua_ctx, self.plan_world.clone()).unwrap(),
-                )
-                .unwrap();
-            globals
-                .set(
-                    "plan",
-                    LuaPlanBuilder::create(
-                        lua_ctx,
-                        PlanBuilder::new(self.graph.clone(), self.plan_world.clone()),
-                    )
-                    .unwrap(),
-                )
-                .unwrap();
-        });
-        lua.context(|lua_context| {
-            let chunk = lua_context
-                .load(&lua_code)
-                .set_name(&format!("{}.lua", plan_name))
-                .unwrap();
-            chunk.exec().unwrap()
-        });
-
+        lua.context::<_, rlua::Result<()>>(|ctx| {
+            let world = create_lua_world(ctx, self.plan_world.clone())?;
+            let plan = create_lua_plan_builder(ctx, self.graph.clone(), self.plan_world.clone())?;
+            let rcon = create_lua_rcon(ctx, self.rcon.clone())?;
+            let globals = ctx.globals();
+            globals.set("all_bots", all_bots)?;
+            globals.set("world", world)?;
+            globals.set("rcon", rcon)?;
+            globals.set("plan", plan)?;
+            let chunk = ctx.load(&lua_code);
+            chunk.exec()
+        })?;
         Ok(())
     }
 
@@ -214,342 +59,6 @@ impl Planner {
     pub fn graph(&self) -> TaskGraph {
         self.graph.read().clone()
     }
-
-    // #[allow(clippy::ptr_arg)]
-    // pub async fn add_build_starter_base(
-    //     &mut self,
-    //     mut parent: NodeIndex,
-    //     player_ids: &Vec<u32>,
-    // ) -> anyhow::Result<NodeIndex> {
-    //     parent = self
-    //         .graph
-    //         .add_process_start_node(parent, "Build StarterBase");
-    //
-    //     // build 2x iron minerFurnace
-    //     parent = self
-    //         .add_build_starter_miner_furnace(parent, &player_ids, "iron-ore", "iron-plate", 2)
-    //         .await?;
-    //     // // build 2x coal minerLoop
-    //     // parent = self
-    //     //     .add_build_starter_miner_loop(parent, &player_ids, "coal", 2)
-    //     //     .await?;
-    //     // build 2x iron minerFurnace
-    //     parent = self
-    //         .add_build_starter_miner_furnace(parent, &player_ids, "iron-ore", "iron-plate", 2)
-    //         .await?;
-    //     // // build 2x stone minerChest
-    //     // parent = self
-    //     //     .add_build_starter_miner_chest(parent, &player_ids, "stone", 2)
-    //     //     .await?;
-    //
-    //     Ok(parent)
-    // }
-    //
-    // #[allow(clippy::ptr_arg)]
-    // pub async fn add_build_starter_miner_furnace(
-    //     &mut self,
-    //     parent: NodeIndex,
-    //     bots: &Vec<u32>,
-    //     ore_name: &str,
-    //     plate_name: &str,
-    //     miner_furnace_count: u16,
-    // ) -> anyhow::Result<NodeIndex> {
-    //     let start = self.graph.add_process_start_node(
-    //         parent,
-    //         &format!(
-    //             "Build MinerFurnace for {} -> {} x {}",
-    //             ore_name, plate_name, miner_furnace_count,
-    //         ),
-    //     );
-    //     let mut weights: HashMap<NodeIndex, R64> = HashMap::new();
-    //     let patches = self
-    //         .plan_world
-    //         .world
-    //         .entity_graph
-    //         .resource_patches(ore_name);
-    //     if patches.is_empty() {
-    //         return Err(anyhow!("no {} found", ore_name));
-    //     }
-    //     let patch = patches.first().unwrap();
-    //     let rect = patch.find_free_rect(
-    //         (miner_furnace_count * 2) as u32,
-    //         (miner_furnace_count * 4) as u32,
-    //         &Position::default(),
-    //         &self.plan_world.world.blocked,
-    //     );
-    //     if rect.is_none() {
-    //         return Err(anyhow!(
-    //             "no free rect found for {} in patch of size {}",
-    //             ore_name,
-    //             patch.elements.len()
-    //         ));
-    //     }
-    //     let rect = rect.unwrap();
-    //     let mut bots = bots.clone();
-    //     let entity_name = EntityName::BurnerMiningDrill.to_string();
-    //     bots.sort_by(|a, b| {
-    //         let da = self.inventory(*a, &entity_name);
-    //         let db = self.inventory(*b, &entity_name);
-    //         db.cmp(&da)
-    //     });
-    //     let mut to_place = miner_furnace_count;
-    //     for player_id in &bots {
-    //         let to_place_player =
-    //             to_place.min((miner_furnace_count as f64 / bots.len() as f64).ceil() as u16);
-    //         to_place -= to_place_player;
-    //         if to_place_player == 0 {
-    //             continue;
-    //         }
-    //         let player_parent = self.graph.add_node(TaskNode::new(
-    //             Some(*player_id),
-    //             &*format!(
-    //                 "Bot #{} at {}",
-    //                 player_id,
-    //                 &self.player(*player_id).position
-    //             ),
-    //             None,
-    //         ));
-    //         let mut parent = player_parent;
-    //         for i in 0..to_place_player {
-    //             let miner_position = rect
-    //                 .left_top
-    //                 .add(&Position::new((to_place + i + 1) as f64 * 2., 1.));
-    //             let furnace_position = miner_position.add(&Position::new(0., 2.));
-    //             parent = self
-    //                 .add_place(
-    //                     parent,
-    //                     *player_id,
-    //                     FactorioEntity::new_stone_furnace(&furnace_position, Direction::North),
-    //                 )
-    //                 .await?;
-    //             parent = self
-    //                 .add_place(
-    //                     parent,
-    //                     *player_id,
-    //                     FactorioEntity::new_burner_mining_drill(&miner_position, Direction::South),
-    //                 )
-    //                 .await?;
-    //         }
-    //         self.graph.add_edge(start, player_parent, 0.);
-    //         weights.insert(parent, self.graph.weight(player_parent, parent));
-    //     }
-    //     // TODO: collect ingredients for (miner + furnace) * minerFurnaceCount
-    //     // TODO: init process with coal?
-    //     Ok(self.join_using_weights(start, weights))
-    // }
-    //
-    // #[allow(clippy::ptr_arg)]
-    // pub async fn add_build_starter_miner_chest(
-    //     &mut self,
-    //     parent: NodeIndex,
-    //     _bots: &Vec<u32>,
-    //     ore_name: &str,
-    //     miner_chest_count: u16,
-    // ) -> anyhow::Result<NodeIndex> {
-    //     let start = self.graph.add_process_start_node(
-    //         parent,
-    //         &format!("Build MinerChest for {} x {}", ore_name, miner_chest_count,),
-    //     );
-    //     let weights: HashMap<NodeIndex, R64> = HashMap::new();
-    //     // TODO: find ore patch
-    //     // TODO: collect ingredients for (miner + furnace) * minerFurnaceCount
-    //     // TODO: place entities
-    //     // TODO: init process with coal?
-    //     Ok(self.join_using_weights(start, weights))
-    // }
-    //
-    // #[allow(clippy::ptr_arg)]
-    // pub async fn add_build_starter_miner_loop(
-    //     &mut self,
-    //     parent: NodeIndex,
-    //     _bots: &Vec<u32>,
-    //     ore_name: &str,
-    //     miner_count: u16,
-    // ) -> anyhow::Result<NodeIndex> {
-    //     let start = self.graph.add_process_start_node(
-    //         parent,
-    //         &format!("Build MinerLoop for {}  x {}", ore_name, miner_count,),
-    //     );
-    //     let weights: HashMap<NodeIndex, R64> = HashMap::new();
-    //     // TODO: find ore patch
-    //     // TODO: collect ingredients for (miner + furnace) * minerFurnaceCount
-    //     // TODO: place entities
-    //     // TODO: init process with coal?
-    //     Ok(self.join_using_weights(start, weights))
-    // }
-    //
-    // #[allow(clippy::ptr_arg)]
-    // pub async fn add_mine_entities_with_bots(
-    //     &mut self,
-    //     parent: NodeIndex,
-    //     bots: &Vec<u32>,
-    //     search_center: &Position,
-    //     name: Option<String>,
-    //     entity_type: Option<String>,
-    // ) -> anyhow::Result<NodeIndex> {
-    //     let start = self.graph.add_process_start_node(
-    //         parent,
-    //         &format!(
-    //             "Mine {} with {} Bots",
-    //             match name {
-    //                 Some(ref name) => name.clone(),
-    //                 None => entity_type
-    //                     .as_ref()
-    //                     .expect("must have name or entity_type")
-    //                     .clone(),
-    //             },
-    //             bots.len()
-    //         ),
-    //     );
-    //     let mut entities: Vec<FactorioEntity> =
-    //         find_nearest_entities(self.rcon.clone(), search_center, 500., name, entity_type)
-    //             .await?;
-    //
-    //     let mut weights: HashMap<NodeIndex, R64> = HashMap::new();
-    //
-    //     for player_id in bots {
-    //         let player_parent = self.graph.add_node(TaskNode::new(
-    //             Some(*player_id),
-    //             &*format!(
-    //                 "Bot #{} at {}",
-    //                 player_id,
-    //                 &self.player(*player_id).position
-    //             ),
-    //             None,
-    //         ));
-    //         let mut parent = player_parent;
-    //         if !entities.is_empty() {
-    //             let entity = entities.remove(0);
-    //             parent = self
-    //                 .add_mine(parent, *player_id, &entity.position, &entity.name, 1)
-    //                 .await?
-    //         }
-    //         self.graph.add_edge(start, player_parent, 0.);
-    //         weights.insert(parent, self.graph.weight(player_parent, parent));
-    //     }
-    //     Ok(self.join_using_weights(start, weights))
-    // }
-    //
-    // pub async fn add_walk(
-    //     &mut self,
-    //     parent_node: NodeIndex,
-    //     player_id: u32,
-    //     goal: &PositionRadius,
-    // ) -> anyhow::Result<NodeIndex> {
-    //     let distance = self.distance(player_id, &goal.position);
-    //     let task = TaskNode::new_walk(player_id, goal.clone());
-    //     let node = self.graph.add_node(task);
-    //     self.graph.add_edge(parent_node, node, distance);
-    //     self.plan_world
-    //         .player_changed_position(PlayerChangedPositionEvent {
-    //             player_id,
-    //             position: goal.position.clone(),
-    //         })?;
-    //     Ok(node)
-    // }
-    //
-    // pub async fn add_mine(
-    //     &mut self,
-    //     parent: NodeIndex,
-    //     player_id: u32,
-    //     position: &Position,
-    //     name: &str,
-    //     count: u32,
-    // ) -> anyhow::Result<NodeIndex> {
-    //     let mut parent = parent;
-    //     let player = self.player(player_id);
-    //     let distance = calculate_distance(&player.position, position).ceil();
-    //     let reach_distance = player.resource_reach_distance as f64;
-    //     drop(player);
-    //     if distance > reach_distance {
-    //         parent = self
-    //             .add_walk(
-    //                 parent,
-    //                 player_id,
-    //                 &PositionRadius::from_position(&position, reach_distance),
-    //             )
-    //             .await?;
-    //     }
-    //     let task = TaskNode::new_mine(
-    //         player_id,
-    //         MineTarget {
-    //             name: name.into(),
-    //             count,
-    //             position: position.clone(),
-    //         },
-    //     );
-    //     let node = self.graph.add_node(task);
-    //
-    //     let mut mining_time = 5.;
-    //     let mut inventory = *self.player(player_id).main_inventory.clone();
-    //     if let Some(prototype) = self.plan_world.world.entity_prototypes.get(name) {
-    //         if let Some(result) = prototype.mine_result.as_ref() {
-    //             for (mine_name, mine_count) in result {
-    //                 if let Some(inventory_count) = inventory.get(mine_name) {
-    //                     let cnt = *mine_count + *inventory_count;
-    //                     inventory.insert(mine_name.clone(), cnt);
-    //                 } else {
-    //                     inventory.insert(mine_name.clone(), *mine_count);
-    //                 }
-    //             }
-    //             if let Some(time) = prototype.mining_time.as_ref() {
-    //                 mining_time = time.to_f64().unwrap().ceil()
-    //             }
-    //         }
-    //     }
-    //     self.plan_world
-    //         .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
-    //             player_id,
-    //             main_inventory: Box::new(inventory),
-    //         })?;
-    //
-    //     self.graph.add_edge(parent, node, mining_time);
-    //     Ok(node)
-    // }
-    // pub async fn add_place(
-    //     &mut self,
-    //     parent: NodeIndex,
-    //     player_id: u32,
-    //     entity: FactorioEntity,
-    // ) -> anyhow::Result<NodeIndex> {
-    //     let mut parent = parent;
-    //     let player = self.player(player_id);
-    //     let distance = calculate_distance(&player.position, &entity.position).ceil();
-    //     let build_distance = player.build_distance as f64;
-    //     drop(player);
-    //     if distance > build_distance {
-    //         parent = self
-    //             .add_walk(
-    //                 parent,
-    //                 player_id,
-    //                 &PositionRadius::from_position(&entity.position, build_distance),
-    //             )
-    //             .await?;
-    //     }
-    //
-    //     let mut inventory = *self.player(player_id).main_inventory.clone();
-    //     let inventory_item_count = *inventory.get(&entity.name).unwrap_or(&0);
-    //     if inventory_item_count < 1 {
-    //         return Err(anyhow!(
-    //             "player #{} does not have {} in inventory",
-    //             player_id,
-    //             &entity.name
-    //         ));
-    //     }
-    //     let name = entity.name.clone();
-    //     let task = TaskNode::new_place(player_id, entity.clone());
-    //     let node = self.graph.add_node(task);
-    //     inventory.insert(name, inventory_item_count - 1);
-    //
-    //     self.plan_world
-    //         .player_changed_main_inventory(PlayerChangedMainInventoryEvent {
-    //             player_id,
-    //             main_inventory: Box::new(inventory),
-    //         })?;
-    //     self.plan_world.on_some_entity_created(entity)?;
-    //     self.graph.add_edge(parent, node, 1.);
-    //     Ok(node)
-    // }
 
     fn initiate_missing_players_with_default_inventory(&mut self, bot_count: u32) -> Vec<u32> {
         let mut player_ids: Vec<u32> = vec![];
@@ -571,42 +80,6 @@ impl Planner {
         }
         player_ids
     }
-
-    // fn player(&self, player_id: u32) -> FactorioPlayer {
-    //     self.plan_world
-    //         .players
-    //         .get(&player_id)
-    //         .expect("failed to find player")
-    //         .clone()
-    // }
-    // fn inventory(&self, player_id: u32, name: &str) -> u32 {
-    //     *self
-    //         .player(player_id)
-    //         .main_inventory
-    //         .get(name)
-    //         .unwrap_or(&0)
-    // }
-    // fn distance(&self, player_id: u32, position: &Position) -> f64 {
-    //     calculate_distance(&self.player(player_id).position, position).ceil()
-    // }
-
-    // fn join_using_weights(
-    //     &mut self,
-    //     start: NodeIndex,
-    //     weights: HashMap<NodeIndex, R64>,
-    // ) -> NodeIndex {
-    //     let mut graph = self.graph.write();
-    //     let end = graph.add_group_end_node();
-    //     let max_weight = weights.values().max();
-    //     if let Some(max_weight) = max_weight {
-    //         for (node, weight) in weights.iter() {
-    //             graph.add_edge(*node, end, (*max_weight - *weight).to_f64().unwrap());
-    //         }
-    //     } else {
-    //         graph.add_edge(start, end, 0.);
-    //     }
-    //     end
-    // }
 }
 
 pub async fn start_factorio_and_plan_graph(
@@ -648,7 +121,14 @@ pub async fn start_factorio_and_plan_graph(
     .expect("failed to start");
 
     let mut planner = Planner::new(world, rcon);
-    planner.plan(plan_name, bot_count).await?;
+    let lua_path_str = format!("plans/{}.lua", plan_name);
+    let lua_path = Path::new(&lua_path_str);
+    let lua_path = std::fs::canonicalize(lua_path)?;
+    if !lua_path.exists() {
+        anyhow::bail!("plan {} not found at {}", plan_name, lua_path_str);
+    }
+    let lua_code = read_to_string(lua_path)?;
+    planner.plan(lua_code.as_str(), bot_count).await?;
     let world = planner.world();
     let graph = planner.graph();
     for player in world.players.iter() {
