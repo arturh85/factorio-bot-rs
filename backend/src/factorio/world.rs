@@ -1,93 +1,65 @@
-use crate::factorio::entity_graph::EntityGraph;
-use crate::factorio::flow_graph::FlowGraph;
-use crate::factorio::util::{position_equal, rect_fields, rect_floor, rect_floor_ceil};
-use crate::types::{
-    ChunkPosition, EntityType, FactorioChunk, FactorioEntity, FactorioEntityPrototype,
-    FactorioForce, FactorioGraphic, FactorioItemPrototype, FactorioPlayer, FactorioRecipe,
-    FactorioTile, PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent,
-    PlayerChangedPositionEvent, Pos, Position,
-};
-use async_std::sync::Mutex;
-use dashmap::DashMap;
-use evmap::{ReadHandle, WriteHandle};
-use image::RgbaImage;
-use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use async_std::sync::Mutex;
+use dashmap::DashMap;
+use image::RgbaImage;
+
+use crate::factorio::entity_graph::EntityGraph;
+use crate::factorio::flow_graph::FlowGraph;
+use crate::types::{
+    ChunkPosition, FactorioEntity, FactorioEntityPrototype, FactorioForce, FactorioGraphic,
+    FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
+    PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent,
+};
+
 pub struct FactorioWorld {
-    pub players: ReadHandle<u32, FactorioPlayer>,
-    pub forces: ReadHandle<String, FactorioForce>,
-
-    pub chunks: ReadHandle<ChunkPosition, FactorioChunk>,
-    pub blocked: ReadHandle<Pos, bool>,
-
-    pub graphics: ReadHandle<String, FactorioGraphic>,
+    pub players: DashMap<u32, FactorioPlayer>,
+    pub forces: DashMap<String, FactorioForce>,
+    pub graphics: DashMap<String, FactorioGraphic>,
     pub recipes: Arc<DashMap<String, FactorioRecipe>>,
     pub entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>>,
-    pub item_prototypes: ReadHandle<String, FactorioItemPrototype>,
-    pub image_cache: ReadHandle<String, Box<RgbaImage>>,
-    pub image_cache_writer: std::sync::Mutex<WriteHandle<String, Box<RgbaImage>>>,
-    pub actions: Mutex<HashMap<u32, String>>,
-    pub path_requests: Mutex<HashMap<u32, String>>,
+    pub item_prototypes: DashMap<String, FactorioItemPrototype>,
+    pub image_cache: DashMap<String, Box<RgbaImage>>,
+    pub actions: DashMap<u32, String>,
+    pub path_requests: DashMap<u32, String>,
     pub next_action_id: Mutex<u32>,
 
     pub entity_graph: Arc<EntityGraph>,
     pub flow_graph: Arc<FlowGraph>,
 }
 
-impl FactorioWorld {}
-
-unsafe impl Send for FactorioWorld {}
-unsafe impl Sync for FactorioWorld {}
-
-pub struct FactorioWorldWriter {
-    pub world: Arc<FactorioWorld>,
-    forces_writer: WriteHandle<String, FactorioForce>,
-    chunks_writer: WriteHandle<ChunkPosition, FactorioChunk>,
-    graphics_writer: WriteHandle<String, FactorioGraphic>,
-    item_prototypes_writer: WriteHandle<String, FactorioItemPrototype>,
-    players_writer: WriteHandle<u32, FactorioPlayer>,
-    blocked_writer: WriteHandle<Pos, bool>,
-}
-
-impl FactorioWorldWriter {
+impl FactorioWorld {
     pub fn update_entity_prototypes(
-        &mut self,
+        &self,
         entity_prototypes: Vec<FactorioEntityPrototype>,
     ) -> anyhow::Result<()> {
         for entity_prototype in entity_prototypes {
-            self.world
-                .entity_prototypes
+            self.entity_prototypes
                 .insert(entity_prototype.name.clone(), entity_prototype);
         }
         Ok(())
     }
 
     pub fn update_item_prototypes(
-        &mut self,
+        &self,
         item_prototypes: Vec<FactorioItemPrototype>,
     ) -> anyhow::Result<()> {
         for item_prototype in item_prototypes {
-            self.item_prototypes_writer
+            self.item_prototypes
                 .insert(item_prototype.name.clone(), item_prototype);
         }
-        self.item_prototypes_writer.refresh();
         Ok(())
     }
 
-    pub fn remove_player(&mut self, player_id: u32) -> anyhow::Result<()> {
-        self.players_writer.empty(player_id);
-        self.players_writer.refresh();
+    pub fn remove_player(&self, player_id: u32) -> anyhow::Result<()> {
+        self.players.remove(&player_id);
         Ok(())
     }
 
-    pub fn player_changed_distance(
-        &mut self,
-        event: PlayerChangedDistanceEvent,
-    ) -> anyhow::Result<()> {
-        if self.players_writer.contains_key(&event.player_id) {
-            let existing_player = self.players_writer.get_one(&event.player_id).unwrap();
-            let player = FactorioPlayer {
+    pub fn player_changed_distance(&self, event: PlayerChangedDistanceEvent) -> anyhow::Result<()> {
+        let player = if self.players.contains_key(&event.player_id) {
+            let existing_player = self.players.get(&event.player_id).unwrap();
+            FactorioPlayer {
                 player_id: event.player_id,
                 position: existing_player.position.clone(),
                 main_inventory: existing_player.main_inventory.clone(),
@@ -97,35 +69,27 @@ impl FactorioWorldWriter {
                 item_pickup_distance: event.item_pickup_distance,
                 loot_pickup_distance: event.loot_pickup_distance,
                 resource_reach_distance: event.resource_reach_distance,
-            };
-            drop(existing_player);
-            self.players_writer.empty(event.player_id);
-            self.players_writer.insert(event.player_id, player);
+            }
         } else {
-            let player = FactorioPlayer {
+            FactorioPlayer {
                 player_id: event.player_id,
-                position: Position::new(0.0, 0.0),
-                main_inventory: Box::new(BTreeMap::new()),
                 build_distance: event.build_distance,
                 reach_distance: event.reach_distance,
                 drop_item_distance: event.drop_item_distance,
                 item_pickup_distance: event.item_pickup_distance,
                 loot_pickup_distance: event.loot_pickup_distance,
                 resource_reach_distance: event.resource_reach_distance,
-            };
-            self.players_writer.insert(event.player_id, player);
-        }
-        self.players_writer.refresh();
+                ..Default::default()
+            }
+        };
+        self.players.insert(event.player_id, player);
         Ok(())
     }
 
-    pub fn player_changed_position(
-        &mut self,
-        event: PlayerChangedPositionEvent,
-    ) -> anyhow::Result<()> {
-        if self.players_writer.contains_key(&event.player_id) {
-            let existing_player = self.players_writer.get_one(&event.player_id).unwrap();
-            let player = FactorioPlayer {
+    pub fn player_changed_position(&self, event: PlayerChangedPositionEvent) -> anyhow::Result<()> {
+        let player = if self.players.contains_key(&event.player_id) {
+            let existing_player = self.players.get(&event.player_id).unwrap();
+            FactorioPlayer {
                 player_id: event.player_id,
                 position: event.position,
                 main_inventory: existing_player.main_inventory.clone(),
@@ -135,94 +99,46 @@ impl FactorioWorldWriter {
                 item_pickup_distance: existing_player.item_pickup_distance,
                 loot_pickup_distance: existing_player.loot_pickup_distance,
                 resource_reach_distance: existing_player.resource_reach_distance,
-            };
-            drop(existing_player);
-            self.players_writer.empty(event.player_id);
-            self.players_writer.insert(event.player_id, player);
+            }
         } else {
-            let player = FactorioPlayer {
+            FactorioPlayer {
                 player_id: event.player_id,
                 position: event.position,
                 ..Default::default()
-            };
-            self.players_writer.insert(event.player_id, player);
-        }
-        self.players_writer.refresh();
+            }
+        };
+        self.players.insert(event.player_id, player);
         Ok(())
     }
 
-    pub fn update_force(&mut self, force: FactorioForce) -> anyhow::Result<()> {
+    pub fn update_force(&self, force: FactorioForce) -> anyhow::Result<()> {
         let name = force.name.clone();
-        self.forces_writer.insert(name, force);
-        self.forces_writer.refresh();
+        self.forces.insert(name, force);
         Ok(())
     }
 
-    pub fn on_some_entity_updated(&mut self, _entity: FactorioEntity) -> anyhow::Result<()> {
+    pub fn on_some_entity_updated(&self, _entity: FactorioEntity) -> anyhow::Result<()> {
         // TODO: update entity direction
         Ok(())
     }
 
-    pub fn on_some_entity_created(&mut self, entity: FactorioEntity) -> anyhow::Result<()> {
-        let rect = rect_floor(&entity.bounding_box);
-        for position in rect_fields(&rect) {
-            self.blocked_writer
-                .insert((&position).into(), entity.is_minable());
-        }
-        let pos: Pos = (&entity.position).into();
-        let chunk_position: ChunkPosition = (&pos).into();
-        self.world.entity_graph.add(vec![entity.clone()], None)?;
-        match self.world.chunks.get_one(&chunk_position) {
-            Some(chunk) => {
-                let mut chunk = chunk.clone();
-                chunk.entities.push(entity);
-                self.chunks_writer.update(chunk_position, chunk);
-            }
-            None => {
-                self.chunks_writer.insert(
-                    chunk_position,
-                    FactorioChunk {
-                        entities: vec![entity],
-                    },
-                );
-            }
-        }
-        self.blocked_writer.refresh();
-        self.chunks_writer.refresh();
+    pub fn on_some_entity_created(&self, entity: FactorioEntity) -> anyhow::Result<()> {
+        self.entity_graph.add(vec![entity], None)?;
         Ok(())
     }
 
-    pub fn on_some_entity_deleted(&mut self, entity: FactorioEntity) -> anyhow::Result<()> {
-        let rect = rect_floor(&entity.bounding_box);
-        for position in rect_fields(&rect) {
-            self.blocked_writer.clear((&position).into());
-        }
-        let pos: Pos = (&entity.position).into();
-        let chunk_position: ChunkPosition = (&pos).into();
-        self.world.entity_graph.remove(&entity)?;
-        if let Some(chunk) = self.world.chunks.get_one(&chunk_position) {
-            let mut chunk = chunk.clone();
-            if let Some(index) = chunk
-                .entities
-                .iter()
-                .position(|en| position_equal(&en.position, &entity.position))
-            {
-                chunk.entities.remove(index);
-            }
-            self.chunks_writer.update(chunk_position, chunk);
-        }
-        self.blocked_writer.refresh();
-        self.chunks_writer.refresh();
+    pub fn on_some_entity_deleted(&self, entity: FactorioEntity) -> anyhow::Result<()> {
+        self.entity_graph.remove(&entity)?;
         Ok(())
     }
 
     pub fn player_changed_main_inventory(
-        &mut self,
+        &self,
         event: PlayerChangedMainInventoryEvent,
     ) -> anyhow::Result<()> {
-        if self.players_writer.contains_key(&event.player_id) {
-            let existing_player = self.players_writer.get_one(&event.player_id).unwrap();
-            let player = FactorioPlayer {
+        let player = if self.players.contains_key(&event.player_id) {
+            let existing_player = self.players.get(&event.player_id).unwrap();
+            FactorioPlayer {
                 player_id: event.player_id,
                 position: existing_player.position.clone(),
                 main_inventory: event.main_inventory,
@@ -232,201 +148,101 @@ impl FactorioWorldWriter {
                 item_pickup_distance: existing_player.item_pickup_distance,
                 loot_pickup_distance: existing_player.loot_pickup_distance,
                 resource_reach_distance: existing_player.resource_reach_distance,
-            };
-            drop(existing_player);
-            self.players_writer.empty(event.player_id);
-            self.players_writer.insert(event.player_id, player);
+            }
         } else {
-            let player = FactorioPlayer {
+            FactorioPlayer {
                 player_id: event.player_id,
                 main_inventory: event.main_inventory.clone(),
                 ..Default::default()
-            };
-            self.players_writer.insert(event.player_id, player);
-        }
-        self.players_writer.refresh();
+            }
+        };
+        self.players.insert(event.player_id, player);
         Ok(())
     }
 
-    pub fn update_recipes(&mut self, recipes: Vec<FactorioRecipe>) -> anyhow::Result<()> {
+    pub fn update_recipes(&self, recipes: Vec<FactorioRecipe>) -> anyhow::Result<()> {
         for recipe in recipes {
-            self.world.recipes.insert(recipe.name.clone(), recipe);
+            self.recipes.insert(recipe.name.clone(), recipe);
         }
         Ok(())
     }
 
-    pub fn update_graphics(&mut self, graphics: Vec<FactorioGraphic>) -> anyhow::Result<()> {
+    pub fn update_graphics(&self, graphics: Vec<FactorioGraphic>) -> anyhow::Result<()> {
         for graphic in graphics {
-            self.graphics_writer
-                .insert(graphic.entity_name.clone(), graphic);
+            self.graphics.insert(graphic.entity_name.clone(), graphic);
         }
-        self.graphics_writer.refresh();
         Ok(())
     }
 
     pub fn update_chunk_tiles(
-        &mut self,
+        &self,
         _chunk_position: ChunkPosition,
         tiles: Vec<FactorioTile>,
     ) -> anyhow::Result<()> {
-        for tile in &tiles {
-            if tile.player_collidable {
-                self.blocked_writer.insert((&tile.position).into(), false);
-            }
-        }
-        self.blocked_writer.refresh();
-        self.world.entity_graph.add_tiles(tiles, None)?; // FIXME: add clear rect
+        self.entity_graph.add_tiles(tiles, None)?; // FIXME: add clear rect from chunk_position
         Ok(())
     }
 
     #[allow(clippy::map_clone)]
     pub fn update_chunk_entities(
-        &mut self,
-        chunk_position: ChunkPosition,
+        &self,
+        _chunk_position: ChunkPosition,
         entities: Vec<FactorioEntity>,
     ) -> anyhow::Result<()> {
-        // first update blocked entities
-        for entity in &entities {
-            // exclude resources like iron-ore which do not block
-            if entity.entity_type != EntityType::Resource.to_string() {
-                let rect = rect_floor_ceil(&entity.bounding_box);
-                for position in rect_fields(&rect) {
-                    self.blocked_writer
-                        .insert((&position).into(), entity.is_minable());
-                }
-            }
-        }
-
-        if self.chunks_writer.contains_key(&chunk_position) {
-            let existing_chunk = self.chunks_writer.get_one(&chunk_position).unwrap(); // unwrap OK because of contains_key
-            let chunk = FactorioChunk {
-                entities: entities.clone(),
-            };
-            drop(existing_chunk);
-            self.chunks_writer.empty(chunk_position.clone());
-            self.chunks_writer.insert(chunk_position.clone(), chunk);
-        } else {
-            self.chunks_writer.insert(
-                chunk_position,
-                FactorioChunk {
-                    entities: entities.clone(),
-                },
-            );
-        }
-        self.blocked_writer.refresh();
-        self.chunks_writer.refresh();
-        self.world.entity_graph.add(entities, None)?; // FIXME: add clear rect
+        self.entity_graph.add(entities, None)?; // FIXME: add clear rect
         Ok(())
     }
 
-    pub fn import(&mut self, world: Arc<FactorioWorld>) -> anyhow::Result<()> {
-        if let Some(players) = &world.players.read() {
-            for (player_id, player) in players {
-                if let Some(player) = player.get_one() {
-                    self.players_writer.insert(*player_id, player.clone());
-                }
-            }
-            self.players_writer.refresh();
+    pub fn import(&self, world: Arc<FactorioWorld>) -> anyhow::Result<()> {
+        for player in world.players.iter() {
+            self.players.insert(player.player_id, player.clone());
         }
         for entity_prototype in world.entity_prototypes.iter() {
-            self.world
-                .entity_prototypes
+            self.entity_prototypes
                 .insert(entity_prototype.name.clone(), entity_prototype.clone());
         }
-        if let Some(item_prototypes) = &world.item_prototypes.read() {
-            for (name, item_prototype) in item_prototypes {
-                if let Some(item_prototype) = item_prototype.get_one() {
-                    self.item_prototypes_writer
-                        .insert(name.clone(), item_prototype.clone());
-                }
-            }
-            self.item_prototypes_writer.refresh();
-        } else {
-            warn!("no item_prototypes to import");
+        for item_prototype in world.item_prototypes.iter() {
+            self.item_prototypes
+                .insert(item_prototype.name.clone(), item_prototype.clone());
         }
         for recipe in world.recipes.iter() {
-            self.world
-                .recipes
-                .insert(recipe.name.clone(), recipe.clone());
+            self.recipes.insert(recipe.name.clone(), recipe.clone());
         }
-        if let Some(forces) = &world.forces.read() {
-            for (name, force) in forces {
-                if let Some(force) = force.get_one() {
-                    self.forces_writer.insert(name.clone(), force.clone());
-                }
-            }
-            self.forces_writer.refresh();
-        } else {
-            warn!("no forces to import");
+        for force in world.forces.iter() {
+            self.forces.insert(force.name.clone(), force.clone());
         }
-        if let Some(chunks) = &world.chunks.read() {
-            for (chunk_position, chunk) in chunks {
-                if let Some(chunk) = chunk.get_one() {
-                    let FactorioChunk { entities } = chunk;
-                    self.update_chunk_entities(chunk_position.clone(), entities.clone())?;
-                }
-            }
-            self.chunks_writer.refresh();
-        } else {
-            warn!("no chunks to import");
-        }
-        if let Some(blocked) = &world.blocked.read() {
-            for (pos, minable) in blocked {
-                if let Some(minable) = minable.get_one() {
-                    self.blocked_writer.insert(pos.clone(), *minable);
-                }
-            }
-            self.blocked_writer.refresh();
-        } else {
-            warn!("no blocked to import");
-        }
-        self.world.entity_graph.connect()?;
+        self.entity_graph.connect()?;
         Ok(())
     }
 
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let (forces_reader, forces_writer) = evmap::new::<String, FactorioForce>();
-        let (players_reader, players_writer) = evmap::new::<u32, FactorioPlayer>();
-        let (blocked_reader, blocked_writer) = evmap::new::<Pos, bool>();
-        let (chunks_reader, chunks_writer) = evmap::new::<ChunkPosition, FactorioChunk>();
-        let (graphics_reader, graphics_writer) = evmap::new::<String, FactorioGraphic>();
-        let (image_cache, image_cache_writer) = evmap::new::<String, Box<RgbaImage>>();
-        let (item_prototypes_reader, item_prototypes_writer) =
-            evmap::new::<String, FactorioItemPrototype>();
+        let forces: DashMap<String, FactorioForce> = DashMap::new();
+        let players: DashMap<u32, FactorioPlayer> = DashMap::new();
+        let graphics: DashMap<String, FactorioGraphic> = DashMap::new();
+        let image_cache: DashMap<String, Box<RgbaImage>> = DashMap::new();
+        let item_prototypes: DashMap<String, FactorioItemPrototype> = DashMap::new();
         let recipes: Arc<DashMap<String, FactorioRecipe>> = Arc::new(DashMap::new());
         let entity_prototypes: Arc<DashMap<String, FactorioEntityPrototype>> =
             Arc::new(DashMap::new());
         let entity_graph = Arc::new(EntityGraph::new(entity_prototypes.clone(), recipes.clone()));
         let flow_graph = Arc::new(FlowGraph::new(entity_graph.clone()));
-        FactorioWorldWriter {
-            forces_writer,
-            players_writer,
-            chunks_writer,
-            graphics_writer,
-            item_prototypes_writer,
-            blocked_writer,
-            world: Arc::new(FactorioWorld {
-                image_cache,
-                image_cache_writer: std::sync::Mutex::new(image_cache_writer),
-                blocked: blocked_reader,
-                players: players_reader,
-                chunks: chunks_reader,
-                graphics: graphics_reader,
-                forces: forces_reader,
-                entity_prototypes,
-                recipes,
-                item_prototypes: item_prototypes_reader,
-                actions: Mutex::new(HashMap::default()),
-                path_requests: Mutex::new(HashMap::default()),
-                next_action_id: Mutex::new(1),
-                entity_graph,
-                flow_graph,
-            }),
+        FactorioWorld {
+            image_cache,
+            players,
+            graphics,
+            recipes,
+            forces,
+            entity_prototypes,
+            item_prototypes,
+            actions: DashMap::new(),
+            path_requests: DashMap::new(),
+            next_action_id: Mutex::new(1),
+            entity_graph,
+            flow_graph,
         }
     }
-
-    pub fn world(&self) -> Arc<FactorioWorld> {
-        self.world.clone()
-    }
 }
+
+unsafe impl Send for FactorioWorld {}
+unsafe impl Sync for FactorioWorld {}

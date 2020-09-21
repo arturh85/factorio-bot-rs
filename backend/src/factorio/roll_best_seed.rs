@@ -1,15 +1,17 @@
+use std::cmp::Ordering;
+use std::thread::JoinHandle;
+use std::time::Instant;
+
+use async_std::sync::{Arc, Mutex};
+use config::Config;
+
 use crate::factorio::instance_setup::setup_factorio_instance;
-use crate::factorio::plan::Planner;
+use crate::factorio::planner::Planner;
 use crate::factorio::process_control::{start_factorio_server, FactorioStartCondition};
 use crate::factorio::rcon::{FactorioRcon, RconSettings};
 use crate::factorio::util::calculate_distance;
 use crate::factorio::world::FactorioWorld;
 use crate::types::{AreaFilter, FactorioEntity, Position};
-use async_std::sync::{Arc, Mutex};
-use config::Config;
-use std::cmp::Ordering;
-use std::thread::JoinHandle;
-use std::time::Instant;
 
 #[derive(Debug, Copy, Clone)]
 pub enum RollSeedLimit {
@@ -22,6 +24,7 @@ pub async fn roll_seed(
     map_exchange_string: String,
     limit: RollSeedLimit,
     parallel: u8,
+    plan_name: String,
     bot_count: u32,
 ) -> anyhow::Result<Option<(u32, f64)>> {
     let roll: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
@@ -66,6 +69,7 @@ pub async fn roll_seed(
         let best_seed_with_score = best_seed_with_score.clone();
         let workspace_path = workspace_path.clone();
         let map_exchange_string = map_exchange_string.clone();
+        let plan_name = plan_name.clone();
         let roll = roll.clone();
         join_handles.push(std::thread::spawn(move || {
             actix::run(async move {
@@ -112,7 +116,7 @@ pub async fn roll_seed(
                     //     seed,
                     //     roll_started.elapsed()
                     // );
-                    match score_seed(rcon, world, seed, bot_count)
+                    match score_seed(rcon, world, seed, &plan_name, bot_count)
                         .await {
                         Ok(score) => {
                             let mut best_seed_with_score = best_seed_with_score.lock().await;
@@ -168,17 +172,14 @@ pub async fn score_seed(
     rcon: Arc<FactorioRcon>,
     world: Arc<FactorioWorld>,
     _seed: u32,
+    plan_name: &str,
     bot_count: u32,
 ) -> anyhow::Result<f64> {
     let mut planner = Planner::new(world, rcon.clone());
-    let (graph, _world) = planner.plan(bot_count).await?;
+    planner.plan(plan_name, bot_count).await?;
     let mut score = 0.0;
 
-    let process_start = graph.node_indices().next().unwrap();
-    let process_end = graph.node_indices().last().unwrap();
-    let (weight, _) = graph
-        .astar(process_start, process_end)
-        .expect("no path found");
+    let weight = planner.graph().shortest_path();
     score -= weight;
     let center = Position::new(0., 0.);
     let resources = vec![

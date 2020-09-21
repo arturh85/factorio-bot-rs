@@ -1,22 +1,25 @@
-use crate::factorio::entity_graph::{EntityGraph, EntityNode, QuadTreeRect};
-use crate::factorio::util::add_to_rect;
-use crate::num_traits::FromPrimitive;
-use crate::types::{
-    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, FactorioRecipe,
-    Position, Rect,
-};
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Instant;
+
 use aabb_quadtree::{ItemId, QuadTree};
 use dashmap::lock::{RwLock, RwLockReadGuard};
 use dashmap::DashMap;
 use euclid::{TypedPoint2D, TypedSize2D};
 use num_traits::ToPrimitive;
+use petgraph::dot::{Config, Dot};
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{depth_first_search, Bfs, Control, DfsEvent, EdgeRef};
-use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Instant;
+
+use crate::factorio::entity_graph::{EntityGraph, EntityNode, QuadTreeRect};
+use crate::factorio::util::{add_to_rect, format_dotgraph};
+use crate::num_traits::FromPrimitive;
+use crate::types::{
+    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, FactorioRecipe,
+    Position, Rect,
+};
 
 pub struct FlowGraph {
     entity_graph: Arc<EntityGraph>,
@@ -543,19 +546,13 @@ impl FlowGraph {
         self.sum_production_rates(rates)
     }
     pub fn graphviz_dot(&self) -> String {
-        use petgraph::dot::{Config, Dot};
-        format!(
-            "digraph {{\n{:?}}}\n",
-            Dot::with_config(&*self.inner.read(), &[Config::GraphContentOnly])
+        format_dotgraph(
+            Dot::with_config(&*self.inner.read(), &[Config::GraphContentOnly]).to_string(),
         )
     }
     pub fn graphviz_dot_condensed(&self) -> String {
-        use petgraph::dot::{Config, Dot};
         let condensed = self.condense();
-        format!(
-            "digraph {{\n{:?}}}\n",
-            Dot::with_config(&condensed, &[Config::GraphContentOnly])
-        )
+        format_dotgraph(Dot::with_config(&condensed, &[Config::GraphContentOnly]).to_string())
     }
 }
 
@@ -584,6 +581,22 @@ impl FlowNode {
     }
 }
 
+impl std::fmt::Display for FlowNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!(
+            "{}{} at {}",
+            if let Some(miner_ore) = &self.miner_ore {
+                format!("{} ", miner_ore)
+            } else {
+                String::new()
+            },
+            self.entity_name,
+            self.position
+        ))?;
+        Ok(())
+    }
+}
+
 impl std::fmt::Debug for FlowNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!(
@@ -604,6 +617,12 @@ impl std::fmt::Debug for FlowNode {
 pub enum FlowEdge {
     Single(Vec<(String, f64)>),
     Double(Vec<(String, f64)>, Vec<(String, f64)>),
+}
+
+impl std::fmt::Display for FlowEdge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl FlowEdge {
@@ -641,8 +660,9 @@ pub type FlowQuadTree = QuadTree<NodeIndex, Rect, [(ItemId, QuadTreeRect); 4]>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::factorio::tests::entity_graph_from;
+
+    use super::*;
 
     #[test]
     fn test_splitters() {
@@ -659,17 +679,17 @@ mod tests {
         assert_eq!(
             entity_graph.graphviz_dot(),
             r#"digraph {
-    0 [ label = "iron-ore mining-drill at [0.5, -1.5]" ]
+    0 [ label = "iron-ore: mining-drill at [0.5, -1.5]" ]
     1 [ label = "transport-belt at [0.5, 0.5]" ]
     2 [ label = "transport-belt at [1.5, 0.5]" ]
     3 [ label = "splitter at [1, 1.5]" ]
     4 [ label = "transport-belt at [0.5, 2.5]" ]
     5 [ label = "transport-belt at [1.5, 2.5]" ]
-    0 -> 1 [ label = "1.0" ]
-    1 -> 3 [ label = "1.0" ]
-    2 -> 3 [ label = "1.0" ]
-    3 -> 5 [ label = "1.0" ]
-    3 -> 4 [ label = "1.0" ]
+    0 -> 1 [ label = "1" ]
+    1 -> 3 [ label = "1" ]
+    2 -> 3 [ label = "1" ]
+    3 -> 4 [ label = "1" ]
+    3 -> 5 [ label = "1" ]
 }
 "#,
         );
@@ -708,7 +728,7 @@ mod tests {
         assert_eq!(
             entity_graph.graphviz_dot(),
             r#"digraph {
-    0 [ label = "iron-ore mining-drill at [0.5, -1.5]" ]
+    0 [ label = "iron-ore: mining-drill at [0.5, -1.5]" ]
     1 [ label = "transport-belt at [0.5, 0.5]" ]
     2 [ label = "inserter at [0.5, 1.5]" ]
     3 [ label = "furnace at [1, 3]" ]
@@ -716,13 +736,13 @@ mod tests {
     5 [ label = "transport-belt at [0.5, 5.5]" ]
     6 [ label = "transport-belt at [0.5, 6.5]" ]
     7 [ label = "transport-belt at [0.5, 7.5]" ]
-    0 -> 1 [ label = "1.0" ]
-    2 -> 3 [ label = "1.0" ]
-    1 -> 2 [ label = "1.0" ]
-    4 -> 5 [ label = "1.0" ]
-    3 -> 4 [ label = "1.0" ]
-    5 -> 6 [ label = "1.0" ]
-    6 -> 7 [ label = "1.0" ]
+    0 -> 1 [ label = "1" ]
+    1 -> 2 [ label = "1" ]
+    2 -> 3 [ label = "1" ]
+    3 -> 4 [ label = "1" ]
+    4 -> 5 [ label = "1" ]
+    5 -> 6 [ label = "1" ]
+    6 -> 7 [ label = "1" ]
 }
 "#,
         );

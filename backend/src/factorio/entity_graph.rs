@@ -1,9 +1,10 @@
-use crate::factorio::util::{add_to_rect, bounding_box, move_position, rect_fields, rect_floor};
-use crate::num_traits::FromPrimitive;
-use crate::types::{
-    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, FactorioRecipe,
-    FactorioTile, Pos, Position, Rect, ResourcePatch,
-};
+use petgraph::dot::{Config, Dot};
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Instant;
+
 use aabb_quadtree::{ItemId, QuadTree};
 use dashmap::lock::{RwLock, RwLockReadGuard};
 use dashmap::DashMap;
@@ -12,11 +13,15 @@ use factorio_blueprint::{BlueprintCodec, Container};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::stable_graph::StableGraph;
 use petgraph::visit::{Bfs, EdgeRef};
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Instant;
+
+use crate::factorio::util::{
+    add_to_rect, bounding_box, format_dotgraph, move_position, rect_fields, rect_floor,
+};
+use crate::num_traits::FromPrimitive;
+use crate::types::{
+    Direction, EntityName, EntityType, FactorioEntity, FactorioEntityPrototype, FactorioRecipe,
+    FactorioTile, Pos, Position, Rect, ResourcePatch,
+};
 
 pub struct EntityGraph {
     entity_graph: RwLock<EntityGraphInner>,
@@ -832,24 +837,20 @@ impl EntityGraph {
             && next.direction != node.direction.opposite()
     }
     pub fn graphviz_dot(&self) -> String {
-        use petgraph::dot::{Config, Dot};
-        format!(
-            "digraph {{\n{:?}}}\n",
-            Dot::with_config(&self.inner_graph().deref(), &[Config::GraphContentOnly])
+        format_dotgraph(
+            Dot::with_config(&self.inner_graph().deref(), &[Config::GraphContentOnly]).to_string(),
         )
     }
+
     pub fn graphviz_dot_condensed(&self) -> String {
-        use petgraph::dot::{Config, Dot};
         let condensed = self.condense();
-        format!(
-            "digraph {{\n{:?}}}\n",
-            Dot::with_config(&condensed, &[Config::GraphContentOnly])
-        )
+        format_dotgraph(Dot::with_config(&condensed, &[Config::GraphContentOnly]).to_string())
     }
 
     pub fn node_weight(&self, i: NodeIndex) -> Option<EntityNode> {
         self.entity_graph.read().node_weight(i).cloned()
     }
+
     pub fn edges_directed(&self, i: NodeIndex, dir: petgraph::Direction) -> Vec<NodeIndex> {
         self.entity_graph
             .read()
@@ -927,8 +928,9 @@ pub type ResourceQuadTree = QuadTree<String, Rect, [(ItemId, QuadTreeRect); 4]>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::factorio::tests::entity_graph_from;
+
+    use super::*;
 
     #[test]
     fn test_splitters() {
@@ -948,10 +950,10 @@ mod tests {
     2 [ label = "splitter at [1, 1.5]" ]
     3 [ label = "transport-belt at [0.5, 2.5]" ]
     4 [ label = "transport-belt at [1.5, 2.5]" ]
-    0 -> 2 [ label = "1.0" ]
-    1 -> 2 [ label = "1.0" ]
-    2 -> 4 [ label = "1.0" ]
-    2 -> 3 [ label = "1.0" ]
+    0 -> 2 [ label = "1" ]
+    1 -> 2 [ label = "1" ]
+    2 -> 3 [ label = "1" ]
+    2 -> 4 [ label = "1" ]
 }
 "#,
         );
@@ -971,7 +973,7 @@ mod tests {
             r#"digraph {
     0 [ label = "transport-belt at [0.5, 0.5]" ]
     4 [ label = "transport-belt at [0.5, 4.5]" ]
-    0 -> 4 [ label = "4.0" ]
+    0 -> 4 [ label = "4" ]
 }
 "#,
         );
@@ -991,12 +993,12 @@ mod tests {
     3 [ label = "transport-belt at [-59.5, 71.5]" ]
     4 [ label = "transport-belt at [-59.5, 72.5]" ]
     5 [ label = "transport-belt at [-57.5, 72.5]" ]
-    0 -> 1 [ label = "1.0" ]
-    1 -> 3 [ label = "1.0" ]
-    1 -> 4 [ label = "1.0" ]
-    2 -> 4 [ label = "1.0" ]
-    2 -> 3 [ label = "1.0" ]
-    5 -> 2 [ label = "1.0" ]
+    0 -> 1 [ label = "1" ]
+    1 -> 3 [ label = "1" ]
+    1 -> 4 [ label = "1" ]
+    2 -> 3 [ label = "1" ]
+    2 -> 4 [ label = "1" ]
+    5 -> 2 [ label = "1" ]
 }
 "#,
         );

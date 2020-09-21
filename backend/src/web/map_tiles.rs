@@ -1,15 +1,17 @@
-use crate::types::ChunkPosition;
+use std::path::Path;
+use std::sync::Arc;
+
+use actix_web::{web, HttpResponse};
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageFormat, RgbaImage};
-use std::sync::Arc;
+
+use crate::factorio::world::FactorioWorld;
+use crate::types::ChunkPosition;
+
 // use std::time::Instant;
 
 const TILE_WIDTH: u32 = 256;
 const TILE_HEIGHT: u32 = 256;
-
-use crate::factorio::world::FactorioWorld;
-use actix_web::{web, HttpResponse};
-use std::path::Path;
 
 pub async fn map_tiles(
     world: web::Data<Arc<FactorioWorld>>,
@@ -40,17 +42,16 @@ pub async fn map_tiles(
                         chunk_position.x * 32,
                         chunk_position.y * 32
                     );
-                    let img = match world.image_cache.get_one(&graphics_path_str) {
+                    let img = match world.image_cache.get(&graphics_path_str) {
                         Some(img) => Some(img),
                         None => {
-                            let mut writer = world.image_cache_writer.lock().unwrap();
                             let graphics_path = Path::new(&graphics_path_str);
                             if graphics_path.exists() {
                                 let img = image::open(graphics_path).unwrap().into_rgba();
-                                writer.insert(graphics_path_str.clone(), Box::new(img));
-                                writer.refresh();
-                                drop(writer);
-                                world.image_cache.get_one(&graphics_path_str)
+                                world
+                                    .image_cache
+                                    .insert(graphics_path_str.clone(), Box::new(img));
+                                world.image_cache.get(&graphics_path_str)
                             } else {
                                 None
                             }
@@ -87,17 +88,16 @@ pub async fn map_tiles(
                         chunk_position.x * 32,
                         chunk_position.y * 32
                     );
-                    let img = match world.image_cache.get_one(&graphics_path_str) {
+                    let img = match world.image_cache.get(&graphics_path_str) {
                         Some(img) => Some(img),
                         None => {
-                            let mut writer = world.image_cache_writer.lock().unwrap();
                             let graphics_path = Path::new(&graphics_path_str);
                             if graphics_path.exists() {
                                 let img = image::open(graphics_path).unwrap().into_rgba();
-                                writer.insert(graphics_path_str.clone(), Box::new(img));
-                                writer.refresh();
-                                drop(writer);
-                                world.image_cache.get_one(&graphics_path_str)
+                                world
+                                    .image_cache
+                                    .insert(graphics_path_str.clone(), Box::new(img));
+                                world.image_cache.get(&graphics_path_str)
                             } else {
                                 None
                             }
@@ -140,10 +140,9 @@ pub async fn map_tiles(
                 chunk_x, chunk_y
             );
 
-            let img = match world.image_cache.get_one(&graphics_path_str) {
+            let img = match world.image_cache.get(&graphics_path_str) {
                 Some(img) => Some(img),
                 None => {
-                    let mut writer = world.image_cache_writer.lock().unwrap();
                     // if let Some(img) = writer.get_one(&graphics_path_str) {
                     //     drop(writer);
                     //     world.image_cache.get_one(&graphics_path_str)
@@ -151,10 +150,10 @@ pub async fn map_tiles(
                     let graphics_path = Path::new(&graphics_path_str);
                     if graphics_path.exists() {
                         let img = image::open(graphics_path).unwrap().into_rgba();
-                        writer.insert(graphics_path_str.clone(), Box::new(img));
-                        writer.refresh();
-                        drop(writer);
-                        world.image_cache.get_one(&graphics_path_str)
+                        world
+                            .image_cache
+                            .insert(graphics_path_str.clone(), Box::new(img));
+                        world.image_cache.get(&graphics_path_str)
                     } else {
                         None
                     }

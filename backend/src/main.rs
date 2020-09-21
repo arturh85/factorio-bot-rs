@@ -1,7 +1,9 @@
 #![warn(clippy::all, clippy::pedantic)]
+
 use actix::Actor;
 use clap::{App, Arg};
-use factorio_bot_backend::factorio::plan::start_factorio_and_plan_graph;
+
+use factorio_bot_backend::factorio::planner::start_factorio_and_plan_graph;
 use factorio_bot_backend::factorio::process_control::start_factorio;
 use factorio_bot_backend::factorio::rcon::{FactorioRcon, RconSettings};
 use factorio_bot_backend::factorio::roll_best_seed::{roll_seed, RollSeedLimit};
@@ -54,6 +56,13 @@ async fn main() -> anyhow::Result<()> {
                         .help("how many rolling servers to run in parallel"),
                 )
                 .arg(
+                    Arg::with_name("name")
+                        .long("name")
+                        .value_name("name")
+                        .required(true)
+                        .help("name of plan without .lua extension"),
+                )
+                .arg(
                     Arg::with_name("rolls")
                         .short("r")
                         .long("rolls")
@@ -84,6 +93,13 @@ async fn main() -> anyhow::Result<()> {
                         .value_name("seed")
                         .required(false)
                         .help("use given seed to recreate level"),
+                )
+                .arg(
+                    Arg::with_name("name")
+                        .long("name")
+                        .value_name("name")
+                        .required(true)
+                        .help("name of plan without .lua extension"),
                 )
                 .arg(
                     Arg::with_name("clients")
@@ -194,6 +210,7 @@ async fn main() -> anyhow::Result<()> {
                 None => RollSeedLimit::Seconds(matches.value_of("seconds").unwrap().parse()?),
             },
             matches.value_of("parallel").unwrap().parse()?,
+            matches.value_of("name").unwrap().into(),
             matches.value_of("clients").unwrap().parse()?,
         )
         .await?
@@ -207,6 +224,7 @@ async fn main() -> anyhow::Result<()> {
             settings,
             matches.value_of("map"),
             matches.value_of("seed"),
+            matches.value_of("name").unwrap(),
             matches.value_of("clients").unwrap().parse()?,
         )
         .await?;

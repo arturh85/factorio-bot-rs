@@ -1,11 +1,225 @@
+use crate::factorio::util::format_dotgraph;
 use crate::num_traits::FromPrimitive;
 use crate::types::{Direction, FactorioEntity, Position};
 use noisy_float::types::{r64, R64};
 use petgraph::algo::astar;
+use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DefaultIx, EdgeIndex, NodeIndex};
 use petgraph::stable_graph::{Edges, NodeIndices, StableGraph};
 use petgraph::Directed;
+use ptree::graph::print_graph;
 use serde::export::Formatter;
+use std::collections::HashMap;
+
+#[derive(Clone)]
+pub struct TaskGraph {
+    inner: TaskGraphInner,
+    pub start_node: NodeIndex,
+    pub end_node: NodeIndex,
+    pub cursor: NodeIndex,
+    groups: Vec<HashMap<u32, NodeIndex>>,
+}
+
+impl TaskGraph {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let mut graph = TaskGraphInner::new();
+        let start_node = graph.add_node(TaskNode::new(None, "Process Start", None));
+        let end_node = graph.add_node(TaskNode::new(None, "Process End", None));
+        let cursor = start_node;
+        graph.add_edge(start_node, end_node, 0.);
+        TaskGraph {
+            inner: graph,
+            start_node,
+            end_node,
+            cursor,
+            groups: Vec::new(),
+        }
+    }
+
+    fn add_to_cursor(&mut self, node: NodeIndex) {
+        if let Some(edge) = self.inner.find_edge(self.cursor, self.end_node) {
+            self.inner.remove_edge(edge);
+        }
+        self.inner.add_edge(self.cursor, node, 0.);
+        self.cursor = node;
+        self.inner.add_edge(self.cursor, self.end_node, 0.);
+    }
+
+    fn add_to_group(&mut self, player_id: u32, node: NodeIndex, cost: f64) {
+        let mut cursor = self.cursor;
+        if let Some(group) = self.groups.last_mut() {
+            if let Some(player_cursor) = group.get(&player_id) {
+                cursor = *player_cursor
+            }
+            group.insert(player_id, node);
+            self.inner.add_edge(cursor, node, cost);
+        } else {
+            panic!("no group to add to?");
+            // self.inner.add_edge(self.cursor, node, 0.);
+        }
+    }
+
+    pub fn group_start(&mut self, label: &str) {
+        let group_start =
+            self.inner
+                .add_node(TaskNode::new(None, &format!("Start: {}", label), None));
+        self.add_to_cursor(group_start);
+        self.groups.push(HashMap::new());
+    }
+
+    pub fn group_end(&mut self) {
+        let group = self.groups.pop().expect("no open group");
+        let group_end = self.inner.add_node(TaskNode::new(None, "End", None));
+        for (_, cursor) in group {
+            self.inner.add_edge(cursor, group_end, 0.);
+        }
+        if let Some(edge) = self.inner.find_edge(self.cursor, self.end_node) {
+            self.inner.remove_edge(edge);
+        }
+        self.cursor = group_end;
+        self.inner.add_edge(self.cursor, self.end_node, 0.);
+        /*
+
+        let max_weight = weights.values().max();
+        if let Some(max_weight) = max_weight {
+            for (node, weight) in weights.iter() {
+                graph.add_edge(*node, end, (*max_weight - *weight).to_f64().unwrap());
+            }
+        } else {
+            graph.add_edge(start, end, 0.);
+        }
+         */
+    }
+
+    pub fn add_mine_node(&mut self, player_id: u32, cost: f64, target: MineTarget) {
+        let node = self.inner.add_node(TaskNode::new_mine(player_id, target));
+        self.add_to_group(player_id, node, cost);
+    }
+
+    pub fn add_walk_node(&mut self, player_id: u32, cost: f64, target: PositionRadius) {
+        let node = self.inner.add_node(TaskNode::new_walk(player_id, target));
+        self.add_to_group(player_id, node, cost);
+    }
+
+    pub fn add_place_node(&mut self, player_id: u32, cost: f64, entity: FactorioEntity) {
+        let node = self.inner.add_node(TaskNode::new_place(player_id, entity));
+        self.add_to_group(player_id, node, cost);
+    }
+
+    pub fn weight(&self, start: NodeIndex, goal: NodeIndex) -> R64 {
+        let (weight, _) = self.astar(start, goal).expect("failed to find path");
+        r64(weight)
+    }
+
+    pub fn node_indices(&self) -> NodeIndices<TaskNode, DefaultIx> {
+        self.inner.node_indices()
+    }
+    pub fn shortest_path(&self) -> f64 {
+        let process_start = self.inner.node_indices().next().unwrap();
+        let process_end = self.inner.node_indices().last().unwrap();
+        let (weight, _) = self
+            .astar(process_start, process_end)
+            .expect("no path found");
+        weight
+    }
+    pub fn add_group_start_node(&mut self, parent: NodeIndex, label: &str) -> NodeIndex {
+        let start = self
+            .inner
+            .add_node(TaskNode::new(None, &format!("Start: {}", label), None));
+        self.inner.add_edge(parent, start, 0.);
+
+        start
+    }
+    pub fn print(&self) {
+        print_graph(&self.inner.clone().into(), self.start_node).unwrap();
+    }
+    pub fn graphviz_dot(&self) -> String {
+        format_dotgraph(Dot::with_config(&self.inner, &[Config::GraphContentOnly]).to_string())
+    }
+
+    pub fn add_node(&mut self, task: TaskNode) -> NodeIndex {
+        self.inner.add_node(task)
+    }
+
+    pub fn add_edge(&mut self, a: NodeIndex, b: NodeIndex, weight: f64) -> EdgeIndex {
+        self.inner.add_edge(a, b, weight)
+    }
+
+    pub fn astar(&self, start: NodeIndex, goal: NodeIndex) -> Option<(f64, Vec<NodeIndex>)> {
+        astar(
+            &self.inner,
+            start,
+            |finish| finish == goal,
+            |e| *e.weight(),
+            |_| 0.,
+        )
+    }
+
+    pub fn edges_directed(
+        &self,
+        i: NodeIndex,
+        dir: petgraph::Direction,
+    ) -> Edges<f64, Directed, DefaultIx> {
+        self.inner.edges_directed(i, dir)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InventoryItem {
+    pub name: String,
+    pub count: u32,
+}
+
+impl InventoryItem {
+    pub fn new(name: &str, count: u32) -> InventoryItem {
+        InventoryItem {
+            name: name.into(),
+            count,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InventoryLocation {
+    pub entity_name: String,
+    pub position: Position,
+    pub inventory_type: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct EntityPlacement {
+    pub item_name: String,
+    pub position: Position,
+    pub direction: Direction,
+}
+
+#[derive(Debug, Clone)]
+pub struct PositionRadius {
+    pub position: Position,
+    pub radius: f64,
+}
+impl PositionRadius {
+    pub fn new(x: f64, y: f64, radius: f64) -> PositionRadius {
+        PositionRadius {
+            position: Position::new(x, y),
+            radius,
+        }
+    }
+    pub fn from_position(pos: &Position, radius: f64) -> PositionRadius {
+        PositionRadius {
+            position: pos.clone(),
+            radius,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MineTarget {
+    pub position: Position,
+    pub name: String,
+    pub count: u32,
+}
 
 #[derive(Debug, Clone)]
 pub enum TaskData {
@@ -114,125 +328,94 @@ pub struct TaskResult(i32);
 
 pub type TaskGraphInner = StableGraph<TaskNode, f64>;
 
-#[derive(Clone)]
-pub struct TaskGraph {
-    inner: TaskGraphInner,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_group() {
+        let mut task_graph = TaskGraph::new();
+        task_graph.group_start("foo");
+        task_graph.add_mine_node(
+            1,
+            3.,
+            MineTarget {
+                position: Position::default(),
+                count: 1,
+                name: "iron-ore".into(),
+            },
+        );
+        task_graph.group_end();
+
+        assert_eq!(
+            task_graph.graphviz_dot(),
+            r##"digraph {
+    0 [ label = "Process Start" ]
+    1 [ label = "Process End" ]
+    2 [ label = "Start: foo" ]
+    3 [ label = "Mining iron-ore" ]
+    4 [ label = "End" ]
+    0 -> 2 [ label = "0" ]
+    2 -> 3 [ label = "3" ]
+    3 -> 4 [ label = "0" ]
+    4 -> 1 [ label = "0" ]
 }
-
-impl TaskGraph {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        TaskGraph {
-            inner: TaskGraphInner::new(),
-        }
-    }
-    pub fn weight(&self, start: NodeIndex, goal: NodeIndex) -> R64 {
-        let (weight, _) = self.astar(start, goal).expect("failed to find path");
-        r64(weight)
+"##,
+        );
     }
 
-    pub fn node_indices(&self) -> NodeIndices<TaskNode, DefaultIx> {
-        self.inner.node_indices()
-    }
+    #[test]
+    fn test_diverging_group() {
+        let mut task_graph = TaskGraph::new();
+        task_graph.group_start("foo");
+        task_graph.add_mine_node(
+            1,
+            3.,
+            MineTarget {
+                position: Position::default(),
+                count: 1,
+                name: "iron-ore".into(),
+            },
+        );
+        task_graph.add_mine_node(
+            1,
+            3.,
+            MineTarget {
+                position: Position::default(),
+                count: 1,
+                name: "iron-ore".into(),
+            },
+        );
+        task_graph.add_mine_node(
+            2,
+            3.,
+            MineTarget {
+                position: Position::default(),
+                count: 1,
+                name: "iron-ore".into(),
+            },
+        );
+        task_graph.group_end();
 
-    pub fn add_process_start_node(&mut self, parent: NodeIndex, label: &str) -> NodeIndex {
-        let start = self
-            .inner
-            .add_node(TaskNode::new(None, &format!("Start: {}", label), None));
-        self.inner.add_edge(parent, start, 0.);
-
-        start
-    }
-    pub fn add_process_end_node(&mut self) -> NodeIndex {
-        self.inner.add_node(TaskNode::new(None, "End", None))
-    }
-    pub fn graphviz_dot(&self) -> String {
-        use petgraph::dot::{Config, Dot};
-        format!(
-            "digraph {{\n{:?}}}\n",
-            Dot::with_config(&self.inner, &[Config::GraphContentOnly])
-        )
-    }
-
-    pub fn add_node(&mut self, task: TaskNode) -> NodeIndex {
-        self.inner.add_node(task)
-    }
-
-    pub fn add_edge(&mut self, a: NodeIndex, b: NodeIndex, weight: f64) -> EdgeIndex {
-        self.inner.add_edge(a, b, weight)
-    }
-
-    pub fn astar(&self, start: NodeIndex, goal: NodeIndex) -> Option<(f64, Vec<NodeIndex>)> {
-        astar(
-            &self.inner,
-            start,
-            |finish| finish == goal,
-            |e| *e.weight(),
-            |_| 0.,
-        )
-    }
-
-    pub fn edges_directed(
-        &self,
-        i: NodeIndex,
-        dir: petgraph::Direction,
-    ) -> Edges<f64, Directed, DefaultIx> {
-        self.inner.edges_directed(i, dir)
-    }
+        assert_eq!(
+            task_graph.graphviz_dot(),
+            r##"digraph {
+    0 [ label = "Process Start" ]
+    1 [ label = "Process End" ]
+    2 [ label = "Start: foo" ]
+    3 [ label = "Mining iron-ore" ]
+    4 [ label = "Mining iron-ore" ]
+    5 [ label = "Mining iron-ore" ]
+    6 [ label = "End" ]
+    0 -> 2 [ label = "0" ]
+    2 -> 3 [ label = "3" ]
+    2 -> 5 [ label = "3" ]
+    3 -> 4 [ label = "3" ]
+    4 -> 6 [ label = "0" ]
+    5 -> 6 [ label = "0" ]
+    6 -> 1 [ label = "0" ]
 }
-
-#[derive(Debug, Clone)]
-pub struct InventoryItem {
-    pub name: String,
-    pub count: u32,
-}
-
-impl InventoryItem {
-    pub fn new(name: &str, count: u32) -> InventoryItem {
-        InventoryItem {
-            name: name.into(),
-            count,
-        }
+"##,
+        );
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct InventoryLocation {
-    pub entity_name: String,
-    pub position: Position,
-    pub inventory_type: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct EntityPlacement {
-    pub item_name: String,
-    pub position: Position,
-    pub direction: Direction,
-}
-
-#[derive(Debug, Clone)]
-pub struct PositionRadius {
-    pub position: Position,
-    pub radius: f64,
-}
-impl PositionRadius {
-    pub fn new(x: f64, y: f64, radius: f64) -> PositionRadius {
-        PositionRadius {
-            position: Position::new(x, y),
-            radius,
-        }
-    }
-    pub fn from_position(pos: &Position, radius: f64) -> PositionRadius {
-        PositionRadius {
-            position: pos.clone(),
-            radius,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MineTarget {
-    pub position: Position,
-    pub name: String,
-    pub count: u32,
 }

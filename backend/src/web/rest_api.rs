@@ -1,23 +1,24 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use actix_web::web;
+use actix_web::web::{Json, Path as PathInfo};
+use dashmap::lock::RwLock;
+use factorio_blueprint::BlueprintCodec;
+use serde_json::Value;
+
 use crate::error::ActixAnyhowError;
-use crate::factorio::plan::{execute_plan, Planner};
+use crate::factorio::planner::Planner;
 use crate::factorio::rcon::FactorioRcon;
 use crate::factorio::util::blueprint_build_area;
 use crate::factorio::world::FactorioWorld;
-use crate::factorio::ws::FactorioWebSocketServer;
 use crate::num_traits::FromPrimitive;
 use crate::types::{
     AreaFilter, Direction, FactorioBlueprintInfo, FactorioEntity, FactorioEntityPrototype,
     FactorioForce, FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
     InventoryResponse, PlaceEntitiesResult, PlaceEntityResult, Position, RequestEntity,
 };
-use actix::Addr;
-use actix_web::web;
-use actix_web::web::{Json, Path as PathInfo};
-use factorio_blueprint::BlueprintCodec;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -158,7 +159,7 @@ pub async fn move_player(
     let goal: Position = info.goal.parse()?;
     rcon.move_player(&world, player_id, &goal, info.radius)
         .await?;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
         None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
@@ -172,7 +173,7 @@ pub async fn player_info(
 ) -> Result<Json<FactorioPlayer>, ActixAnyhowError> {
     let player_id = *path;
 
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
         None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
@@ -205,7 +206,7 @@ pub async fn place_entity(
         )
         .await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(PlaceEntityResult {
             entity,
@@ -232,7 +233,7 @@ pub async fn cheat_item(
     let player_id = *path;
     rcon.cheat_item(player_id, &info.name, info.count).await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
         None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
@@ -291,7 +292,7 @@ pub async fn insert_to_inventory(
     )
     .await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
         None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
@@ -330,7 +331,7 @@ pub async fn remove_from_inventory(
     )
     .await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
         None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
@@ -342,12 +343,8 @@ pub async fn all_players(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<Vec<FactorioPlayer>>, ActixAnyhowError> {
     let mut all_players: Vec<FactorioPlayer> = Vec::new();
-    if let Some(players) = &world.players.read() {
-        for (_, player) in players {
-            if let Some(player) = player.get_one() {
-                all_players.push(player.clone());
-            }
-        }
+    for player in world.players.iter() {
+        all_players.push(player.clone());
     }
     Ok(Json(all_players))
 }
@@ -357,12 +354,8 @@ pub async fn item_prototypes(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<HashMap<String, FactorioItemPrototype>>, ActixAnyhowError> {
     let mut data: HashMap<String, FactorioItemPrototype> = HashMap::new();
-
-    if let Some(item_prototypes) = &world.item_prototypes.read() {
-        for (key, value) in item_prototypes {
-            let value = value.get_one().unwrap();
-            data.insert(key.clone(), value.clone());
-        }
+    for item_prototype in world.item_prototypes.iter() {
+        data.insert(item_prototype.name.clone(), item_prototype.clone());
     }
     Ok(Json(data))
 }
@@ -466,7 +459,7 @@ pub async fn place_blueprint(
         )
         .await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(PlaceEntitiesResult {
             player: player.clone(),
@@ -495,7 +488,7 @@ pub async fn revive_ghost(
         .revive_ghost(player_id, &info.name, &info.position.parse()?, &world)
         .await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(PlaceEntityResult {
             player: player.clone(),
@@ -531,7 +524,7 @@ pub async fn cheat_blueprint(
         )
         .await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(PlaceEntitiesResult {
             player: player.clone(),
@@ -584,7 +577,7 @@ pub async fn player_force(
     Ok(Json(
         world
             .forces
-            .get_one("player")
+            .get("player")
             .expect("player force not found")
             .clone(),
     ))
@@ -592,16 +585,11 @@ pub async fn player_force(
 pub async fn all_forces(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<Json<Vec<FactorioForce>>, ActixAnyhowError> {
-    let mut aforces: Vec<FactorioForce> = vec![];
-    if let Some(forces) = &world.forces.read() {
-        for (_, force) in forces {
-            if let Some(force) = force.get_one() {
-                aforces.push(force.clone());
-            }
-        }
+    let mut forces: Vec<FactorioForce> = vec![];
+    for force in world.forces.iter() {
+        forces.push(force.clone());
     }
-
-    Ok(Json(aforces))
+    Ok(Json(forces))
 }
 
 // #[get("/<player_id>/mine?<name>&<position>&<count>")]
@@ -629,7 +617,7 @@ pub async fn mine(
     )
     .await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
         None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
@@ -654,7 +642,7 @@ pub async fn craft(
     rcon.player_craft(&world, player_id, &info.recipe, info.count)
         .await?;
     async_std::task::sleep(Duration::from_millis(50)).await;
-    let player = world.players.get_one(&player_id);
+    let player = world.players.get(&player_id);
     match player {
         Some(player) => Ok(Json(player.clone())),
         None => Err(ActixAnyhowError::from(anyhow!("player not found"))),
@@ -685,18 +673,42 @@ pub async fn find_offshore_pump_placement_options(
     ))
 }
 
-pub async fn web_plan_graph(
-    rcon: web::Data<Arc<FactorioRcon>>,
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanQueryParams {
+    name: String,
+    bot_count: u32,
+}
+pub async fn run_plan(
+    info: actix_web::web::Query<PlanQueryParams>,
+    planner: web::Data<Arc<RwLock<Planner>>>,
+) -> Result<String, ActixAnyhowError> {
+    planner.write().plan(&info.name, info.bot_count).await?;
+    Ok("ok".into())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecuteTaskGraphQueryParams {
+    name: String,
+}
+pub async fn execute_taskgraph(
+    info: actix_web::web::Query<ExecuteTaskGraphQueryParams>,
+    planner: web::Data<Arc<RwLock<Planner>>>,
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<String, ActixAnyhowError> {
-    let players = world.players.len() as u32;
-    let mut planner = Planner::new(
-        world.into_inner().as_ref().clone(),
-        rcon.into_inner().as_ref().clone(),
-    );
-    let (graph, _world) = planner.plan(players).await?;
-    let dot = graph.graphviz_dot();
-    Ok(dot)
+    planner
+        .write()
+        .plan(&info.name, world.players.len() as u32)
+        .await?;
+    // let dot = planner.graph().graphviz_dot();
+    // execute_plan(
+    //     world.as_ref().clone(),
+    //     rcon.as_ref().clone(),
+    //     Some(websocket_server.as_ref().clone()),
+    //     graph,
+    // );
+    Ok("ok".into())
 }
 
 pub async fn web_entity_graph(
@@ -712,23 +724,5 @@ pub async fn web_flow_graph(
     world.entity_graph.connect()?;
     world.flow_graph.update()?;
     let dot = world.flow_graph.graphviz_dot_condensed();
-    Ok(dot)
-}
-
-pub async fn web_initiate_plan(
-    rcon: web::Data<Arc<FactorioRcon>>,
-    world: web::Data<Arc<FactorioWorld>>,
-    websocket_server: web::Data<Addr<FactorioWebSocketServer>>,
-) -> Result<String, ActixAnyhowError> {
-    let players = world.players.len() as u32;
-    let mut planner = Planner::new(world.as_ref().clone(), rcon.as_ref().clone());
-    let (graph, _world) = planner.plan(players).await?;
-    let dot = graph.graphviz_dot();
-    execute_plan(
-        world.as_ref().clone(),
-        rcon.as_ref().clone(),
-        Some(websocket_server.as_ref().clone()),
-        graph,
-    );
     Ok(dot)
 }

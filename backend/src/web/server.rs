@@ -1,9 +1,7 @@
-use crate::factorio::rcon::FactorioRcon;
+use std::env;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::factorio::world::FactorioWorld;
-use crate::factorio::ws::{FactorioWebSocketClient, FactorioWebSocketServer, RegisterWSClient};
 use actix::Addr;
 use actix_cors::Cors;
 use actix_files as fs;
@@ -11,7 +9,12 @@ use actix_web::{
     http, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_web_actors::ws;
-use std::env;
+use dashmap::lock::RwLock;
+
+use crate::factorio::planner::Planner;
+use crate::factorio::rcon::FactorioRcon;
+use crate::factorio::world::FactorioWorld;
+use crate::factorio::ws::{FactorioWebSocketClient, FactorioWebSocketServer, RegisterWSClient};
 
 async fn status() -> impl Responder {
     HttpResponse::Ok().body("ok")
@@ -43,14 +46,17 @@ pub async fn start_webserver(
     if open_browser {
         webbrowser::open(&url).expect("failed to open browser");
     }
-    let frontend_path = match Path::new("public/").exists() {
-        true => "public/",
-        false => "frontend/dist/",
+    let frontend_path = if Path::new("public/").exists() {
+        "public/"
+    } else {
+        "frontend/dist/"
     };
+    let planner = Arc::new(RwLock::new(Planner::new(world.clone(), rcon.clone())));
     HttpServer::new(move || {
         App::new()
             .data(world.clone())
             .data(rcon.clone())
+            .data(planner.clone())
             .data(websocket_server.clone())
             .wrap(
                 Cors::new()
@@ -88,8 +94,7 @@ pub async fn start_webserver(
                     .route(web::get().to(crate::web::rest_api::find_entities)),
             )
             .service(
-                web::resource("/api/dotTaskGraph")
-                    .route(web::get().to(crate::web::rest_api::web_plan_graph)),
+                web::resource("/api/runPlan").route(web::get().to(crate::web::rest_api::run_plan)),
             )
             .service(
                 web::resource("/api/dotEntityGraph")
@@ -101,7 +106,7 @@ pub async fn start_webserver(
             )
             .service(
                 web::resource("/api/initiatePlan")
-                    .route(web::get().to(crate::web::rest_api::web_initiate_plan)),
+                    .route(web::get().to(crate::web::rest_api::execute_taskgraph)),
             )
             .service(
                 web::resource("/api/findTiles")

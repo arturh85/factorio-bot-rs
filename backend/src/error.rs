@@ -1,7 +1,8 @@
+use std::fmt::Display;
+
 use actix_web::http::StatusCode;
 use actix_web::HttpResponse;
 use serde::export::Formatter;
-use std::fmt::Display;
 
 #[derive(Debug)]
 pub struct ActixAnyhowError {

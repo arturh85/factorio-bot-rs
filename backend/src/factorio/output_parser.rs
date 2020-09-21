@@ -1,4 +1,8 @@
-use crate::factorio::world::{FactorioWorld, FactorioWorldWriter};
+use std::sync::Arc;
+
+use actix::Addr;
+
+use crate::factorio::world::FactorioWorld;
 use crate::factorio::ws::{
     FactorioWebSocketServer, PlayerChangedMainInventoryMessage, PlayerChangedPositionMessage,
     PlayerDistanceChangedMessage, PlayerLeftMessage, ResearchCompletedMessage,
@@ -8,11 +12,9 @@ use crate::types::{
     FactorioItemPrototype, FactorioRecipe, FactorioTile, PlayerChangedDistanceEvent,
     PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent, Pos, Position, Rect,
 };
-use actix::Addr;
-use std::sync::Arc;
 
 pub struct OutputParser {
-    world: FactorioWorldWriter,
+    world: Arc<FactorioWorld>,
     websocket_server: Option<Addr<FactorioWebSocketServer>>,
 }
 
@@ -158,22 +160,13 @@ impl OutputParser {
                         }
                         _ => panic!(format!("unexpected action_completed: {}", action_status)),
                     };
-                    let world = self.world.world();
-                    let mut actions = world.actions.lock().await;
-                    actions.insert(action_id, String::from(result));
+                    self.world.actions.insert(action_id, String::from(result));
                 }
             }
             "on_script_path_request_finished" => {
                 let parts: Vec<&str> = rest.split('#').collect();
                 let id: u32 = parts[0].parse()?;
-                let world = self.world.world();
-                let mut path_requests = world.path_requests.lock().await;
-                path_requests.insert(id, String::from(parts[1]));
-                // info!("XXX player_path XXX sending");
-                // self.tx_path_requests
-                //     .send((id, String::from(parts[1])))
-                //     .unwrap();
-                // info!("XXX player_path XXX sended");
+                self.world.path_requests.insert(id, String::from(parts[1]));
             }
             "STATIC_DATA_END" => {
                 // handled by OutputReader
@@ -223,7 +216,7 @@ impl OutputParser {
                 if let Some(websocket_server) = self.websocket_server.as_ref() {
                     websocket_server
                         .send(PlayerChangedMainInventoryMessage {
-                            player: self.world().players.get_one(&player_id).unwrap().clone(),
+                            player: self.world.players.get(&player_id).unwrap().clone(),
                         })
                         .await?;
                 }
@@ -235,7 +228,7 @@ impl OutputParser {
                 if let Some(websocket_server) = self.websocket_server.as_ref() {
                     websocket_server
                         .send(PlayerChangedPositionMessage {
-                            player: self.world().players.get_one(&player_id).unwrap().clone(),
+                            player: self.world.players.get(&player_id).unwrap().clone(),
                         })
                         .await?;
                 }
@@ -247,7 +240,7 @@ impl OutputParser {
                 if let Some(websocket_server) = self.websocket_server.as_ref() {
                     websocket_server
                         .send(PlayerDistanceChangedMessage {
-                            player: self.world().players.get_one(&player_id).unwrap().clone(),
+                            player: self.world.players.get(&player_id).unwrap().clone(),
                         })
                         .await?;
                 }
@@ -266,8 +259,8 @@ impl OutputParser {
     }
 
     pub fn on_init(&self) -> anyhow::Result<()> {
-        self.world.world.entity_graph.connect()?;
-        self.world.world.flow_graph.update()?;
+        self.world.entity_graph.connect()?;
+        self.world.flow_graph.update()?;
         Ok(())
     }
 
@@ -275,11 +268,11 @@ impl OutputParser {
     pub fn new(websocket_server: Option<Addr<FactorioWebSocketServer>>) -> Self {
         OutputParser {
             websocket_server,
-            world: FactorioWorldWriter::new(),
+            world: Arc::new(FactorioWorld::new()),
         }
     }
 
     pub fn world(&self) -> Arc<FactorioWorld> {
-        self.world.world()
+        self.world.clone()
     }
 }

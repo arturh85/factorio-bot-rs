@@ -1,10 +1,9 @@
-
 -- globals:
--- all_bots: Vec<FactorioPlayer>
--- world: FactorioWorld
--- plan_world: FactorioWorld
--- entity_graph
--- blocked_quadtree
+-- all_bots: Vec<u32>
+-- world: LuaFactorioWorld
+-- rcon: LuaFactorioRcon
+-- plan: LuaPlanner
+
 
 blueprints = {
     StarterSteamEngineBoiler = "0eNqdkdEKwjAMRf8lz504nRv0V0Rkm0ECbVrWThxj/242RQXrgz6VhHtPLr0jNKZH3xFH0CNQ6ziA3o8Q6My1mXdx8AgaKKIFBVzbeQoRa5shn4kRJgXEJ7yCzqeDAuRIkfDOWYbhyL1tsBNBmqDAuyAmx/NFAWUiHOQppkl9QDYviK2NydBgGztqM+9MgvVAlSnU9rc8eYpR/BMnSdo9SY0jI5tvOYrVLuUvn35P/utpsUpLS5/6rX4FF+zCIq6qbZ5X1brcyP/fAHsdtKc=",
@@ -13,11 +12,42 @@ blueprints = {
     MinerLine = "0eNqdl11v2yAUhv9KxLWdBPBH7MtN603Vq3ZSt2ma/MEyJAwIcFcr8n8vcapoWjztwJWFDQ+Hw3l5zQm1YmTacOlQfUI9s53h2nElUY0e1Wg6Vm9+Oadtvdv9bDqnDFdLd7vt1LB74ez3Ln24+/rhy2d83368e+0n3d4PzyhBVjY6dSo9Gt6f4a+oLhM0oZrgOUFNa5UYHUvP3TSXR1Q7M7IE8U5Ji+pvJ2T5UTbiPNRNmvmAuGODB8tmOLeYYJ0zvEsHLv34tDdcCOTRXPbMT4bn7wli0nHH2QW4NKYfchxaZnyH/6ASpJXll2Qs4eNtvizAP/00PTd+1PKVzMkNnVzpzjTSamVc2jLhbrH0Hbv/G5utYGlo0Pm/gi5W6Flw0AQSdB6MxRBsEbuBOWQDyyvdDo0Q6XUOrQS7ZZN3tl/BvEI7BKcgg6SgCsZSCBbvY8ssg5QZxsFhF6Cww0WXg7jRqitB6chiC/kAKWQcLr8DKCtFMLcEcSOVh/fr0sPh2sOgsxiHq6+CcEm0+m7jXqs3Eu98BGR94TLEIB8hNBwMchKSRWecgjKeR2cc5FUkXIoY5C+kDAeDHIZEiBLkASRclBhkAjRelQWkRmi8KitIjVASeayW68cqjRAjyFdo+F8oBhkLzaN3sALtYIQKQYZAw1VIVhzM34eWK1T9x60vQaLxJP/ugWw3nxojps2TUv79CzP2UkwHnJVZVRYl3hd5Mc9vau2sKw=="
 }
 
-for k,v in pairs(all_bots) do
-    print("hello " .. v.playerId)
+function dumpPlayers()
+    for _,playerId in pairs(all_bots) do
+        print("hello bot #" .. playerId)
+        local player = world.player(playerId)
+        for k,v in pairs(player.mainInventory) do
+            print(" - " .. k .. ": " .. tostring(v))
+        end
+    end
 end
 
---mine_with_bots(bots, {0,0}, "rock-huge", nil)
+--local recipe = world.recipe("inserter")
+--print("recipe: " .. tostring(recipe))
+--for k,v in pairs(recipe) do
+--    print(k .. ": " .. tostring(v))
+--end
+--
+--dumpPlayers()
+
+
+function mine_with_bots(bots, search_center, name, entityName)
+    --local nearest = rcon.find_nearest(search_center, 500, name, entityName, #bots)
+--    local nearest = rcon.findEntitiesInRadius("0,0", 500, name, #bots)
+    plan.groupStart("Mine with Bots")
+
+    for idx,playerId in pairs(bots) do
+--        local entity = nearest[idx]
+        plan.mine(playerId, "0,0", name, 1)
+    end
+    plan.groupEnd()
+end
+
+
+mine_with_bots(all_bots, {0,0}, "rock-huge", nil)
+mine_with_bots(all_bots, {0,0}, "rock-huge", nil)
+mine_with_bots(all_bots, {0,0}, "rock-huge", nil)
+
 --mine_with_bots(bots, {0,0}, nil, "tree")
 --build_starter_base()
 --research("automation")
@@ -34,11 +64,11 @@ end
 --end
 --
 --function build_starter_miner_furnace(ore_name, count)
-----    local patches = resource_patches(ore_name)
-----    local positions = patches.find_free_rect
-----    for id, bot in pairs(bots) do
-----
-----    end
+--    local patches = resource_patches(ore_name)
+--    local positions = patches.find_free_rect
+--    for id, bot in pairs(bots) do
+--
+--    end
 --end
---
---
+
+

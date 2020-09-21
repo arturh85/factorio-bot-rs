@@ -1,13 +1,3 @@
-use crate::factorio::instance_setup::setup_factorio_instance;
-use crate::factorio::output_reader::read_output;
-use crate::factorio::rcon::{FactorioRcon, RconSettings};
-use crate::factorio::world::FactorioWorld;
-use crate::factorio::ws::FactorioWebSocketServer;
-use actix::clock::Duration;
-use actix::Addr;
-use async_std::sync::channel;
-use config::Config;
-use paris::Logger;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -17,6 +7,18 @@ use std::sync::Arc;
 use std::thread;
 use std::thread::{sleep, JoinHandle};
 use std::time::Instant;
+
+use actix::clock::Duration;
+use actix::Addr;
+use async_std::sync::channel;
+use config::Config;
+use paris::Logger;
+
+use crate::factorio::instance_setup::setup_factorio_instance;
+use crate::factorio::output_reader::read_output;
+use crate::factorio::rcon::{FactorioRcon, RconSettings};
+use crate::factorio::world::FactorioWorld;
+use crate::factorio::ws::FactorioWebSocketServer;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn start_factorio(

@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use dashmap::DashMap;
+
 use crate::factorio::entity_graph::EntityGraph;
 #[cfg(test)]
 use crate::types::{FactorioEntity, FactorioEntityPrototype};
-use dashmap::DashMap;
-use std::collections::HashMap;
-use std::sync::Arc;
 
 pub fn entity_graph_from(entities: Vec<FactorioEntity>) -> anyhow::Result<EntityGraph> {
     let prototypes = fixture_entity_prototypes();

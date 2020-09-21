@@ -1,16 +1,18 @@
-use crate::types::{Position, Rect};
+use std::sync::Arc;
+
+use actix_web::{web, HttpResponse};
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut};
-use std::sync::Arc;
+use petgraph::visit::EdgeRef;
+
+use crate::draw::draw_arrow_mut;
+use crate::factorio::world::FactorioWorld;
+use crate::types::{Position, Rect};
+
 // use std::time::Instant;
 
 const TILE_WIDTH: u32 = 256;
 const TILE_HEIGHT: u32 = 256;
-
-use crate::draw::draw_arrow_mut;
-use crate::factorio::world::FactorioWorld;
-use actix_web::{web, HttpResponse};
-use petgraph::visit::EdgeRef;
 
 pub async fn map_tiles(
     world: web::Data<Arc<FactorioWorld>>,

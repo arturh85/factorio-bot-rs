@@ -1,3 +1,13 @@
+use std::collections::HashMap;
+use std::ops::Add;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use config::Config;
+use rcon::Connection;
+use serde_json::Value;
+use unicode_segmentation::UnicodeSegmentation;
+
 use crate::factorio::util::{
     blueprint_build_area, build_entity_path, calculate_distance, hashmap_to_lua, map_blocked_tiles,
     move_pos, move_position, position_to_lua, rect_to_lua, span_rect, str_to_lua, value_to_lua,
@@ -9,15 +19,6 @@ use crate::types::{
     AreaFilter, Direction, FactorioEntity, FactorioForce, FactorioTile, InventoryResponse, Pos,
     Position, Rect, RequestEntity,
 };
-use async_std::sync::Mutex;
-use config::Config;
-use rcon::Connection;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::ops::Add;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use unicode_segmentation::UnicodeSegmentation;
 
 const RCON_INTERFACE: &str = "botbridge";
 
@@ -26,6 +27,9 @@ pub struct FactorioRcon {
     pool: bb8::Pool<ConnectionManager>,
     silent: bool,
 }
+
+unsafe impl Send for FactorioRcon {}
+unsafe impl Sync for FactorioRcon {}
 
 pub struct ConnectionManager {
     address: String,
@@ -218,7 +222,7 @@ impl FactorioRcon {
         inventory_player_ids: Vec<u32>,
         world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<Vec<FactorioEntity>> {
-        let player = world.players.get_one(&player_id);
+        let player = world.players.get(&player_id);
         if player.is_none() {
             return Err(anyhow!("player not found"));
         }
@@ -300,7 +304,7 @@ impl FactorioRcon {
         position: &Position,
         world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<FactorioEntity> {
-        let player = world.players.get_one(&player_id);
+        let player = world.players.get(&player_id);
         if player.is_none() {
             return Err(anyhow!("player not found"));
         }
@@ -393,19 +397,18 @@ impl FactorioRcon {
 
     async fn sleep_for_action_result(
         &self,
-        actions: &Mutex<HashMap<u32, String>>,
+        world: &Arc<FactorioWorld>,
         action_id: u32,
     ) -> anyhow::Result<()> {
         let wait_start = Instant::now();
         loop {
             async_std::task::sleep(Duration::from_millis(50)).await;
-            let mut actions = actions.lock().await;
-            if let Some(result) = actions.get(&action_id) {
+            if let Some(result) = world.actions.get(&action_id) {
                 if &result[..] == "ok" {
-                    actions.remove(&action_id);
+                    world.actions.remove(&action_id);
                     return Ok(());
                 } else {
-                    return Err(anyhow!("{}", result));
+                    return Err(anyhow!("{}", *result));
                 }
             }
             if wait_start.elapsed() > Duration::from_secs(360) {
@@ -416,17 +419,16 @@ impl FactorioRcon {
 
     async fn sleep_for_path_request_result(
         &self,
-        path_requests: &Mutex<HashMap<u32, String>>,
+        world: &Arc<FactorioWorld>,
         request_id: u32,
     ) -> anyhow::Result<Vec<Position>> {
         let wait_start = Instant::now();
         loop {
             async_std::task::sleep(Duration::from_millis(50)).await;
-            let mut path_requests = path_requests.lock().await;
-            if let Some(result) = path_requests.get(&request_id) {
+            if let Some(result) = world.path_requests.get(&request_id) {
                 // info!("action result: <bright-blue>{}</>", result);
                 let mut result = result.clone();
-                path_requests.remove(&request_id);
+                world.path_requests.remove(&request_id);
                 if result == "{}" {
                     result = String::from("[]");
                 }
@@ -454,8 +456,7 @@ impl FactorioRcon {
 
         self.action_start_walk_waypoints(action_id, player_id, waypoints)
             .await?;
-        self.sleep_for_action_result(&world.actions, action_id)
-            .await
+        self.sleep_for_action_result(world, action_id).await
     }
 
     pub async fn player_mine(
@@ -466,7 +467,7 @@ impl FactorioRcon {
         position: &Position,
         count: u32,
     ) -> anyhow::Result<()> {
-        let player = world.players.get_one(&player_id);
+        let player = world.players.get(&player_id);
         if player.is_none() {
             return Err(anyhow!("player not found"));
         }
@@ -485,8 +486,7 @@ impl FactorioRcon {
         }
         self.action_start_mining(action_id, player_id, name, position, count)
             .await?;
-        self.sleep_for_action_result(&world.actions, action_id)
-            .await
+        self.sleep_for_action_result(world, action_id).await
     }
 
     pub async fn player_craft(
@@ -502,8 +502,7 @@ impl FactorioRcon {
         drop(next_action_id);
         self.action_start_crafting(action_id, player_id, recipe, count)
             .await?;
-        self.sleep_for_action_result(&world.actions, action_id)
-            .await
+        self.sleep_for_action_result(world, action_id).await
     }
 
     pub async fn inventory_contents_at(
@@ -557,7 +556,7 @@ impl FactorioRcon {
         direction: u8,
         world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<FactorioEntity> {
-        let player = world.players.get_one(&player_id);
+        let player = world.players.get(&player_id);
         if player.is_none() {
             return Err(anyhow!("player not found"));
         }
@@ -660,7 +659,7 @@ impl FactorioRcon {
         item_count: u32,
         world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<()> {
-        let player = world.players.get_one(&player_id);
+        let player = world.players.get(&player_id);
         if player.is_none() {
             return Err(anyhow!("player not found"));
         }
@@ -707,7 +706,7 @@ impl FactorioRcon {
         item_count: u32,
         world: &Arc<FactorioWorld>,
     ) -> anyhow::Result<()> {
-        let player = world.players.get_one(&player_id);
+        let player = world.players.get(&player_id);
         if player.is_none() {
             return Err(anyhow!("player not found"));
         }
@@ -946,10 +945,7 @@ impl FactorioRcon {
         let id = self
             .async_request_player_path(player_id, goal, radius)
             .await?;
-        match self
-            .sleep_for_path_request_result(&world.path_requests, id)
-            .await
-        {
+        match self.sleep_for_path_request_result(world, id).await {
             Ok(path) => Ok(path),
             Err(err) => {
                 warn!(
@@ -959,7 +955,7 @@ impl FactorioRcon {
                     goal.y(),
                     err.to_string()
                 );
-                let player = world.players.get_one(&player_id).unwrap();
+                let player = world.players.get(&player_id).unwrap();
                 let mut direction = vector_normalize(&vector_substract(&player.position, &goal));
                 drop(player);
                 for _ in 0..4 {
@@ -971,10 +967,7 @@ impl FactorioRcon {
                     let id = self
                         .async_request_player_path(player_id, &new_goal, radius)
                         .await?;
-                    if let Ok(result) = self
-                        .sleep_for_path_request_result(&world.path_requests, id)
-                        .await
-                    {
+                    if let Ok(result) = self.sleep_for_path_request_result(world, id).await {
                         return Ok(result);
                     }
                     direction = direction.rotate_clockwise();
@@ -992,10 +985,7 @@ impl FactorioRcon {
         radius: Option<f64>,
     ) -> anyhow::Result<Vec<Position>> {
         let id = self.async_request_path(start, goal, radius).await?;
-        match self
-            .sleep_for_path_request_result(&world.path_requests, id)
-            .await
-        {
+        match self.sleep_for_path_request_result(world, id).await {
             Ok(path) => Ok(path),
             Err(err) => {
                 warn!(
@@ -1014,10 +1004,7 @@ impl FactorioRcon {
                         vector_add(&goal, &vector_multiply(&direction, radius.unwrap_or(10.0)));
 
                     let id = self.async_request_path(&start, &new_goal, radius).await?;
-                    if let Ok(result) = self
-                        .sleep_for_path_request_result(&world.path_requests, id)
-                        .await
-                    {
+                    if let Ok(result) = self.sleep_for_path_request_result(world, id).await {
                         return Ok(result);
                     }
                     direction = direction.rotate_clockwise();

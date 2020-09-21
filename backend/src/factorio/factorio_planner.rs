@@ -1,6 +1,7 @@
+use std::io::Read;
+
 use base64::decode;
 use flate2::read::ZlibDecoder;
-use std::io::Read;
 
 pub fn read_factorio_planner(exchange_str: &str) -> anyhow::Result<()> {
     let content = decode(exchange_str)?;

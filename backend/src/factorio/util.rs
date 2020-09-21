@@ -2,9 +2,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use dashmap::DashMap;
 use factorio_blueprint::BlueprintCodec;
 use factorio_blueprint::Container::{Blueprint, BlueprintBook};
+use itertools::Itertools;
 use num_traits::ToPrimitive;
 use pathfinding::prelude::astar;
 use serde_json::Value;
@@ -12,8 +15,7 @@ use serde_json::Value;
 use crate::types::{
     Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Pos, Position, Rect,
 };
-use dashmap::DashMap;
-use std::sync::Arc;
+use std::cmp::Ordering;
 
 pub fn hashmap_to_lua(map: HashMap<String, String>) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -515,8 +517,9 @@ pub fn relative_direction(from: &Pos, to: &Pos) -> Direction {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::types::Pos;
+
+    use super::*;
 
     #[test]
     fn test_relative_direction() {
@@ -547,4 +550,22 @@ mod tests {
             Direction::SouthEast
         );
     }
+}
+
+pub fn format_dotgraph(str: String) -> String {
+    format!(
+        "digraph {{\n{}\n}}\n",
+        str.lines()
+            .sorted_by(|a, b| {
+                let a_is_edge = a.contains(" -> ");
+                let b_is_edge = b.contains(" -> ");
+                let ordering = a_is_edge.cmp(&b_is_edge);
+                if ordering == Ordering::Equal {
+                    a.cmp(b)
+                } else {
+                    ordering
+                }
+            })
+            .join("\n")
+    )
 }

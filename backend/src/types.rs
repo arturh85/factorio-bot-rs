@@ -1,22 +1,24 @@
-use crate::factorio::entity_graph::QuadTreeRect;
-use crate::factorio::util::{add_to_rect_turned, calculate_distance, rect_floor_ceil};
-use crate::num_traits::FromPrimitive;
+use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use euclid::{TypedPoint2D, TypedSize2D};
-use evmap::ReadHandle;
 use factorio_blueprint::objects::Entity;
 use noisy_float::prelude::*;
 use num_traits::ToPrimitive;
 use pathfinding::utils::absdiff;
+use rlua::{Context, MultiValue};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
-use std::str::FromStr;
-use std::sync::Arc;
 use typescript_definitions::TypeScriptify;
+
+use crate::factorio::entity_graph::QuadTreeRect;
+use crate::factorio::util::{add_to_rect_turned, calculate_distance, rect_floor_ceil};
+use crate::num_traits::FromPrimitive;
 
 pub type FactorioInventory = HashMap<String, u32>;
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioRecipe {
     pub name: String,
@@ -43,7 +45,7 @@ pub struct FactorioBlueprintInfo {
     pub data: Value,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioIngredient {
     pub name: String,
@@ -51,7 +53,7 @@ pub struct FactorioIngredient {
     pub amount: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioProduct {
     pub name: String,
@@ -60,7 +62,7 @@ pub struct FactorioProduct {
     pub probability: Box<R64>,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioPlayer {
     pub player_id: u32,
@@ -90,14 +92,14 @@ impl Default for FactorioPlayer {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestEntity {
     pub name: String,
     pub position: Position,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct InventoryResponse {
     pub name: String,
@@ -106,7 +108,7 @@ pub struct InventoryResponse {
     pub fuel_inventory: Box<Option<BTreeMap<String, u32>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChunkPosition {
     pub x: i32,
@@ -122,13 +124,27 @@ impl From<&Pos> for ChunkPosition {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
     pub x: Box<R64>,
     pub y: Box<R64>,
 }
 
+impl<'lua> rlua::FromLuaMulti<'lua> for Position {
+    fn from_lua_multi(values: MultiValue<'_>, _lua: Context<'_>) -> rlua::Result<Self> {
+        let values: Vec<&rlua::Value> = values.iter().collect();
+        if let rlua::Value::Number(x) = values[0] {
+            if let rlua::Value::Number(y) = values[1] {
+                Ok(Position::new(*x, *y))
+            } else {
+                Err(rlua::Error::RuntimeError("invalid position".into()))
+            }
+        } else {
+            Err(rlua::Error::RuntimeError("invalid position".into()))
+        }
+    }
+}
 impl std::fmt::Display for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!(
@@ -270,9 +286,7 @@ impl FromStr for Position {
     }
 }
 
-#[derive(
-    Debug, Clone, Default, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy,
-)]
+#[derive(Debug, Clone, Default, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Rect {
     pub left_top: Position,
@@ -351,16 +365,14 @@ pub struct FactorioTile {
     pub color: Option<[u8; 4]>,
 }
 
-#[derive(
-    Debug, Clone, Default, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy,
-)]
+#[derive(Debug, Clone, Default, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioChunk {
     pub entities: Vec<FactorioEntity>,
     // pub tiles: Vec<FactorioTile>,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChunkObject {
     pub name: String,
@@ -371,14 +383,14 @@ pub struct ChunkObject {
     pub fuel_inventory: Box<Option<BTreeMap<String, u32>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChunkResource {
     pub name: String,
     pub position: Position,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioTechnology {
     pub name: String,
@@ -394,7 +406,7 @@ pub struct FactorioTechnology {
     pub valid: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioForce {
     pub name: String,
@@ -406,7 +418,7 @@ pub struct FactorioForce {
     pub technologies: Box<BTreeMap<String, FactorioTechnology>>,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioGraphic {
     pub entity_name: String,
@@ -418,7 +430,7 @@ pub struct FactorioGraphic {
                      //picspec.filename..":"..picspec.width..":"..picspec.height..":"..shiftx..":"..shifty..":"..xx..":"..yy..":"..scale
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioFluidBoxPrototype {
     pub pipe_connections: Box<Option<Vec<FactorioFluidBoxConnection>>>,
@@ -436,7 +448,6 @@ pub struct FactorioFluidBoxPrototype {
 //     Deserialize,
 //     Hash,
 //     Eq,
-//     ShallowCopy,
 // )]
 // #[strum(serialize_all = "kebab-case")]
 // #[serde(rename_all = "kebab-case")]
@@ -456,7 +467,6 @@ pub struct FactorioFluidBoxPrototype {
 //     Deserialize,
 //     Hash,
 //     Eq,
-//     ShallowCopy,
 // )]
 // #[strum(serialize_all = "kebab-case")]
 // #[serde(rename_all = "kebab-case")]
@@ -467,14 +477,14 @@ pub struct FactorioFluidBoxPrototype {
 //     None,
 // }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioFluidBoxConnection {
     pub max_underground_distance: Option<u32>,
     pub connection_type: String,
     pub positions: Vec<Position>,
 }
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioEntityPrototype {
     pub name: String,
@@ -489,9 +499,7 @@ pub struct FactorioEntityPrototype {
     pub fluidbox_prototypes: Box<Option<Vec<FactorioFluidBoxPrototype>>>,
 }
 
-#[derive(
-    Debug, Clone, Default, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy,
-)]
+#[derive(Debug, Clone, Default, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioEntity {
     pub name: String,
@@ -639,7 +647,7 @@ impl From<factorio_blueprint::objects::Position> for Position {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioItemPrototype {
     pub name: String,
@@ -734,7 +742,7 @@ impl ResourcePatch {
         width: u32,
         height: u32,
         near: &Position,
-        blocked: &ReadHandle<Pos, bool>,
+        // blocked: &ReadHandle<Pos, bool>,
     ) -> Option<Rect> {
         let mut elements = self.elements.clone();
         elements.sort_by(|a, b| {
@@ -752,11 +760,11 @@ impl ResourcePatch {
             for y in 0i32..height as i32 {
                 for x in 0i32..width as i32 {
                     let pos = Pos(element.x() as i32 + x, element.y() as i32 + y);
-                    let blocked_pos = blocked.get_one(&pos);
-                    if blocked_pos.is_some() && !*blocked_pos.unwrap() {
-                        invalid = true;
-                        break;
-                    }
+                    // let blocked_pos = blocked.get_one(&pos);
+                    // if blocked_pos.is_some() && !*blocked_pos.unwrap() {
+                    //     invalid = true;
+                    //     break;
+                    // }
                     if element_map.get(&pos).is_none() {
                         invalid = true;
                         break;
@@ -780,27 +788,27 @@ impl ResourcePatch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct FactorioResult {
     pub success: bool,
     pub output: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaceEntityResult {
     pub player: FactorioPlayer,
     pub entity: FactorioEntity,
 }
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaceEntitiesResult {
     pub player: FactorioPlayer,
     pub entities: Vec<FactorioEntity>,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerChangedDistanceEvent {
     pub player_id: u32,
@@ -812,21 +820,21 @@ pub struct PlayerChangedDistanceEvent {
     pub resource_reach_distance: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerChangedPositionEvent {
     pub player_id: u32,
     pub position: Position,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerChangedMainInventoryEvent {
     pub player_id: u32,
     pub main_inventory: Box<BTreeMap<String, u32>>,
 }
 
-#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq, ShallowCopy)]
+#[derive(Debug, Clone, PartialEq, TypeScriptify, Serialize, Deserialize, Hash, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerLeftEvent {
     pub player_id: u32,

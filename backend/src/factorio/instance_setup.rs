@@ -1,13 +1,3 @@
-use crate::factorio::output_reader::read_output;
-use crate::factorio::process_control::{await_lock, FactorioStartCondition};
-use crate::factorio::rcon::RconSettings;
-use crate::factorio::util::{read_to_value, write_value_to};
-use archiver_rs::{Archive, Compressed};
-use async_std::fs::create_dir;
-use indicatif::HumanDuration;
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
-use paris::Logger;
-use serde_json::Value;
 use std::fs;
 use std::fs::{read_to_string, File};
 use std::io::{BufReader, Write};
@@ -15,6 +5,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::time::Instant;
+
+use archiver_rs::{Archive, Compressed};
+use async_std::fs::create_dir;
+use indicatif::HumanDuration;
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use paris::Logger;
+use serde_json::Value;
+
+use crate::factorio::output_reader::read_output;
+use crate::factorio::process_control::{await_lock, FactorioStartCondition};
+use crate::factorio::rcon::RconSettings;
+use crate::factorio::util::{read_to_value, write_value_to};
 
 #[allow(clippy::too_many_arguments)]
 pub async fn setup_factorio_instance(

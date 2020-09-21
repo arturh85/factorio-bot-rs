@@ -1,6 +1,7 @@
+use imageproc::drawing::{draw_line_segment_mut, Canvas};
+
 use crate::factorio::util::{vector_add, vector_multiply, vector_normalize, vector_substract};
 use crate::types::Position;
-use imageproc::drawing::{draw_line_segment_mut, Canvas};
 
 #[allow(clippy::clone_on_copy)]
 pub fn draw_arrow_mut<C>(

@@ -1,12 +1,14 @@
-use crate::types::{
-    FactorioPlayer, PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent,
-    PlayerChangedPositionEvent, PlayerLeftEvent,
-};
+use std::time::Duration;
+
 use actix::prelude::*;
 use actix_web_actors::ws;
 use actix_web_actors::ws::ProtocolError;
 use serde_json::Value;
-use std::time::Duration;
+
+use crate::types::{
+    FactorioPlayer, PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent,
+    PlayerChangedPositionEvent, PlayerLeftEvent,
+};
 
 pub struct FactorioWebSocketClient {}
 
