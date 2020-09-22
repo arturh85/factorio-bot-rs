@@ -2,6 +2,7 @@ use crate::factorio::util::format_dotgraph;
 use crate::num_traits::FromPrimitive;
 use crate::types::{Direction, FactorioEntity, Position};
 use noisy_float::types::{r64, R64};
+use num_traits::ToPrimitive;
 use petgraph::algo::astar;
 use petgraph::dot::{Config, Dot};
 use petgraph::graph::{DefaultIx, EdgeIndex, NodeIndex};
@@ -74,8 +75,14 @@ impl TaskGraph {
         if group.is_empty() {
             self.inner.add_edge(self.cursor, group_end, 0.);
         } else {
+            let mut weights: HashMap<NodeIndex, R64> = HashMap::new();
             for (_, cursor) in group {
-                self.inner.add_edge(cursor, group_end, 0.);
+                weights.insert(cursor, self.weight(self.cursor, cursor));
+            }
+            let max_weight = *weights.values().max().unwrap();
+            for (cursor, weight) in weights {
+                self.inner
+                    .add_edge(cursor, group_end, (max_weight - weight).to_f64().unwrap());
             }
         }
         if let Some(edge) = self.inner.find_edge(self.cursor, self.end_node) {
@@ -83,17 +90,6 @@ impl TaskGraph {
         }
         self.cursor = group_end;
         self.inner.add_edge(self.cursor, self.end_node, 0.);
-        /*
-
-        let max_weight = weights.values().max();
-        if let Some(max_weight) = max_weight {
-            for (node, weight) in weights.iter() {
-                graph.add_edge(*node, end, (*max_weight - *weight).to_f64().unwrap());
-            }
-        } else {
-            graph.add_edge(start, end, 0.);
-        }
-         */
     }
 
     pub fn add_mine_node(&mut self, player_id: u32, cost: f64, target: MineTarget) {
@@ -416,7 +412,7 @@ mod tests {
     2 -> 5 [ label = "3" ]
     3 -> 4 [ label = "3" ]
     4 -> 6 [ label = "0" ]
-    5 -> 6 [ label = "0" ]
+    5 -> 6 [ label = "3" ]
     6 -> 1 [ label = "0" ]
 }
 "##,

@@ -237,7 +237,7 @@ mod tests {
                 r##"
     plan.groupStart("Mine Stuff")
     for idx,playerId in pairs(all_bots) do
-        plan.mine(playerId, "42,43", "rock-huge", 1)
+        plan.mine(playerId, tostring(idx * 10) .. ",43", "rock-huge", 1)
     end
     plan.groupEnd("foo")
         "##,
@@ -254,26 +254,26 @@ mod tests {
     10 [ label = "Mining rock-huge" ]
     11 [ label = "End" ]
     2 [ label = "Start: Mine Stuff" ]
-    3 [ label = "Walk to [42, 43]" ]
+    3 [ label = "Walk to [10, 43]" ]
     4 [ label = "Mining rock-huge" ]
-    5 [ label = "Walk to [42, 43]" ]
+    5 [ label = "Walk to [20, 43]" ]
     6 [ label = "Mining rock-huge" ]
-    7 [ label = "Walk to [42, 43]" ]
+    7 [ label = "Walk to [30, 43]" ]
     8 [ label = "Mining rock-huge" ]
-    9 [ label = "Walk to [42, 43]" ]
+    9 [ label = "Walk to [40, 43]" ]
     0 -> 2 [ label = "0" ]
     10 -> 11 [ label = "0" ]
     11 -> 1 [ label = "0" ]
-    2 -> 3 [ label = "61" ]
-    2 -> 5 [ label = "61" ]
-    2 -> 7 [ label = "61" ]
-    2 -> 9 [ label = "61" ]
+    2 -> 3 [ label = "45" ]
+    2 -> 5 [ label = "48" ]
+    2 -> 7 [ label = "53" ]
+    2 -> 9 [ label = "59" ]
     3 -> 4 [ label = "3" ]
-    4 -> 11 [ label = "0" ]
+    4 -> 11 [ label = "14" ]
     5 -> 6 [ label = "3" ]
-    6 -> 11 [ label = "0" ]
+    6 -> 11 [ label = "11" ]
     7 -> 8 [ label = "3" ]
-    8 -> 11 [ label = "0" ]
+    8 -> 11 [ label = "6" ]
     9 -> 10 [ label = "3" ]
 }
 "#,
