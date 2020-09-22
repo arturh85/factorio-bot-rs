@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 
+use crate::draw::{draw_blocked_rects_mut, draw_resource_rects_mut};
 use crate::factorio::entity_graph::EntityGraph;
 use crate::factorio::util::{add_to_rect, rect_fields};
 use crate::factorio::world::FactorioWorld;
@@ -160,57 +161,34 @@ pub fn draw_world(world: Arc<FactorioWorld>) {
         *pixel = image::Rgba([255, 255, 255, 255u8]);
     }
     let bounding_box = Rect::from_wh(bb_width, bb_height);
-    let base_x = bounding_box.left_top.x();
-    let base_y = bounding_box.left_top.y();
     let scaling_factor = image_width / bb_width;
-    for (name, rect, _id) in world
-        .entity_graph
-        .resource_tree()
-        .query(bounding_box.clone().into())
-    {
-        let width = (rect.size.width as f64 * scaling_factor).round() as u32;
-        let height = (rect.size.height as f64 * scaling_factor).round() as u32;
-        if width > 0 && height > 0 {
-            let draw_rect = imageproc::rect::Rect::at(
-                ((rect.origin.x as f64 - base_x) * scaling_factor).round() as i32,
-                ((rect.origin.y as f64 - base_y) * scaling_factor).round() as i32,
-            )
-            .of_size(width, height);
-            draw_hollow_rect_mut(
-                &mut buffer,
-                draw_rect,
-                image::Rgba(match &name[..] {
-                    "iron-ore" => [0u8, 140u8, 255u8, 255u8],
-                    "copper-ore" => [255u8, 55u8, 0u8, 255u8],
-                    "coal" => [0u8, 0u8, 0u8, 255u8],
-                    "stone" => [150u8, 100u8, 80u8, 255u8],
-                    "uranium-ore" => [100u8, 180u8, 0u8, 255u8],
-                    "crude-oil" => [255u8, 0u8, 255u8, 255u8],
-                    _ => [255u8, 0u8, 0u8, 255u8],
-                }),
-            );
-        }
-    }
-    for (minable, rect, _id) in world.entity_graph.blocked_tree().query(bounding_box.into()) {
-        let width = (rect.size.width as f64 * scaling_factor).round() as u32;
-        let height = (rect.size.height as f64 * scaling_factor).round() as u32;
-        if width > 0 && height > 0 {
-            let draw_rect = imageproc::rect::Rect::at(
-                ((rect.origin.x as f64 - base_x) * scaling_factor).round() as i32,
-                ((rect.origin.y as f64 - base_y) * scaling_factor).round() as i32,
-            )
-            .of_size(width, height);
-            draw_hollow_rect_mut(
-                &mut buffer,
-                draw_rect,
-                image::Rgba(if *minable {
-                    [76u8, 175u8, 80u8, 255u8]
-                } else {
-                    [255u8, 0u8, 0u8, 255u8]
-                }),
-            );
-        }
-    }
+    let resource_colors: HashMap<&str, image::Rgba<_>> = [
+        ("iron-ore", image::Rgba([0u8, 140u8, 255u8, 255u8])),
+        ("copper-ore", image::Rgba([255u8, 55u8, 0u8, 255u8])),
+        ("coal", image::Rgba([0u8, 0u8, 0u8, 255u8])),
+        ("stone", image::Rgba([150u8, 100u8, 80u8, 255u8])),
+        ("uranium-ore", image::Rgba([100u8, 180u8, 0u8, 255u8])),
+        ("crude-oil", image::Rgba([255u8, 0u8, 255u8, 255u8])),
+    ]
+    .iter()
+    .cloned()
+    .collect();
+    draw_resource_rects_mut(
+        &mut buffer,
+        world.entity_graph.resource_tree(),
+        &bounding_box,
+        scaling_factor,
+        resource_colors,
+        image::Rgba([255u8, 0u8, 0u8, 255u8]),
+    );
+    draw_blocked_rects_mut(
+        &mut buffer,
+        world.entity_graph.blocked_tree(),
+        &bounding_box,
+        scaling_factor,
+        image::Rgba([76u8, 175u8, 80u8, 255u8]),
+        image::Rgba([255u8, 0u8, 0u8, 255u8]),
+    );
     draw_hollow_rect_mut(
         &mut buffer,
         imageproc::rect::Rect::at((image_width / 2. - 1.) as i32, 0)
@@ -223,6 +201,5 @@ pub fn draw_world(world: Arc<FactorioWorld>) {
             .of_size(image_width as u32, 2),
         image::Rgba([0u8, 0u8, 0u8, 255u8]),
     );
-
     buffer.save("tests/world.png").unwrap();
 }

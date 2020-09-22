@@ -1,7 +1,12 @@
-use imageproc::drawing::{draw_line_segment_mut, Canvas};
+use imageproc::drawing::{draw_hollow_rect_mut, draw_line_segment_mut, Canvas};
 
-use crate::factorio::util::{vector_add, vector_multiply, vector_normalize, vector_substract};
-use crate::types::Position;
+use crate::factorio::entity_graph::{BlockedQuadTree, ResourceQuadTree};
+use crate::factorio::util::{
+    scaled_draw_rect, vector_add, vector_multiply, vector_normalize, vector_substract,
+};
+use crate::types::{Position, Rect};
+use dashmap::lock::RwLockReadGuard;
+use std::collections::HashMap;
 
 #[allow(clippy::clone_on_copy)]
 pub fn draw_arrow_mut<C>(
@@ -34,5 +39,55 @@ pub fn draw_arrow_mut<C>(
             (v2.x() as f32, v2.y() as f32),
             color.clone(),
         );
+    }
+}
+
+#[allow(clippy::clone_on_copy)]
+pub fn draw_blocked_rects_mut<C>(
+    canvas: &mut C,
+    blocked: RwLockReadGuard<BlockedQuadTree>,
+    bounding_box: &Rect,
+    scaling_factor: f64,
+    color_mineable: C::Pixel,
+    color_unmineable: C::Pixel,
+) where
+    C: Canvas,
+    C::Pixel: 'static,
+{
+    for (minable, rect, _id) in blocked.query(bounding_box.clone().into()) {
+        if let Some(draw_rect) = scaled_draw_rect(bounding_box, rect, scaling_factor) {
+            draw_hollow_rect_mut(
+                canvas,
+                draw_rect,
+                if *minable {
+                    color_mineable.clone()
+                } else {
+                    color_unmineable.clone()
+                },
+            );
+        }
+    }
+}
+
+#[allow(clippy::clone_on_copy)]
+pub fn draw_resource_rects_mut<C>(
+    canvas: &mut C,
+    resources: RwLockReadGuard<ResourceQuadTree>,
+    bounding_box: &Rect,
+    scaling_factor: f64,
+    colors: HashMap<&str, C::Pixel>,
+    invalid_color: C::Pixel,
+) where
+    C: Canvas,
+    C::Pixel: 'static,
+{
+    for (name, rect, _id) in resources.query(bounding_box.clone().into()) {
+        if let Some(draw_rect) = scaled_draw_rect(bounding_box, rect, scaling_factor) {
+            draw_hollow_rect_mut(
+                canvas,
+                draw_rect,
+                colors.get(name.as_str()).unwrap_or(&invalid_color).clone(),
+            );
+        }
     }
 }

@@ -5,9 +5,11 @@ use image::{DynamicImage, ImageFormat, RgbaImage};
 use imageproc::drawing::{draw_filled_rect_mut, draw_hollow_rect_mut};
 use petgraph::visit::EdgeRef;
 
-use crate::draw::draw_arrow_mut;
+use crate::draw::{draw_arrow_mut, draw_blocked_rects_mut, draw_resource_rects_mut};
+use crate::factorio::util::scaled_draw_rect;
 use crate::factorio::world::FactorioWorld;
 use crate::types::{Position, Rect};
+use std::collections::HashMap;
 
 // use std::time::Instant;
 
@@ -27,7 +29,6 @@ pub async fn map_tiles(
     let base_x = bounding_box.left_top.x();
     let base_y = bounding_box.left_top.y();
     let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();
-
     for (tile, rect, _id) in world.entity_graph.tile_tree().query(bounding_box.into()) {
         if let Some(color) = tile.color {
             let width = (rect.size.width as f64 * scaling_factor).round() as u32;
@@ -66,15 +67,12 @@ pub async fn entity_graph_tiles(
     let base_x = bounding_box.left_top.x();
     let base_y = bounding_box.left_top.y();
     let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();
-    for (entity, rect, id) in world.entity_graph.inner_tree().query(bounding_box.into()) {
-        let width = (rect.size.width as f64 * scaling_factor).round() as u32;
-        let height = (rect.size.height as f64 * scaling_factor).round() as u32;
-        if width > 0 && height > 0 {
-            let draw_rect = imageproc::rect::Rect::at(
-                ((rect.origin.x as f64 - base_x) * scaling_factor).round() as i32,
-                ((rect.origin.y as f64 - base_y) * scaling_factor).round() as i32,
-            )
-            .of_size(width, height);
+    for (entity, rect, id) in world
+        .entity_graph
+        .inner_tree()
+        .query(bounding_box.clone().into())
+    {
+        if let Some(draw_rect) = scaled_draw_rect(&bounding_box, rect, scaling_factor) {
             match world.entity_graph.node_by_id(&id) {
                 Some(node_id) => {
                     draw_hollow_rect_mut(
@@ -141,30 +139,15 @@ pub async fn blocked_tiles(
     let mut buffer = create_tile();
     let (tile_z, tile_x, tile_y) = info.into_inner();
     let bounding_box = tile_boundaries(tile_z, tile_x, tile_y);
-    let base_x = bounding_box.left_top.x();
-    let base_y = bounding_box.left_top.y();
     let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();
-    for (minable, rect, _id) in world.entity_graph.blocked_tree().query(bounding_box.into()) {
-        let width = (rect.size.width as f64 * scaling_factor).round() as u32;
-        let height = (rect.size.height as f64 * scaling_factor).round() as u32;
-        if width > 0 && height > 0 {
-            let draw_rect = imageproc::rect::Rect::at(
-                ((rect.origin.x as f64 - base_x) * scaling_factor).round() as i32,
-                ((rect.origin.y as f64 - base_y) * scaling_factor).round() as i32,
-            )
-            .of_size(width, height);
-            draw_hollow_rect_mut(
-                &mut buffer,
-                draw_rect,
-                image::Rgba(if *minable {
-                    [76u8, 175u8, 80u8, 255u8]
-                } else {
-                    [255u8, 0u8, 0u8, 255u8]
-                }),
-            );
-        }
-    }
-
+    draw_blocked_rects_mut(
+        &mut buffer,
+        world.entity_graph.blocked_tree(),
+        &bounding_box,
+        scaling_factor,
+        image::Rgba([76u8, 175u8, 80u8, 255u8]),
+        image::Rgba([255u8, 0u8, 0u8, 255u8]),
+    );
     Ok(HttpResponse::Ok()
         .content_type("image/png")
         .body(build_image_body(buffer)))
@@ -177,38 +160,26 @@ pub async fn resource_tiles(
     let mut buffer = create_tile();
     let (tile_z, tile_x, tile_y) = info.into_inner();
     let bounding_box = tile_boundaries(tile_z, tile_x, tile_y);
-    let base_x = bounding_box.left_top.x();
-    let base_y = bounding_box.left_top.y();
     let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();
-    for (name, rect, _id) in world
-        .entity_graph
-        .resource_tree()
-        .query(bounding_box.into())
-    {
-        let width = (rect.size.width as f64 * scaling_factor).round() as u32;
-        let height = (rect.size.height as f64 * scaling_factor).round() as u32;
-        if width > 0 && height > 0 {
-            let draw_rect = imageproc::rect::Rect::at(
-                ((rect.origin.x as f64 - base_x) * scaling_factor).round() as i32,
-                ((rect.origin.y as f64 - base_y) * scaling_factor).round() as i32,
-            )
-            .of_size(width, height);
-            draw_hollow_rect_mut(
-                &mut buffer,
-                draw_rect,
-                image::Rgba(match &name[..] {
-                    "iron-ore" => [0u8, 140u8, 255u8, 255u8],
-                    "copper-ore" => [255u8, 55u8, 0u8, 255u8],
-                    "coal" => [0u8, 0u8, 0u8, 255u8],
-                    "stone" => [150u8, 100u8, 80u8, 255u8],
-                    "uranium-ore" => [100u8, 180u8, 0u8, 255u8],
-                    "crude-oil" => [255u8, 0u8, 255u8, 255u8],
-                    _ => [255u8, 0u8, 0u8, 255u8],
-                }),
-            );
-        }
-    }
-
+    let resource_colors: HashMap<&str, image::Rgba<_>> = [
+        ("iron-ore", image::Rgba([0u8, 140u8, 255u8, 255u8])),
+        ("copper-ore", image::Rgba([255u8, 55u8, 0u8, 255u8])),
+        ("coal", image::Rgba([0u8, 0u8, 0u8, 255u8])),
+        ("stone", image::Rgba([150u8, 100u8, 80u8, 255u8])),
+        ("uranium-ore", image::Rgba([100u8, 180u8, 0u8, 255u8])),
+        ("crude-oil", image::Rgba([255u8, 0u8, 255u8, 255u8])),
+    ]
+    .iter()
+    .cloned()
+    .collect();
+    draw_resource_rects_mut(
+        &mut buffer,
+        world.entity_graph.resource_tree(),
+        &bounding_box,
+        scaling_factor,
+        resource_colors,
+        image::Rgba([255u8, 0u8, 0u8, 255u8]),
+    );
     Ok(HttpResponse::Ok()
         .content_type("image/png")
         .body(build_image_body(buffer)))
@@ -224,16 +195,12 @@ pub async fn flow_graph_tiles(
     let base_x = bounding_box.left_top.x();
     let base_y = bounding_box.left_top.y();
     let scaling_factor = TILE_WIDTH as f64 / bounding_box.width();
-    // info!("bounding_box: {:?}", bounding_box);
-    for (entity, rect, _id) in world.entity_graph.inner_tree().query(bounding_box.into()) {
-        let width = (rect.size.width as f64 * scaling_factor).round() as u32;
-        let height = (rect.size.height as f64 * scaling_factor).round() as u32;
-        if width > 0 && height > 0 {
-            let draw_rect = imageproc::rect::Rect::at(
-                ((rect.origin.x as f64 - base_x) * scaling_factor).round() as i32,
-                ((rect.origin.y as f64 - base_y) * scaling_factor).round() as i32,
-            )
-            .of_size(width, height);
+    for (entity, rect, _id) in world
+        .entity_graph
+        .inner_tree()
+        .query(bounding_box.clone().into())
+    {
+        if let Some(draw_rect) = scaled_draw_rect(&bounding_box, rect, scaling_factor) {
             match world.flow_graph.node_at(&entity.position) {
                 Some(node_id) => {
                     draw_hollow_rect_mut(

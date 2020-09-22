@@ -12,6 +12,7 @@ use num_traits::ToPrimitive;
 use pathfinding::prelude::astar;
 use serde_json::Value;
 
+use crate::factorio::entity_graph::QuadTreeRect;
 use crate::types::{
     Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Pos, Position, Rect,
 };
@@ -568,4 +569,26 @@ pub fn format_dotgraph(str: String) -> String {
             })
             .join("\n")
     )
+}
+
+pub fn scaled_draw_rect(
+    bounding_box: &Rect,
+    rect: QuadTreeRect,
+    scaling_factor: f64,
+) -> Option<imageproc::rect::Rect> {
+    let width = (rect.size.width as f64 * scaling_factor).round() as u32;
+    let height = (rect.size.height as f64 * scaling_factor).round() as u32;
+    if width > 0 && height > 0 {
+        let base_x = bounding_box.left_top.x();
+        let base_y = bounding_box.left_top.y();
+        Some(
+            imageproc::rect::Rect::at(
+                ((rect.origin.x as f64 - base_x) * scaling_factor).round() as i32,
+                ((rect.origin.y as f64 - base_y) * scaling_factor).round() as i32,
+            )
+            .of_size(width, height),
+        )
+    } else {
+        None
+    }
 }
