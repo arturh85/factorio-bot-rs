@@ -665,7 +665,11 @@ mod tests {
     #[test]
     fn test_splitters() {
         let entity_graph = entity_graph_from(vec![
-            FactorioEntity::new_iron_ore(&Position::new(0.5, -1.5), Direction::South),
+            FactorioEntity::new_resource(
+                &Position::new(0.5, -1.5),
+                Direction::South,
+                &EntityName::IronOre.to_string(),
+            ),
             FactorioEntity::new_electric_mining_drill(&Position::new(0.5, -1.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 0.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(1.5, 0.5), Direction::South),
@@ -712,7 +716,11 @@ mod tests {
     #[test]
     fn test_furnace() {
         let entity_graph = entity_graph_from(vec![
-            FactorioEntity::new_iron_ore(&Position::new(0.5, -1.5), Direction::South),
+            FactorioEntity::new_resource(
+                &Position::new(0.5, -1.5),
+                Direction::South,
+                &EntityName::IronOre.to_string(),
+            ),
             FactorioEntity::new_electric_mining_drill(&Position::new(0.5, -1.5), Direction::South),
             FactorioEntity::new_transport_belt(&Position::new(0.5, 0.5), Direction::South),
             FactorioEntity::new_inserter(&Position::new(0.5, 1.5), Direction::North),

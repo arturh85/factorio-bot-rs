@@ -25,13 +25,13 @@ impl OutputParser {
                 let colon_pos = rest.find(':').unwrap();
                 let rect: Rect = rest[0..colon_pos].parse()?;
                 let pos: Pos = (&rect.left_top).into();
-                let chunk_position: ChunkPosition = (&pos).into();
+                let _chunk_position: ChunkPosition = (&pos).into();
                 let mut entities = &rest[colon_pos + 1..];
                 if entities == "{}" {
                     entities = "[]"
                 }
                 let entities: Vec<FactorioEntity> = serde_json::from_str(entities).unwrap();
-                self.world.update_chunk_entities(chunk_position, entities)?;
+                self.world.update_chunk_entities(entities)?;
             }
             "tiles" => {
                 let colon_pos = rest.find(':').unwrap();
@@ -86,7 +86,7 @@ impl OutputParser {
                         }
                     })
                     .collect();
-                self.world.update_chunk_tiles(chunk_position, tiles)?;
+                self.world.update_chunk_tiles(tiles)?;
             }
             "graphics" => {
                 // 0 graphics: spark-explosion*__core__/graphics/empty.png:1:1:0:0:0:0:1|spark-explosion-higher*__core__/graphics/empty.png:1:1:0:0:0:0:1|

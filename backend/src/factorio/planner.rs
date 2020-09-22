@@ -16,14 +16,14 @@ use std::path::Path;
 use std::time::Instant;
 
 pub struct Planner {
-    rcon: Arc<FactorioRcon>,
+    rcon: Option<Arc<FactorioRcon>>,
     real_world: Arc<FactorioWorld>,
     plan_world: Arc<FactorioWorld>,
     graph: Arc<RwLock<TaskGraph>>,
 }
 
 impl Planner {
-    pub fn new(world: Arc<FactorioWorld>, rcon: Arc<FactorioRcon>) -> Planner {
+    pub fn new(world: Arc<FactorioWorld>, rcon: Option<Arc<FactorioRcon>>) -> Planner {
         let plan_world = FactorioWorld::new();
         plan_world.import(world.clone()).unwrap();
         Planner {
@@ -38,16 +38,24 @@ impl Planner {
         let all_bots = self.initiate_missing_players_with_default_inventory(bot_count);
         self.plan_world.import(self.real_world.clone())?;
         let lua = Lua::new();
+        // use rlua_async::ChunkExt;
+        // use std::future::Future;
+        // use std::pin::Pin;
+        // lua.context::<_, Pin<Box<dyn Future<Output = rlua::Result<()>>>>>(|ctx| {
         lua.context::<_, rlua::Result<()>>(|ctx| {
-            let world = create_lua_world(ctx, self.plan_world.clone())?;
-            let plan = create_lua_plan_builder(ctx, self.graph.clone(), self.plan_world.clone())?;
-            let rcon = create_lua_rcon(ctx, self.rcon.clone())?;
+            let world = create_lua_world(ctx, self.plan_world.clone()).unwrap();
+            let plan =
+                create_lua_plan_builder(ctx, self.graph.clone(), self.plan_world.clone()).unwrap();
             let globals = ctx.globals();
-            globals.set("all_bots", all_bots)?;
-            globals.set("world", world)?;
-            globals.set("rcon", rcon)?;
-            globals.set("plan", plan)?;
+            globals.set("all_bots", all_bots).unwrap();
+            globals.set("world", world).unwrap();
+            globals.set("plan", plan).unwrap();
+            if let Some(rcon) = self.rcon.as_ref() {
+                let rcon = create_lua_rcon(ctx, rcon.clone()).unwrap();
+                globals.set("rcon", rcon).unwrap();
+            }
             let chunk = ctx.load(&lua_code);
+            // chunk.exec_async(ctx)
             chunk.exec()
         })?;
         Ok(())
@@ -120,7 +128,7 @@ pub async fn start_factorio_and_plan_graph(
     .await
     .expect("failed to start");
 
-    let mut planner = Planner::new(world, rcon);
+    let mut planner = Planner::new(world, Some(rcon));
     let lua_path_str = format!("plans/{}.lua", plan_name);
     let lua_path = Path::new(&lua_path_str);
     let lua_path = std::fs::canonicalize(lua_path)?;
@@ -210,5 +218,65 @@ pub fn execute_plan(
         // if task.data.is_some() {
         //     queue.do_send(Push::new(pointer))
         // }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::factorio::tests::{draw_world, fixture_world};
+
+    use super::*;
+
+    #[actix_rt::test]
+    async fn test_planner() {
+        let world = Arc::new(fixture_world());
+        draw_world(world.clone());
+        let mut planner = Planner::new(world, None);
+        planner
+            .plan(
+                r##"
+    plan.groupStart("Mine Stuff")
+    for idx,playerId in pairs(all_bots) do
+        plan.mine(playerId, "42,43", "rock-huge", 1)
+    end
+    plan.groupEnd("foo")
+        "##,
+                4,
+            )
+            .await
+            .unwrap();
+        let graph = planner.graph();
+        assert_eq!(
+            graph.graphviz_dot(),
+            r#"digraph {
+    0 [ label = "Process Start" ]
+    1 [ label = "Process End" ]
+    10 [ label = "Mining rock-huge" ]
+    11 [ label = "End" ]
+    2 [ label = "Start: Mine Stuff" ]
+    3 [ label = "Walk to [42, 43]" ]
+    4 [ label = "Mining rock-huge" ]
+    5 [ label = "Walk to [42, 43]" ]
+    6 [ label = "Mining rock-huge" ]
+    7 [ label = "Walk to [42, 43]" ]
+    8 [ label = "Mining rock-huge" ]
+    9 [ label = "Walk to [42, 43]" ]
+    0 -> 2 [ label = "0" ]
+    10 -> 11 [ label = "0" ]
+    11 -> 1 [ label = "0" ]
+    2 -> 3 [ label = "61" ]
+    2 -> 5 [ label = "61" ]
+    2 -> 7 [ label = "61" ]
+    2 -> 9 [ label = "61" ]
+    3 -> 4 [ label = "3" ]
+    4 -> 11 [ label = "0" ]
+    5 -> 6 [ label = "3" ]
+    6 -> 11 [ label = "0" ]
+    7 -> 8 [ label = "3" ]
+    8 -> 11 [ label = "0" ]
+    9 -> 10 [ label = "3" ]
+}
+"#,
+        );
     }
 }

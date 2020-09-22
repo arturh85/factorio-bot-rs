@@ -1,9 +1,9 @@
 use crate::factorio::entity_graph::EntityGraph;
 use crate::factorio::flow_graph::FlowGraph;
 use crate::types::{
-    ChunkPosition, FactorioEntity, FactorioEntityPrototype, FactorioForce, FactorioGraphic,
-    FactorioItemPrototype, FactorioPlayer, FactorioRecipe, FactorioTile,
-    PlayerChangedDistanceEvent, PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent,
+    FactorioEntity, FactorioEntityPrototype, FactorioForce, FactorioGraphic, FactorioItemPrototype,
+    FactorioPlayer, FactorioRecipe, FactorioTile, PlayerChangedDistanceEvent,
+    PlayerChangedMainInventoryEvent, PlayerChangedPositionEvent,
 };
 use async_std::sync::Mutex;
 use dashmap::DashMap;
@@ -173,21 +173,13 @@ impl FactorioWorld {
         Ok(())
     }
 
-    pub fn update_chunk_tiles(
-        &self,
-        _chunk_position: ChunkPosition,
-        tiles: Vec<FactorioTile>,
-    ) -> anyhow::Result<()> {
+    pub fn update_chunk_tiles(&self, tiles: Vec<FactorioTile>) -> anyhow::Result<()> {
         self.entity_graph.add_tiles(tiles, None)?; // FIXME: add clear rect from chunk_position
         Ok(())
     }
 
     #[allow(clippy::map_clone)]
-    pub fn update_chunk_entities(
-        &self,
-        _chunk_position: ChunkPosition,
-        entities: Vec<FactorioEntity>,
-    ) -> anyhow::Result<()> {
+    pub fn update_chunk_entities(&self, entities: Vec<FactorioEntity>) -> anyhow::Result<()> {
         self.entity_graph.add(entities, None)?; // FIXME: add clear rect
         Ok(())
     }

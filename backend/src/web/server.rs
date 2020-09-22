@@ -51,7 +51,7 @@ pub async fn start_webserver(
     } else {
         "frontend/dist/"
     };
-    let planner = Arc::new(RwLock::new(Planner::new(world.clone(), rcon.clone())));
+    let planner = Arc::new(RwLock::new(Planner::new(world.clone(), Some(rcon.clone()))));
     HttpServer::new(move || {
         App::new()
             .data(world.clone())
@@ -72,6 +72,10 @@ pub async fn start_webserver(
             .service(
                 web::resource("/api/tiles/{tile_z}/{tile_x}/{tile_y}/map_tile.png")
                     .route(web::get().to(crate::web::map_tiles::map_tiles)),
+            )
+            .service(
+                web::resource("/api/tiles/{tile_z}/{tile_x}/{tile_y}/schematic_tile.png")
+                    .route(web::get().to(crate::web::graph_tiles::map_tiles)),
             )
             .service(
                 web::resource("/api/tiles/{tile_z}/{tile_x}/{tile_y}/blocked_tile.png")

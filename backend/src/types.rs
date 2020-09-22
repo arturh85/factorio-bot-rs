@@ -13,7 +13,7 @@ use serde_json::Value;
 use typescript_definitions::TypeScriptify;
 
 use crate::factorio::entity_graph::QuadTreeRect;
-use crate::factorio::util::{add_to_rect_turned, calculate_distance, rect_floor_ceil};
+use crate::factorio::util::{add_to_rect, add_to_rect_turned, calculate_distance, rect_floor_ceil};
 use crate::num_traits::FromPrimitive;
 
 pub type FactorioInventory = HashMap<String, u32>;
@@ -517,6 +517,12 @@ pub struct FactorioEntity {
     pub ghost_type: Option<String>, // only type = entity-ghost
 }
 
+impl rlua::ToLua<'_> for FactorioEntity {
+    fn to_lua(self, lua: Context) -> rlua::Result<rlua::Value> {
+        rlua_serde::to_value(lua, self)
+    }
+}
+
 impl aabb_quadtree::Spatial<Rect> for FactorioEntity {
     fn aabb(&self) -> QuadTreeRect {
         self.bounding_box.clone().into()
@@ -601,13 +607,22 @@ impl FactorioEntity {
             ..Default::default()
         }
     }
-    pub fn new_iron_ore(position: &Position, direction: Direction) -> FactorioEntity {
+    pub fn new_resource(position: &Position, direction: Direction, name: &str) -> FactorioEntity {
         FactorioEntity {
-            name: EntityName::IronOre.to_string(),
+            name: name.into(),
             entity_type: EntityType::Resource.to_string(),
             position: position.clone(),
             bounding_box: add_to_rect_turned(&Rect::from_wh(0.8, 0.8), &position, direction),
             direction: direction.to_u8().unwrap(),
+            ..Default::default()
+        }
+    }
+    pub fn new_tree(position: &Position) -> FactorioEntity {
+        FactorioEntity {
+            name: "tree-42".into(),
+            entity_type: EntityType::Tree.to_string(),
+            position: position.clone(),
+            bounding_box: add_to_rect(&Rect::from_wh(0.8, 0.8), &position),
             ..Default::default()
         }
     }

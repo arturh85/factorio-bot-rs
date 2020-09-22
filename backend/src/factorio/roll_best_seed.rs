@@ -184,7 +184,7 @@ pub async fn score_seed(
     lua_code: &str,
     bot_count: u32,
 ) -> anyhow::Result<f64> {
-    let mut planner = Planner::new(world, rcon.clone());
+    let mut planner = Planner::new(world, Some(rcon.clone()));
     planner.plan(lua_code, bot_count).await?;
     let mut score = 0.0;
 

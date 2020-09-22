@@ -529,7 +529,7 @@ impl EntityGraph {
         let _started = Instant::now();
         let tree = self.entity_tree.read();
         let mut edges_to_add: Vec<(NodeIndex, NodeIndex, f64)> = vec![];
-        let nodes: Vec<NodeIndex> = self.entity_graph.read().node_indices().map(|i| i).collect();
+        let nodes: Vec<NodeIndex> = self.entity_graph.read().node_indices().collect();
         for node_index in nodes {
             let inner = self.entity_graph.read();
             let node_index = node_index;

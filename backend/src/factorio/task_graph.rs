@@ -71,8 +71,12 @@ impl TaskGraph {
     pub fn group_end(&mut self) {
         let group = self.groups.pop().expect("no open group");
         let group_end = self.inner.add_node(TaskNode::new(None, "End", None));
-        for (_, cursor) in group {
-            self.inner.add_edge(cursor, group_end, 0.);
+        if group.is_empty() {
+            self.inner.add_edge(self.cursor, group_end, 0.);
+        } else {
+            for (_, cursor) in group {
+                self.inner.add_edge(cursor, group_end, 0.);
+            }
         }
         if let Some(edge) = self.inner.find_edge(self.cursor, self.end_node) {
             self.inner.remove_edge(edge);

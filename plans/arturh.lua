@@ -12,14 +12,12 @@ blueprints = {
     MinerLine = "0eNqdl11v2yAUhv9KxLWdBPBH7MtN603Vq3ZSt2ma/MEyJAwIcFcr8n8vcapoWjztwJWFDQ+Hw3l5zQm1YmTacOlQfUI9s53h2nElUY0e1Wg6Vm9+Oadtvdv9bDqnDFdLd7vt1LB74ez3Ln24+/rhy2d83368e+0n3d4PzyhBVjY6dSo9Gt6f4a+oLhM0oZrgOUFNa5UYHUvP3TSXR1Q7M7IE8U5Ji+pvJ2T5UTbiPNRNmvmAuGODB8tmOLeYYJ0zvEsHLv34tDdcCOTRXPbMT4bn7wli0nHH2QW4NKYfchxaZnyH/6ASpJXll2Qs4eNtvizAP/00PTd+1PKVzMkNnVzpzjTSamVc2jLhbrH0Hbv/G5utYGlo0Pm/gi5W6Flw0AQSdB6MxRBsEbuBOWQDyyvdDo0Q6XUOrQS7ZZN3tl/BvEI7BKcgg6SgCsZSCBbvY8ssg5QZxsFhF6Cww0WXg7jRqitB6chiC/kAKWQcLr8DKCtFMLcEcSOVh/fr0sPh2sOgsxiHq6+CcEm0+m7jXqs3Eu98BGR94TLEIB8hNBwMchKSRWecgjKeR2cc5FUkXIoY5C+kDAeDHIZEiBLkASRclBhkAjRelQWkRmi8KitIjVASeayW68cqjRAjyFdo+F8oBhkLzaN3sALtYIQKQYZAw1VIVhzM34eWK1T9x60vQaLxJP/ugWw3nxojps2TUv79CzP2UkwHnJVZVRYl3hd5Mc9vau2sKw=="
 }
 
-function dumpPlayers()
-    for _,playerId in pairs(all_bots) do
-        print("hello bot #" .. playerId)
-        local player = world.player(playerId)
-        for k,v in pairs(player.mainInventory) do
-            print(" - " .. k .. ": " .. tostring(v))
-        end
+function dump(tbl, label)
+    print("dumping " .. label)
+    for k,v in pairs(tbl) do
+        print("- " .. tostring(k) .. ": " .. tostring(v))
     end
+    print("------------")
 end
 
 --local recipe = world.recipe("inserter")
@@ -33,9 +31,10 @@ end
 
 function mine_with_bots(bots, search_center, name, entityName)
     --local nearest = rcon.find_nearest(search_center, 500, name, entityName, #bots)
---    local nearest = rcon.findEntitiesInRadius("0,0", 500, name, #bots)
+--    local nearest = rcon.findByNameInRadius(1, name, "0,0", 500)
+--    print("nearest: " .. tostring(nearest))
+--    dump(nearest[1])
     plan.groupStart("Mine with Bots")
-
     for idx,playerId in pairs(bots) do
 --        local entity = nearest[idx]
         plan.mine(playerId, "0,0", name, 1)

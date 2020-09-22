@@ -1182,19 +1182,23 @@ impl FactorioRcon {
 
 pub fn create_lua_rcon(ctx: Context, _rcon: Arc<FactorioRcon>) -> rlua::Result<Table> {
     let map_table = ctx.create_table()?;
-    // use rlua_async::ContextExt;
-    // map_table.set(
-    //     "findByNameInRadius",
-    //     ctx.create_async_function(
-    //         |_ctx, (_player_id, name, search_center, radius): (u32, String, String, f64)| async move {
-    //             let filter = AreaFilter::PositionRadius((search_center.parse().unwrap(), Some(radius)));
-    //             let x = _rcon
-    //                 .find_entities_filtered(&filter, Some(name), None)
-    //                 .await.unwrap();
-    //             println!("find results {}", x.len());
-    //             Ok(())
-    //         },
-    //     )?,
-    // )?;
+    use rlua_async::ContextExt;
+    map_table.set(
+        "findByNameInRadius",
+        ctx.create_async_function_mut::<_, _, _, _>(
+            move |_ctx, (name, search_center, radius): (String, String, f64)| {
+                let _rcon = _rcon.clone();
+                async move {
+                    let filter =
+                        AreaFilter::PositionRadius((search_center.parse().unwrap(), Some(radius)));
+                    Ok(_rcon
+                        .as_ref()
+                        .find_entities_filtered(&filter, Some(name), None)
+                        .await
+                        .unwrap())
+                }
+            },
+        )?,
+    )?;
     Ok(map_table)
 }

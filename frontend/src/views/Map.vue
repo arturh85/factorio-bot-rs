@@ -57,6 +57,7 @@ export default Vue.extend({
           :maxZoom="8">
       <LControlLayers position="topright"  ></LControlLayers>
       <LTileLayer name="map" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/map_tile.png`" :noWrap="true" layer-type="base"></LTileLayer>
+      <LTileLayer name="schematic" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/schematic_tile.png`" :noWrap="true" layer-type="base" :visible="false"></LTileLayer>
       <LTileLayer name="blocked" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/blocked_tile.png`" :noWrap="true" layer-type="overlay" :visible="false"></LTileLayer>
       <LTileLayer name="resources" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/resource_tile.png`" :noWrap="true" layer-type="overlay" :visible="false"></LTileLayer>
       <LTileLayer name="entities" :url="`${baseUrl}/api/tiles/{z}/{x}/{y}/entity_graph_tile.png`" :noWrap="true" layer-type="overlay" :visible="false"></LTileLayer>
