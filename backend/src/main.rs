@@ -12,6 +12,8 @@ use factorio_bot_backend::web::server::start_webserver;
 
 #[actix_rt::main]
 async fn main() -> anyhow::Result<()> {
+    // let local = tokio::task::LocalSet::new();
+    // let sys = actix_rt::System::run_in_tokio("Default", &local);
     color_eyre::install().unwrap();
     let matches = App::new("factorio-bot-rs")
         .version(env!("CARGO_PKG_VERSION"))

@@ -32,6 +32,8 @@ export type State = {
     itemPrototypes: FactorioItemPrototypeByName,
     entityPrototypes: FactorioEntityPrototypeByName,
     tasks: Task[],
+    plans: string[],
+    taskGraphDot: string | null,
     world: World,
     selectedTask: Task | null
 }
@@ -44,8 +46,10 @@ export const initialState: State = {
     entityPrototypes: {},
     force: {} as any,
     tasks: [],
+    plans: [],
     world: emptyWorld,
-    selectedTask: null
+    selectedTask: null,
+    taskGraphDot: null,
 }
 
 export default new Vuex.Store({
@@ -93,6 +97,9 @@ export default new Vuex.Store({
         },
         updateForce(state: State, force: FactorioForce) {
             state.force = force
+        },
+        updatePlans(state: State, plans: string[]) {
+            state.plans = plans
         },
         updateEntityPrototypes(state: State, entityPrototypes: FactorioEntityPrototypeByName) {
             state.entityPrototypes = entityPrototypes
@@ -148,6 +155,9 @@ export default new Vuex.Store({
         },
         updateRecipes(state: State, recipes: FactorioRecipeByName) {
             state.recipes = recipes
+        },
+        updateTaskGraphDot(state: State, dot: string) {
+            state.taskGraphDot = dot
         },
         updateWorld(state: State, world: World) {
             state.world = world

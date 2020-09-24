@@ -185,7 +185,7 @@ pub async fn score_seed(
     bot_count: u32,
 ) -> anyhow::Result<f64> {
     let mut planner = Planner::new(world, Some(rcon.clone()));
-    planner.plan(lua_code, bot_count).await?;
+    planner.plan(lua_code.into(), bot_count)?;
     let mut score = 0.0;
 
     let weight = planner.graph().shortest_path();

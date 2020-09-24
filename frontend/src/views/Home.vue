@@ -2,7 +2,8 @@
   <v-container>
     <v-row>
       <v-col md="8" style="overflow: hidden">
-        <Tasks :tasks="$store.state.tasks" @activeChanged="activeChanged" />
+<!--        <Tasks :tasks="$store.state.tasks" @activeChanged="activeChanged" />-->
+        <TaskGraph />
       </v-col>
       <v-col md="4" style="overflow: hidden">
         <Control />
@@ -20,7 +21,7 @@
 // @ is an alias to /src
 import Vue from "vue";
 import Player from "@/components/Player.vue";
-import Tasks from "@/components/Tasks.vue";
+import TaskGraph from "@/components/TaskGraph.vue";
 import {FactorioApi} from "@/factorio-bot/restApi";
 import {FactorioBotManager} from "@/factorio-bot/bot-manager";
 import {Task} from "@/factorio-bot/task";
@@ -33,7 +34,7 @@ export default Vue.extend({
     SelectedTask,
     Player,
     Control,
-    Tasks
+    TaskGraph
   },
   methods: {
     activeChanged(task: Task) {

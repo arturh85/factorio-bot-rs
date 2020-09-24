@@ -41,12 +41,14 @@ export class FactorioBotManager {
         const force = await FactorioApi.playerForce();
         const entityPrototypes = await FactorioApi.allEntityPrototypes();
         const itemPrototypes = await FactorioApi.allItemPrototypes();
+        const plans = await FactorioApi.plans();
         const stored = await FactorioApi.retrieveMapData<World>("world");
 
         this.$store.commit('updateEntityPrototypes', entityPrototypes)
         this.$store.commit('updateItemPrototypes', itemPrototypes)
         this.$store.commit('updatePlayers', players)
         this.$store.commit('updateForce', force)
+        this.$store.commit('updatePlans', plans)
         this.$store.commit('updateRecipes', recipes)
         const world = stored ? stored : {...emptyWorld};
         this.$store.commit('updateWorld', world)
@@ -258,5 +260,9 @@ export class FactorioBotManager {
 
     async saveWorldInMap(): Promise<void> {
         await FactorioApi.storeMapData(STORAGE_KEY, this.$store.state.world);
+    }
+    async runPlan(plan: string, botCount: number): Promise<void> {
+        const dot = await FactorioApi.runPlan(plan, botCount);
+        this.$store.commit('updateTaskGraphDot', dot)
     }
 }

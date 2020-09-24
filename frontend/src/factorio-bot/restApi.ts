@@ -345,6 +345,16 @@ export class FactorioApi {
         const response = await fetch(`${baseUrl}/api/dotTaskGraph`);
         return await response.text();
     }
+    static async runPlan(plan: string, botCount: number): Promise<string> {
+        const response = await fetch(`${baseUrl}/api/runPlan?name=${encodeURIComponent(
+            plan
+        )}&botCount=${botCount}`);
+        return await response.text();
+    }
+    static async plans(): Promise<string[]> {
+        const response = await fetch(`${baseUrl}/api/plans`);
+        return await response.json();
+    }
     static async flow(): Promise<string> {
         const response = await fetch(`${baseUrl}/api/dotFlowGraph`);
         return await response.text();

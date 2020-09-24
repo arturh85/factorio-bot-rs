@@ -1,22 +1,21 @@
+use crate::factorio::entity_graph::QuadTreeRect;
+use crate::types::{
+    Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Pos, Position, Rect,
+};
+use dashmap::DashMap;
+use factorio_blueprint::BlueprintCodec;
+use factorio_blueprint::Container::{Blueprint, BlueprintBook};
+use human_sort::compare;
+use itertools::Itertools;
+use num_traits::ToPrimitive;
+use pathfinding::prelude::astar;
+use serde_json::Value;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use dashmap::DashMap;
-use factorio_blueprint::BlueprintCodec;
-use factorio_blueprint::Container::{Blueprint, BlueprintBook};
-use itertools::Itertools;
-use num_traits::ToPrimitive;
-use pathfinding::prelude::astar;
-use serde_json::Value;
-
-use crate::factorio::entity_graph::QuadTreeRect;
-use crate::types::{
-    Direction, FactorioEntity, FactorioEntityPrototype, FactorioTile, Pos, Position, Rect,
-};
-use std::cmp::Ordering;
 
 pub fn hashmap_to_lua(map: HashMap<String, String>) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -562,7 +561,7 @@ pub fn format_dotgraph(str: String) -> String {
                 let b_is_edge = b.contains(" -> ");
                 let ordering = a_is_edge.cmp(&b_is_edge);
                 if ordering == Ordering::Equal {
-                    a.cmp(b)
+                    compare(a, b)
                 } else {
                     ordering
                 }

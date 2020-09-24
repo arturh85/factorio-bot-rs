@@ -13,8 +13,10 @@ use actix_web::web;
 use actix_web::web::{Json, Path as PathInfo};
 use dashmap::lock::RwLock;
 use factorio_blueprint::BlueprintCodec;
+use fs::read_dir;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
 use std::fs::read_to_string;
 use std::path::Path;
 use std::sync::Arc;
@@ -690,11 +692,15 @@ pub async fn run_plan(
         panic!("plan {} not found at {}", info.name, lua_path_str);
     }
     let lua_code = read_to_string(lua_path).unwrap();
-    planner
-        .write()
-        .plan(lua_code.as_str(), info.bot_count)
-        .await?;
-    Ok("ok".into())
+    let graph = std::thread::spawn(move || {
+        let mut planner = planner.write();
+        planner.reset();
+        planner.plan(lua_code, info.bot_count).unwrap();
+        planner.graph()
+    })
+    .join()
+    .unwrap();
+    Ok(graph.graphviz_dot())
 }
 
 #[derive(Deserialize)]
@@ -714,25 +720,39 @@ pub async fn execute_taskgraph(
         panic!("plan {} not found at {}", info.name, lua_path_str);
     }
     let lua_code = read_to_string(lua_path).unwrap();
-    planner
-        .write()
-        .plan(lua_code.as_str(), world.players.len() as u32)
-        .await?;
-    // let dot = planner.graph().graphviz_dot();
-    // execute_plan(
-    //     world.as_ref().clone(),
-    //     rcon.as_ref().clone(),
-    //     Some(websocket_server.as_ref().clone()),
-    //     graph,
-    // );
-    Ok("ok".into())
+    let graph = std::thread::spawn(move || {
+        let mut planner = planner.write();
+        planner.plan(lua_code, world.players.len() as u32).unwrap();
+        planner.graph()
+    })
+    .join()
+    .unwrap();
+    let dot = graph.graphviz_dot();
+    Ok(dot)
 }
 
+pub async fn plans() -> Result<Json<Vec<String>>, ActixAnyhowError> {
+    let entries: Vec<String> = read_dir("plans/")
+        .unwrap()
+        .map(|res| res.map(|e| e.path()).unwrap())
+        .filter(|p| p.extension().is_some() && p.extension().unwrap() == "lua")
+        .map(|p| p.with_extension(""))
+        .map(|p| p.file_name().unwrap().to_str().unwrap().into())
+        .collect();
+    Ok(Json(entries))
+}
 pub async fn web_entity_graph(
     world: web::Data<Arc<FactorioWorld>>,
 ) -> Result<String, ActixAnyhowError> {
     world.entity_graph.connect()?;
     let dot = world.entity_graph.graphviz_dot_condensed();
+    Ok(dot)
+}
+pub async fn web_task_graph(
+    planner: web::Data<Arc<RwLock<Planner>>>,
+) -> Result<String, ActixAnyhowError> {
+    let planner = planner.read();
+    let dot = planner.graph().graphviz_dot();
     Ok(dot)
 }
 pub async fn web_flow_graph(

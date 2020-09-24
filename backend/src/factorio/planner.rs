@@ -10,10 +10,13 @@ use actix::Addr;
 use async_std::sync::Arc;
 use dashmap::lock::RwLock;
 use rlua::Lua;
+use rlua_async::ChunkExt;
 use std::collections::BTreeMap;
 use std::fs::read_to_string;
+use std::io::Read;
 use std::path::Path;
 use std::time::Instant;
+use std::{thread, time};
 
 pub struct Planner {
     rcon: Option<Arc<FactorioRcon>>,
@@ -34,29 +37,34 @@ impl Planner {
         }
     }
 
-    pub async fn plan(&mut self, lua_code: &str, bot_count: u32) -> anyhow::Result<()> {
+    pub fn reset(&mut self) {
+        let plan_world = FactorioWorld::new();
+        plan_world.import(self.real_world.clone()).unwrap();
+        self.plan_world = Arc::new(plan_world);
+        self.graph = Arc::new(RwLock::new(TaskGraph::new()));
+    }
+
+    pub fn plan(&mut self, lua_code: String, bot_count: u32) -> anyhow::Result<()> {
         let all_bots = self.initiate_missing_players_with_default_inventory(bot_count);
         self.plan_world.import(self.real_world.clone())?;
         let lua = Lua::new();
-        // use rlua_async::ChunkExt;
-        // use std::future::Future;
-        // use std::pin::Pin;
-        // lua.context::<_, Pin<Box<dyn Future<Output = rlua::Result<()>>>>>(|ctx| {
         lua.context::<_, rlua::Result<()>>(|ctx| {
-            let world = create_lua_world(ctx, self.plan_world.clone()).unwrap();
-            let plan =
-                create_lua_plan_builder(ctx, self.graph.clone(), self.plan_world.clone()).unwrap();
+            let world = create_lua_world(ctx, self.plan_world.clone())?;
+            let plan = create_lua_plan_builder(ctx, self.graph.clone(), self.plan_world.clone())?;
             let globals = ctx.globals();
-            globals.set("all_bots", all_bots).unwrap();
-            globals.set("world", world).unwrap();
-            globals.set("plan", plan).unwrap();
+            globals.set("all_bots", all_bots)?;
+            globals.set("world", world)?;
+            globals.set("plan", plan)?;
             if let Some(rcon) = self.rcon.as_ref() {
-                let rcon = create_lua_rcon(ctx, rcon.clone()).unwrap();
-                globals.set("rcon", rcon).unwrap();
+                let rcon = create_lua_rcon(ctx, rcon.clone())?;
+                globals.set("rcon", rcon)?;
             }
             let chunk = ctx.load(&lua_code);
-            // chunk.exec_async(ctx)
-            chunk.exec()
+            tokio::runtime::Builder::new()
+                .basic_scheduler()
+                .build()
+                .unwrap()
+                .block_on(chunk.exec_async(ctx))
         })?;
         Ok(())
     }
@@ -128,53 +136,101 @@ pub async fn start_factorio_and_plan_graph(
     .await
     .expect("failed to start");
 
-    let mut planner = Planner::new(world, Some(rcon));
-    let lua_path_str = format!("plans/{}.lua", plan_name);
-    let lua_path = Path::new(&lua_path_str);
-    let lua_path = std::fs::canonicalize(lua_path)?;
-    if !lua_path.exists() {
-        anyhow::bail!("plan {} not found at {}", plan_name, lua_path_str);
-    }
-    let lua_code = read_to_string(lua_path)?;
-    planner.plan(lua_code.as_str(), bot_count).await?;
-    let world = planner.world();
-    let graph = planner.graph();
-    for player in world.players.iter() {
-        info!(
-            "bot #{} endet up at {} with inventory: {:?}",
-            player.player_id, player.position, player.main_inventory
-        );
-    }
-    // if let Some(resources) = &world.resources.read() {
-    //     for (name, _) in resources {
-    //         let patches = world.resource_patches(&name);
-    //         for patch in patches {
-    //             info!(
-    //                 "{} patch at {} size {}",
-    //                 patch.name,
-    //                 patch.rect.center(),
-    //                 patch.elements.len()
-    //             );
-    //         }
-    //     }
-    // }
+    // Use asynchronous stdin
+    info!("start took <yellow>{:?}</>", started.elapsed());
+    let graph = loop {
+        let started = Instant::now();
+        let mut planner = Planner::new(world.clone(), Some(rcon.clone()));
+        let lua_path_str = format!("plans/{}.lua", plan_name);
+        let lua_path = Path::new(&lua_path_str);
+        let lua_path = std::fs::canonicalize(lua_path)?;
+        if !lua_path.exists() {
+            anyhow::bail!("plan {} not found at {}", plan_name, lua_path_str);
+        }
+        let lua_code = read_to_string(lua_path)?;
 
-    let process_start = graph.node_indices().next().unwrap();
-    let process_end = graph.node_indices().last().unwrap();
-    let (weight, _) = graph
-        .astar(process_start, process_end)
-        .expect("no path found");
-    info!("shortest path: {}", weight);
+        match std::thread::spawn(move || {
+            if let Err(err) = planner.plan(lua_code, bot_count) {
+                Err(err)
+            } else {
+                Ok(planner)
+            }
+        })
+        .join()
+        .unwrap()
+        {
+            Ok(_planner) => planner = _planner,
+            Err(err) => {
+                error!("executation failed: {:?}", err);
+                warn!("enter [q] to quit or any other key to restart plan",);
+                let input: Option<i32> = std::io::stdin()
+                    .bytes()
+                    .next()
+                    .and_then(|result| result.ok())
+                    .map(|byte| byte as i32);
 
-    world.entity_graph.connect().unwrap();
-    world.flow_graph.update().unwrap();
-    graph.print();
-    println!("{}", graph.graphviz_dot());
-    println!("{}", world.entity_graph.graphviz_dot());
-    println!("{}", world.flow_graph.graphviz_dot());
+                if let Some(key) = input {
+                    if key == 113 {
+                        anyhow::bail!("aborted")
+                    }
+                }
+                thread::sleep(time::Duration::from_millis(50));
+                continue;
+            }
+        }
+        let world = planner.world();
+        let graph = planner.graph();
+        for player in world.players.iter() {
+            info!(
+                "bot #{} endet up at {} with inventory: {:?}",
+                player.player_id, player.position, player.main_inventory
+            );
+        }
+        // if let Some(resources) = &world.resources.read() {
+        //     for (name, _) in resources {
+        //         let patches = world.resource_patches(&name);
+        //         for patch in patches {
+        //             info!(
+        //                 "{} patch at {} size {}",
+        //                 patch.name,
+        //                 patch.rect.center(),
+        //                 patch.elements.len()
+        //             );
+        //         }
+        //     }
+        // }
+
+        let process_start = graph.node_indices().next().unwrap();
+        let process_end = graph.node_indices().last().unwrap();
+        let (weight, _) = graph
+            .astar(process_start, process_end)
+            .expect("no path found");
+        info!("shortest path: {}", weight);
+
+        world.entity_graph.connect().unwrap();
+        world.flow_graph.update().unwrap();
+        graph.print();
+        println!("{}", graph.graphviz_dot());
+        println!("{}", world.entity_graph.graphviz_dot());
+        println!("{}", world.flow_graph.graphviz_dot());
+        info!("planning took <yellow>{:?}</>", started.elapsed());
+        warn!("enter [q] to quit or any other key to restart plan",);
+
+        let input: Option<i32> = std::io::stdin()
+            .bytes()
+            .next()
+            .and_then(|result| result.ok())
+            .map(|byte| byte as i32);
+
+        if let Some(key) = input {
+            if key == 113 {
+                break graph;
+            }
+        }
+        thread::sleep(time::Duration::from_millis(50));
+    };
 
     child.kill().expect("failed to kill child");
-    info!("took <yellow>{:?}</>", started.elapsed());
     Ok(graph)
 }
 
@@ -227,8 +283,8 @@ mod tests {
 
     use super::*;
 
-    #[actix_rt::test]
-    async fn test_planner() {
+    #[test]
+    fn test_planner() {
         let world = Arc::new(fixture_world());
         draw_world(world.clone());
         let mut planner = Planner::new(world, None);
@@ -239,11 +295,11 @@ mod tests {
     for idx,playerId in pairs(all_bots) do
         plan.mine(playerId, tostring(idx * 10) .. ",43", "rock-huge", 1)
     end
-    plan.groupEnd("foo")
-        "##,
+    plan.groupEnd()
+        "##
+                .into(),
                 4,
             )
-            .await
             .unwrap();
         let graph = planner.graph();
         assert_eq!(
@@ -251,8 +307,6 @@ mod tests {
             r#"digraph {
     0 [ label = "Process Start" ]
     1 [ label = "Process End" ]
-    10 [ label = "Mining rock-huge" ]
-    11 [ label = "End" ]
     2 [ label = "Start: Mine Stuff" ]
     3 [ label = "Walk to [10, 43]" ]
     4 [ label = "Mining rock-huge" ]
@@ -261,9 +315,9 @@ mod tests {
     7 [ label = "Walk to [30, 43]" ]
     8 [ label = "Mining rock-huge" ]
     9 [ label = "Walk to [40, 43]" ]
+    10 [ label = "Mining rock-huge" ]
+    11 [ label = "End" ]
     0 -> 2 [ label = "0" ]
-    10 -> 11 [ label = "0" ]
-    11 -> 1 [ label = "0" ]
     2 -> 3 [ label = "45" ]
     2 -> 5 [ label = "48" ]
     2 -> 7 [ label = "53" ]
@@ -275,6 +329,8 @@ mod tests {
     7 -> 8 [ label = "3" ]
     8 -> 11 [ label = "6" ]
     9 -> 10 [ label = "3" ]
+    10 -> 11 [ label = "0" ]
+    11 -> 1 [ label = "0" ]
 }
 "#,
         );

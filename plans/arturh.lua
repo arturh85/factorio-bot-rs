@@ -27,13 +27,10 @@ end
 --end
 --
 --dumpPlayers()
-
-
 function mine_with_bots(bots, search_center, name, entityName)
     --local nearest = rcon.find_nearest(search_center, 500, name, entityName, #bots)
---    local nearest = rcon.findByNameInRadius(1, name, "0,0", 500)
---    print("nearest: " .. tostring(nearest))
---    dump(nearest[1])
+--    local nearest = rcon.findByNameInRadius(name, "0,0", 500)
+--    dump(nearest[1], "nearest")
     plan.groupStart("Mine with Bots")
     for idx,playerId in pairs(bots) do
 --        local entity = nearest[idx]
@@ -43,7 +40,6 @@ function mine_with_bots(bots, search_center, name, entityName)
 end
 
 
-mine_with_bots(all_bots, {0,0}, "rock-huge", nil)
 mine_with_bots(all_bots, {0,0}, "rock-huge", nil)
 mine_with_bots(all_bots, {0,0}, "rock-huge", nil)
 

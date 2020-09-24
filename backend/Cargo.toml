@@ -55,3 +55,5 @@ rlua_serde = "0.4.0"
 ptree = "0.3.0"
 rlua-async = "0.4.0"
 itertools = "0.9.0"
+human-sort = "0.2.2"
+tokio = { version = "0.2.22", features = ["rt-core", "macros"] }
